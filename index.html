@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ped’IA — Suivi & évolution 0–7 ans</title>
     <meta name="description" content="Ped’IA: Suivi du développement 0–7 ans, conseils IA et communauté pour parents." />
-    <link rel="stylesheet" href="assets/style.css" />
+    <link rel="stylesheet" href="assets/style.css?v=3" />
   </head>
   <body>
     <header class="site-header">
@@ -14,10 +14,14 @@
           <span class="logo">🤖👶</span>
           <span class="brand-text">Ped’IA</span>
         </a>
-        <nav class="main-nav" aria-label="Navigation principale">
+        <button id="nav-toggle" class="nav-toggle" aria-controls="main-nav" aria-expanded="false" title="Menu">☰</button>
+        <nav id="main-nav" class="main-nav" aria-label="Navigation principale">
+          <a href="#/" class="nav-link">Accueil</a>
           <a href="#/dashboard" class="nav-link">Dashboard</a>
           <a href="#/community" class="nav-link">Communauté</a>
           <a href="#/compare" class="nav-link">Comparateur</a>
+          <a href="#/about" class="nav-link">À propos</a>
+          <a href="#/contact" class="nav-link">Contact</a>
           <a href="#/settings" class="nav-link">Paramètres</a>
         </nav>
         <div class="auth-actions">
@@ -27,38 +31,141 @@
       </div>
     </header>
 
+    <div class="masthead">
+      <div class="container">
+        <div class="masthead-inner">Ped’IA — votre pédiatre digital</div>
+      </div>
+    </div>
+
+    <div id="nav-backdrop" class="nav-backdrop hidden" aria-hidden="true"></div>
+
     <main id="app" class="container">
       <!-- Accueil -->
       <section data-route="/" class="route">
         <div class="hero">
-          <h1>Suivi & évolution 0–7 ans, boosté à l’IA</h1>
-          <p class="lead">Un compagnon parental digital pour suivre, comprendre et partager.</p>
-          <div class="hero-actions">
-            <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
+          <div class="hero-content">
+            <div class="hero-copy">
+              <h1>Votre copilote parental, clair et rassurant</h1>
+              <p class="lead">Suivez l’essentiel sans bruit visuel: croissance, sommeil, jalons et conseils IA, dans une interface nette et apaisée.</p>
+              <div class="hero-actions">
+                <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
+                <a href="#/compare" class="btn btn-secondary">Voir les outils</a>
+              </div>
+              <div class="hero-stats">
+                <div class="stat"><strong>0–7 ans</strong><span>Repères adaptés</span></div>
+                <div class="stat"><strong>IA</strong><span>Conseils contextuels</span></div>
+                <div class="stat"><strong>Local</strong><span>Données chez vous</span></div>
+              </div>
+            </div>
+            <div class="hero-visual" aria-hidden="true">
+              <img src="famille.png" alt="Famille" class="hero-image" loading="eager" />
+            </div>
           </div>
-          <div class="pillars">
-            <div class="pillar">
-              <div class="pillar-icon">📈</div>
-              <h3>Suivi santé</h3>
-              <p>Courbes de croissance, sommeil, dents et exploits.</p>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Fonctionnalités clés</h2>
+          <p class="section-subtitle">Les outils essentiels pour un suivi simple et rassurant.</p>
+          <div class="features">
+            <div class="feature">
+              <div class="feature-ico">📈</div>
+              <h3>Courbes de croissance</h3>
+              <p>Suivi taille/poids avec repères OMS intégrés.</p>
             </div>
-            <div class="pillar">
-              <div class="pillar-icon">🧠</div>
-              <h3>Outils IA</h3>
-              <p>Conseils personnalisés selon l’âge et le contexte.</p>
+            <div class="feature">
+              <div class="feature-ico">💤</div>
+              <h3>Sommeil</h3>
+              <p>Rythme et recommandations adaptées à l’âge.</p>
             </div>
-            <div class="pillar">
-              <div class="pillar-icon">👨‍👩‍👧‍👦</div>
+            <div class="feature">
+              <div class="feature-ico">🦷</div>
+              <h3>Dents</h3>
+              <p>Éruption dentaire et conseils d’hygiène ludiques.</p>
+            </div>
+            <div class="feature">
+              <div class="feature-ico">🧠</div>
+              <h3>Conseils IA</h3>
+              <p>Réponses contextualisées et structurées en puces.</p>
+            </div>
+            <div class="feature">
+              <div class="feature-ico">👨‍👩‍👧‍👦</div>
               <h3>Communauté</h3>
-              <p>Échangez avec d’autres parents, partagez vos astuces.</p>
+              <p>Partagez expériences et astuces entre parents.</p>
             </div>
+            <div class="feature">
+              <div class="feature-ico">🗂️</div>
+              <h3>Exports</h3>
+              <p>Export/Import JSON pour garder vos données.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Comment ça marche ?</h2>
+          <p class="section-subtitle">Trois étapes claires pour démarrer en douceur.</p>
+          <div class="steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <h3>Créez un profil</h3>
+              <p>Renseignez l’âge, le contexte et les jalons.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <h3>Ajoutez des mesures</h3>
+              <p>Suivez taille, poids, sommeil et petites dents.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <h3>Obtenez des conseils</h3>
+              <p>Posez vos questions à l’IA et échangez.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Ils en parlent</h2>
+          <p class="section-subtitle">Des retours de parents qui utilisent Ped’IA au quotidien.</p>
+          <div class="testimonials">
+            <div class="testimonial">
+              <p>“Interface douce et hyper claire — on se sent accompagnés.”</p>
+              <div class="who">Léa, maman de Zoé (2 ans)</div>
+            </div>
+            <div class="testimonial">
+              <p>“Les courbes et badges motivent vraiment à suivre l’évolution.”</p>
+              <div class="who">Karim, papa de Nino (4 ans)</div>
+            </div>
+            <div class="testimonial">
+              <p>“L’IA rassure, et rappelle quand consulter si besoin.”</p>
+              <div class="who">Pauline, maman de Lucas (8 mois)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">FAQ</h2>
+          <p class="section-subtitle">Les réponses aux questions les plus fréquentes.</p>
+          <div class="faq">
+            <details class="faq-item"><summary>Mes données sont‑elles privées ?</summary><p>Oui. Par défaut, tout est stocké localement dans votre navigateur. Vous pouvez exporter/supprimer vos données à tout moment.</p></details>
+            <details class="faq-item"><summary>Ped’IA donne‑t‑il des diagnostics ?</summary><p>Non. Les conseils sont indicatifs et ne remplacent pas un avis médical.</p></details>
+            <details class="faq-item"><summary>Puis‑je suivre plusieurs enfants ?</summary><p>Oui, ajoutez autant de profils que nécessaire dans Paramètres.</p></details>
+          </div>
+        </div>
+
+        <div class="cta-banner">
+          <div class="cta-inner">
+            <h3>Prêt·e à commencer ?</h3>
+            <p>Créez un profil en 1 minute et suivez les premières étapes.</p>
+            <a class="btn btn-primary" href="#/signup">Créer un compte</a>
           </div>
         </div>
       </section>
 
       <!-- Auth: Connexion / Création de compte -->
       <section data-route="/signup" class="route">
-        <h2>Créer un compte</h2>
+        <div class="page-header">
+          <h2>Créer un compte</h2>
+          <p class="page-subtitle">Rejoignez Ped’IA et démarrez votre suivi en toute simplicité.</p>
+        </div>
         <form id="form-signup" class="card form-grid" autocomplete="on">
           <label>Email<input type="email" name="email" required /></label>
           <label>Mot de passe<input type="password" name="password" minlength="6" required /></label>
@@ -74,7 +181,10 @@
       </section>
 
       <section data-route="/login" class="route">
-        <h2>Se connecter</h2>
+        <div class="page-header">
+          <h2>Se connecter</h2>
+          <p class="page-subtitle">Retrouvez vos données locales et vos outils.</p>
+        </div>
         <form id="form-login" class="card form-grid" autocomplete="on">
           <label>Email<input type="email" name="email" required /></label>
           <label>Mot de passe<input type="password" name="password" minlength="6" required /></label>
@@ -85,7 +195,10 @@
 
       <!-- Onboarding enfant -->
       <section data-route="/onboarding" class="route">
-        <h2>Créer le profil de l’enfant</h2>
+        <div class="page-header">
+          <h2>Créer le profil de l’enfant</h2>
+          <p class="page-subtitle">Renseignez les informations clés pour des conseils adaptés.</p>
+        </div>
         <form id="form-child" class="card form-grid" autocomplete="on">
           <h3>Informations de base</h3>
           <label>Prénom<input type="text" name="firstName" required /></label>
@@ -115,14 +228,21 @@
 
       <!-- Dashboard -->
       <section data-route="/dashboard" class="route">
+        <div class="page-header">
+          <h2>Dashboard</h2>
+          <p class="page-subtitle">Vue d’ensemble du profil et du suivi.</p>
+        </div>
         <div id="dashboard-content"></div>
       </section>
 
       <!-- Communauté -->
       <section data-route="/community" class="route">
-        <div class="flex-between">
+        <div class="page-header">
           <h2>Communauté</h2>
-          <button id="btn-new-topic" class="btn btn-primary">Nouveau sujet</button>
+          <p class="page-subtitle">Échangez conseils et expériences avec d’autres parents.</p>
+          <div class="page-actions">
+            <button id="btn-new-topic" class="btn btn-primary">Nouveau sujet</button>
+          </div>
         </div>
         <div id="forum-list" class="stack"></div>
         <dialog id="dialog-topic" class="dialog">
@@ -140,14 +260,61 @@
 
       <!-- Comparateur -->
       <section data-route="/compare" class="route">
-        <h2>Comparateur</h2>
-        <p class="muted">Comparaison indicative avec référentiels OMS et moyenne communauté.</p>
+        <div class="page-header">
+          <h2>Comparateur</h2>
+          <p class="page-subtitle">Comparez avec les repères OMS et les tendances de la communauté.</p>
+        </div>
         <div id="compare-content" class="stack"></div>
+      </section>
+
+      <!-- À propos -->
+      <section data-route="/about" class="route">
+        <div class="stack">
+          <div class="page-header">
+            <h2>À propos de Ped’IA</h2>
+            <p class="page-subtitle">Notre mission: un accompagnement bienveillant et clair pour les parents.</p>
+          </div>
+          <div class="card stack">
+            <p>Ped’IA est un projet qui vise à offrir aux parents un espace simple, beau et utile pour suivre l’évolution des enfants de 0 à 7 ans.</p>
+            <p>Notre approche : sobriété, bienveillance et respect des données. Nous combinons des repères publics (OMS) et un assistant IA pour vous guider, sans jamais remplacer les professionnels de santé.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Contact -->
+      <section data-route="/contact" class="route">
+        <div class="page-header">
+          <h2>Contact</h2>
+          <p class="page-subtitle">Une question, une idée ? Écrivez‑nous.</p>
+        </div>
+        <form id="form-contact" class="card form-grid">
+          <label>Votre email<input type="email" name="email" required /></label>
+          <label>Objet<input type="text" name="subject" required /></label>
+          <label>Message<textarea name="message" rows="5" required></textarea></label>
+          <button type="submit" class="btn btn-primary">Envoyer</button>
+          <p class="muted">Nous enregistrons votre message localement (démo) — aucune donnée transmise.</p>
+          <div id="contact-status" class="muted"></div>
+        </form>
+      </section>
+
+      <!-- Mentions & confidentialité -->
+      <section data-route="/legal" class="route">
+        <div class="page-header">
+          <h2>Mentions légales & Confidentialité</h2>
+          <p class="page-subtitle">Rappels importants et traitement des données.</p>
+        </div>
+        <div class="card stack">
+          <p>Ped’IA n’est pas un dispositif médical. Les informations fournies sont indicatives et ne remplacent pas l’avis d’un professionnel de santé.</p>
+          <p>Vos données demeurent sur votre appareil, sauf si vous les exportez volontairement. En cas de publication dans la communauté, évitez toute donnée sensible.</p>
+        </div>
       </section>
 
       <!-- Paramètres -->
       <section data-route="/settings" class="route">
-        <h2>Paramètres</h2>
+        <div class="page-header">
+          <h2>Paramètres</h2>
+          <p class="page-subtitle">Profil, confidentialité et gestion multi‑enfants.</p>
+        </div>
         <div class="grid-2">
           <form id="form-settings" class="card form-grid">
             <h3>Profil parent</h3>
@@ -187,8 +354,41 @@
 
     <footer class="site-footer">
       <div class="container">
-        <p class="muted">Ped’IA n’est pas un dispositif médical. Informations à titre indicatif.</p>
+        <div class="footer-grid">
+          <div class="f-brand">
+            <a class="brand" href="#/">
+              <span class="logo">🤖👶</span>
+              <span class="brand-text">Ped’IA</span>
+            </a>
+            <p class="f-tag">Le copilote parental 0–7 ans: courbes, jalons, sommeil et conseils IA dans une interface apaisée.</p>
+          </div>
+          <div class="f-col">
+            <div class="f-title">Produit</div>
+            <a class="f-link" href="#/">Accueil</a>
+            <a class="f-link" href="#/dashboard">Dashboard</a>
+            <a class="f-link" href="#/compare">Comparateur</a>
+            <a class="f-link" href="#/community">Communauté</a>
+          </div>
+          <div class="f-col">
+            <div class="f-title">Ressources</div>
+            <a class="f-link" href="#/about">À propos</a>
+            <a class="f-link" href="#/contact">Contact</a>
+            <a class="f-link" href="#/">FAQ</a>
+          </div>
+          <div class="f-col">
+            <div class="f-title">Légal</div>
+            <a class="f-link" href="#/legal">Mentions légales</a>
+            <a class="f-link" href="#/legal">Confidentialité</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div class="fb-left">© <span id="y"></span> Ped’IA</div>
+          <div class="fb-right">
+            <span class="fb-note">Infos indicatives, pas de conseil médical</span>
+          </div>
+        </div>
       </div>
+      <script>document.getElementById('y').textContent = new Date().getFullYear();</script>
     </footer>
 
     <script src="assets/app.js"></script>

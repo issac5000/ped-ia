@@ -3,7 +3,10 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  const routes = ["/", "/signup", "/login", "/onboarding", "/dashboard", "/community", "/compare", "/settings"];
+  const routes = [
+    "/", "/signup", "/login", "/onboarding", "/dashboard",
+    "/community", "/compare", "/settings", "/about", "/contact", "/legal"
+  ];
 
   const store = {
     get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
@@ -17,7 +20,8 @@
     children: 'pedia_children',
     forum: 'pedia_forum',
     privacy: 'pedia_privacy',
-    session: 'pedia_session'
+    session: 'pedia_session',
+    messages: 'pedia_messages'
   };
 
   // Bootstrap defaults
@@ -35,6 +39,7 @@
     const route = $(`section[data-route="${path}"]`);
     if (route) route.classList.add('active');
     updateHeaderAuth();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     // Guard routes
     const session = store.get(K.session);
     const authed = !!session?.loggedIn;
@@ -49,9 +54,30 @@
     if (path === '/community') renderCommunity();
     if (path === '/compare') renderCompare();
     if (path === '/settings') renderSettings();
+    if (path === '/contact') setupContact();
+    // prepare and trigger scroll-based reveals
+    setTimeout(setupScrollAnimations, 0);
   }
 
   window.addEventListener('hashchange', () => setActiveRoute(location.hash));
+  // Close mobile menu on route change
+  window.addEventListener('hashchange', () => {
+    const nav = document.getElementById('main-nav');
+    const btn = document.getElementById('nav-toggle');
+    if (nav) nav.classList.remove('open');
+    if (btn) btn.setAttribute('aria-expanded','false');
+    const bd = document.getElementById('nav-backdrop');
+    bd?.classList.remove('open');
+  });
+
+  // On resize to desktop, ensure menu closed
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 900) {
+      mainNav?.classList.remove('open');
+      navBtn?.setAttribute('aria-expanded','false');
+      navBackdrop?.classList.remove('open');
+    }
+  });
 
   // Header auth buttons
   function updateHeaderAuth() {
@@ -61,6 +87,31 @@
   }
   $('#btn-login').addEventListener('click', () => { location.hash = '#/login'; });
   $('#btn-logout').addEventListener('click', () => { logout(); });
+
+  // Mobile nav toggle
+  const navBtn = document.getElementById('nav-toggle');
+  const mainNav = document.getElementById('main-nav');
+  const navBackdrop = document.getElementById('nav-backdrop');
+  navBtn?.addEventListener('click', () => {
+    const isOpen = mainNav?.classList.toggle('open');
+    navBtn.setAttribute('aria-expanded', String(!!isOpen));
+    if (isOpen) navBackdrop?.classList.add('open'); else navBackdrop?.classList.remove('open');
+  });
+  // Close menu when clicking a link (mobile)
+  $$('.main-nav .nav-link').forEach(a => a.addEventListener('click', () => {
+    if (mainNav?.classList.contains('open')) {
+      mainNav.classList.remove('open');
+      navBtn?.setAttribute('aria-expanded','false');
+      navBackdrop?.classList.remove('open');
+    }
+  }));
+
+  // Close when tapping backdrop
+  navBackdrop?.addEventListener('click', () => {
+    mainNav?.classList.remove('open');
+    navBtn?.setAttribute('aria-expanded','false');
+    navBackdrop?.classList.remove('open');
+  });
 
   // Auth flows
   $('#form-signup')?.addEventListener('submit', (e) => {
@@ -99,6 +150,28 @@
     alert('Déconnecté.');
     updateHeaderAuth();
     location.hash = '#/login';
+  }
+
+  // Contact (demo: save locally)
+  function setupContact(){
+    const form = $('#form-contact');
+    const status = $('#contact-status');
+    if (!form) return;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const entry = {
+        email: fd.get('email').toString(),
+        subject: fd.get('subject').toString(),
+        message: fd.get('message').toString(),
+        createdAt: Date.now()
+      };
+      const msgs = store.get(K.messages, []);
+      msgs.push(entry);
+      store.set(K.messages, msgs);
+      form.reset();
+      if (status) status.textContent = 'Merci ! Votre message a été enregistré (démo locale).';
+    }, { once: true });
   }
 
   // Onboarding
@@ -754,5 +827,42 @@
     if (!res.ok) throw new Error('AI backend error');
     const data = await res.json();
     return data.text || 'Aucune réponse.';
+  }
+
+  // Reveal on scroll animations
+  let revealObserver;
+  function setupScrollAnimations(){
+    try { revealObserver?.disconnect(); } catch {}
+    const root = document.querySelector('.route.active') || document;
+    const targets = [
+      ...$$('.card', root),
+      ...$$('.feature', root),
+      ...$$('.step', root),
+      ...$$('.testimonial', root),
+      ...$$('.faq-item', root),
+      ...$$('.pillar', root),
+      ...$$('.chart-card', root)
+    ];
+    targets.forEach((el, i) => {
+      if (!el.classList.contains('reveal')) {
+        el.classList.add('reveal');
+        if (el.classList.contains('feature') || el.classList.contains('step')) el.classList.add('fade-right');
+        el.setAttribute('data-delay', String(Math.min(4, (i % 5))));
+      }
+    });
+    revealObserver = new IntersectionObserver((entries) => {
+      for (const e of entries){
+        if (e.isIntersecting) e.target.classList.add('in-view');
+        else e.target.classList.remove('in-view');
+      }
+    }, { threshold: 0.01, rootMargin: '0px 0px -10% 0px' });
+    targets.forEach(t => revealObserver.observe(t));
+    // ensure above-the-fold elements are visible immediately
+    targets.forEach(t => {
+      const r = t.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      if (r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0) t.classList.add('in-view');
+    });
   }
 })();
