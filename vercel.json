@@ -1,8 +1,8 @@
 {
   "version": 2,
   "functions": {
-    "api/ai/advice.js": {
-      "runtime": "nodejs18.x",
+    "api/**/*.js": {
+      "runtime": "nodejs20.x",
       "memory": 256,
       "maxDuration": 15
     }
