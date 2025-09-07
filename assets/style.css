@@ -90,10 +90,10 @@ body::before{
 .hero-stats .stat{display:grid; gap:2px; padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:rgba(255,255,255,.06); backdrop-filter:blur(8px)}
 .hero-stats .stat strong{font-size:14px}
 .hero-stats .stat span{font-size:12px; color:var(--muted)}
-.hero-visual{position:relative; min-height:320px; display:grid; place-items:center}
+.hero-visual{position:relative; display:block; aspect-ratio:4/3; overflow:hidden; border-radius:22px; border:1px solid rgba(255,255,255,.22); box-shadow:0 24px 60px rgba(0,0,0,.45)}
 
 /* Hero image (famille.png) */
-.hero-image{width:min(560px, 92%); height:auto; display:block; border-radius:22px; opacity:.58; border:1px solid rgba(255,255,255,.22); box-shadow:0 24px 60px rgba(0,0,0,.45); filter:saturate(.9) brightness(.95)}
+.hero-image{display:block; width:100%; height:100%; object-fit:cover; opacity:.58; filter:saturate(.9) brightness(.95)}
 .hero-image:hover{opacity:.82}
 
 .mockup{position:relative; width:min(520px, 92%); border-radius:20px; padding:12px; background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06)); border:1px solid rgba(255,255,255,.25); box-shadow:0 20px 50px rgba(0,0,0,.45); backdrop-filter:blur(14px) saturate(150%)}
@@ -237,8 +237,12 @@ input[type="file"]{padding:8px}
   .main-nav .nav-link{display:block; padding:12px; border-radius:12px}
   .main-nav .nav-link:hover{background:rgba(255,255,255,.06)}
   .auth-actions{gap:6px}
-  .hero-content{grid-template-columns:1fr}
-  .hero-visual{display:none}
+  .hero-content{grid-template-columns:1fr; position:relative}
+  .hero-visual{display:block; position:relative; margin-top:0; height:62vh; border-radius:16px; overflow:hidden}
+  .hero-visual::after{content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(11,15,31,.55), rgba(11,15,31,.25) 40%, rgba(11,15,31,.65));}
+  .hero-copy{position:absolute; inset:0; z-index:2; display:grid; gap:10px; align-content:center; justify-items:center; padding:16px; text-align:center}
   .hero-actions .btn{width:100%}
+  .hero-image{width:100%; height:100%; max-width:none; max-height:none; object-fit:cover; border-radius:16px}
+  .hero-stats{display:none}
   .chart{height:200px}
 }
