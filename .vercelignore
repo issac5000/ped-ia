@@ -1,0 +1,3 @@
+# Exclude local dev server from Vercel deployments
+api/server.js
+

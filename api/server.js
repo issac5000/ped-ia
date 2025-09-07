@@ -24,7 +24,15 @@ const MIME = {
 };
 
 function send(res, status, body, headers={}) {
-  const h = { 'Access-Control-Allow-Origin': '*', ...headers };
+  const security = {
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=()',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+  };
+  const h = { 'Access-Control-Allow-Origin': '*', ...security, ...headers };
   res.writeHead(status, h);
   res.end(body);
 }
@@ -40,7 +48,8 @@ async function handleStatic(req, res) {
     if (st.isDirectory()) return send(res, 404, 'Not Found');
     const ext = extname(filePath);
     const data = await readFile(filePath);
-    send(res, 200, data, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const cc = ext === '.html' ? 'no-store' : 'public, max-age=604800';
+    send(res, 200, data, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cc });
   } catch {
     send(res, 404, 'Not Found');
   }
@@ -131,4 +140,3 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Ped’IA server on http://localhost:${PORT}`);
 });
-
