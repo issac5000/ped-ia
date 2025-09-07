@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ped’IA — Suivi & évolution 0–7 ans</title>
+    <meta name="description" content="Ped’IA: Suivi du développement 0–7 ans, conseils IA et communauté pour parents." />
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="#/">
+          <span class="logo">🤖👶</span>
+          <span class="brand-text">Ped’IA</span>
+        </a>
+        <nav class="main-nav" aria-label="Navigation principale">
+          <a href="#/dashboard" class="nav-link">Dashboard</a>
+          <a href="#/community" class="nav-link">Communauté</a>
+          <a href="#/compare" class="nav-link">Comparateur</a>
+          <a href="#/settings" class="nav-link">Paramètres</a>
+        </nav>
+        <div class="auth-actions">
+          <button id="btn-login" class="btn btn-secondary">Se connecter</button>
+          <button id="btn-logout" class="btn btn-secondary" hidden>Se déconnecter</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="app" class="container">
+      <!-- Accueil -->
+      <section data-route="/" class="route">
+        <div class="hero">
+          <h1>Suivi & évolution 0–7 ans, boosté à l’IA</h1>
+          <p class="lead">Un compagnon parental digital pour suivre, comprendre et partager.</p>
+          <div class="hero-actions">
+            <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
+          </div>
+          <div class="pillars">
+            <div class="pillar">
+              <div class="pillar-icon">📈</div>
+              <h3>Suivi santé</h3>
+              <p>Courbes de croissance, sommeil, dents et exploits.</p>
+            </div>
+            <div class="pillar">
+              <div class="pillar-icon">🧠</div>
+              <h3>Outils IA</h3>
+              <p>Conseils personnalisés selon l’âge et le contexte.</p>
+            </div>
+            <div class="pillar">
+              <div class="pillar-icon">👨‍👩‍👧‍👦</div>
+              <h3>Communauté</h3>
+              <p>Échangez avec d’autres parents, partagez vos astuces.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Auth: Connexion / Création de compte -->
+      <section data-route="/signup" class="route">
+        <h2>Créer un compte</h2>
+        <form id="form-signup" class="card form-grid" autocomplete="on">
+          <label>Email<input type="email" name="email" required /></label>
+          <label>Mot de passe<input type="password" name="password" minlength="6" required /></label>
+          <label>Rôle public
+            <select name="role" required>
+              <option value="maman">Maman</option>
+              <option value="papa">Papa</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" type="submit">Créer mon compte</button>
+          <p class="muted">Déjà un compte ? <a href="#/login">Se connecter</a></p>
+        </form>
+      </section>
+
+      <section data-route="/login" class="route">
+        <h2>Se connecter</h2>
+        <form id="form-login" class="card form-grid" autocomplete="on">
+          <label>Email<input type="email" name="email" required /></label>
+          <label>Mot de passe<input type="password" name="password" minlength="6" required /></label>
+          <button class="btn btn-primary" type="submit">Connexion</button>
+          <p class="muted">Pas encore de compte ? <a href="#/signup">Créer un compte</a></p>
+        </form>
+      </section>
+
+      <!-- Onboarding enfant -->
+      <section data-route="/onboarding" class="route">
+        <h2>Créer le profil de l’enfant</h2>
+        <form id="form-child" class="card form-grid" autocomplete="on">
+          <h3>Informations de base</h3>
+          <label>Prénom<input type="text" name="firstName" required /></label>
+          <label>Sexe
+            <select name="sex" required>
+              <option value="fille">Fille</option>
+              <option value="garçon">Garçon</option>
+            </select>
+          </label>
+          <label>Date de naissance<input type="date" name="dob" required /></label>
+          <label>Taille (cm)<input type="number" step="0.1" name="height" /></label>
+          <label>Poids (kg)<input type="number" step="0.01" name="weight" /></label>
+          <label>Photo/avatar<input type="file" name="photo" accept="image/*" /></label>
+
+          <h3>Contexte</h3>
+          <label>Allergies<input type="text" name="allergies" placeholder="Arachides, pollen…" /></label>
+          <label>Antécédents<input type="text" name="history" placeholder="Familiaux, médicaux…" /></label>
+          <label>Mode de garde<input type="text" name="care" placeholder="Crèche, nounou, maison…" /></label>
+          <label>Langues parlées<input type="text" name="languages" placeholder="Français, anglais…" /></label>
+
+          <h3>Questionnaire développement (10)</h3>
+          <div class="qgrid" id="dev-questions"></div>
+
+          <button type="submit" class="btn btn-primary">Enregistrer le profil</button>
+        </form>
+      </section>
+
+      <!-- Dashboard -->
+      <section data-route="/dashboard" class="route">
+        <div id="dashboard-content"></div>
+      </section>
+
+      <!-- Communauté -->
+      <section data-route="/community" class="route">
+        <div class="flex-between">
+          <h2>Communauté</h2>
+          <button id="btn-new-topic" class="btn btn-primary">Nouveau sujet</button>
+        </div>
+        <div id="forum-list" class="stack"></div>
+        <dialog id="dialog-topic" class="dialog">
+          <form method="dialog" id="form-topic" class="form-grid">
+            <h3>Nouveau sujet</h3>
+            <label>Titre<input name="title" required /></label>
+            <label>Message<textarea name="content" rows="4" required></textarea></label>
+            <menu class="dialog-actions">
+              <button value="cancel" class="btn btn-secondary">Annuler</button>
+              <button value="submit" class="btn btn-primary">Publier</button>
+            </menu>
+          </form>
+        </dialog>
+      </section>
+
+      <!-- Comparateur -->
+      <section data-route="/compare" class="route">
+        <h2>Comparateur</h2>
+        <p class="muted">Comparaison indicative avec référentiels OMS et moyenne communauté.</p>
+        <div id="compare-content" class="stack"></div>
+      </section>
+
+      <!-- Paramètres -->
+      <section data-route="/settings" class="route">
+        <h2>Paramètres</h2>
+        <div class="grid-2">
+          <form id="form-settings" class="card form-grid">
+            <h3>Profil parent</h3>
+            <label>Rôle affiché
+              <select name="role">
+                <option value="maman">Maman</option>
+                <option value="papa">Papa</option>
+              </select>
+            </label>
+            <h3>Confidentialité</h3>
+            <label class="switch">
+              <input type="checkbox" name="showStats" />
+              <span>Afficher stats dans la communauté</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" name="allowMessages" />
+              <span>Autoriser réponses à mes sujets</span>
+            </label>
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+          </form>
+
+          <div class="card stack">
+            <h3>Gestion multi‑enfants</h3>
+            <div id="children-list" class="stack"></div>
+            <a class="btn btn-secondary" href="#/onboarding">Ajouter un profil enfant</a>
+            <h3>Export & compte</h3>
+            <div class="hstack">
+              <button id="btn-export" class="btn btn-secondary">Exporter (JSON)</button>
+              <input id="input-import" type="file" accept="application/json" class="hidden" />
+              <button id="btn-import" class="btn btn-secondary">Importer (JSON)</button>
+              <button id="btn-delete-account" class="btn btn-danger">Supprimer le compte</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p class="muted">Ped’IA n’est pas un dispositif médical. Informations à titre indicatif.</p>
+      </div>
+    </footer>
+
+    <script src="assets/app.js"></script>
+  </body>
+  </html>

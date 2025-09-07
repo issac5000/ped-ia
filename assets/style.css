@@ -1,0 +1,95 @@
+:root{
+  --violet:#6c4bf4; /* primary */
+  --turquoise:#00c2b2; /* accent */
+  --orange:#ff8a3d; /* accent 2 */
+  --bg:#0f1220;
+  --panel:#151935;
+  --muted:#aab0c0;
+  --text:#eef0f7;
+  --danger:#ef476f;
+  --ok:#2dc07a;
+  --shadow:0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
+  background:linear-gradient(180deg,#0f1220 0%, #0f1220 60%, #101738 100%);
+  color:var(--text); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+}
+.container{width:min(1100px,92%); margin-inline:auto}
+.site-header{position:sticky; top:0; background:rgba(15,18,32,.7); backdrop-filter:blur(8px); border-bottom:1px solid #222644; z-index:10}
+.header-inner{display:flex; align-items:center; justify-content:space-between; padding:12px 0}
+.brand{display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--text)}
+.logo{font-size:22px}
+.brand-text{font-weight:800; letter-spacing:.3px}
+.main-nav{display:flex; gap:12px}
+.main-nav .nav-link{padding:8px 12px; border-radius:10px; text-decoration:none; color:var(--text); opacity:.9}
+.main-nav .nav-link:hover{background:#1a1f43}
+.auth-actions{display:flex; gap:8px}
+
+.site-footer{border-top:1px solid #222644; margin-top:48px}
+.site-footer .container{padding:18px 0}
+
+.hero{padding:48px 0 24px}
+.hero h1{font-size:clamp(24px, 4vw, 40px); margin:0 0 6px}
+.lead{color:var(--muted); margin:0 0 16px}
+.hero-actions{display:flex; gap:12px; align-items:center}
+.pillars{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:20px}
+.pillar{background:linear-gradient(180deg,#171e49,#141a3e); border:1px solid #232a57; border-radius:16px; padding:16px; box-shadow:var(--shadow)}
+.pillar h3{margin:6px 0 6px}
+.pillar .pillar-icon{font-size:24px}
+
+.btn{cursor:pointer; border:none; border-radius:12px; padding:10px 14px; font-weight:600}
+.btn-primary{background:linear-gradient(90deg,var(--violet), #7d63ff); color:white}
+.btn-secondary{background:#1b2042; color:white; border:1px solid #2a3161}
+.btn-danger{background:linear-gradient(90deg,#b43b57,#ef476f); color:white}
+.btn:disabled{opacity:.6; cursor:not-allowed}
+
+.card{background:linear-gradient(180deg,#141a34,#121733); border:1px solid #232a57; border-radius:16px; padding:16px; box-shadow:var(--shadow)}
+.stack{display:grid; gap:12px}
+.hstack{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+.flex-between{display:flex; justify-content:space-between; align-items:center; gap:12px}
+
+.form-grid{display:grid; gap:12px}
+label{display:grid; gap:6px; font-size:14px}
+input, select, textarea{width:100%; background:#101437; border:1px solid #25306b; color:var(--text); padding:10px 12px; border-radius:12px; outline:none}
+input[type="file"]{padding:8px}
+.switch{display:flex; align-items:center; gap:10px}
+.muted{color:var(--muted)}
+
+.grid-2{display:grid; gap:12px; grid-template-columns:1fr;}
+@media(min-width:900px){.grid-2{grid-template-columns:1.2fr .8fr}}
+
+.route{display:none; padding:24px 0}
+.route.active{display:block}
+
+.chip{display:inline-flex; align-items:center; gap:6px; border:1px solid #2a3161; background:#171d44; padding:6px 10px; border-radius:999px; font-size:12px}
+
+.qgrid{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:10px}
+.qitem{border:1px solid #263169; background:#141a3f; border-radius:12px; padding:12px; display:grid; gap:8px}
+.qitem .qtitle{font-weight:600}
+
+.badge{display:inline-block; background:#1b2042; border:1px solid #2a3161; padding:6px 10px; border-radius:10px; font-size:12px}
+
+/* Forum */
+.topic{border:1px solid #263169; background:#151a40; border-radius:12px; padding:12px}
+.reply{border-left:3px solid #2a3161; margin-left:8px; padding-left:10px; opacity:.9}
+
+/* Dialog */
+.dialog{border:none; border-radius:16px; padding:0; max-width:min(640px, 92%);}
+.dialog::backdrop{background:rgba(0,0,0,.5)}
+.dialog .form-grid{padding:16px}
+.dialog-actions{display:flex; gap:10px; justify-content:flex-end; padding:8px 0 0}
+
+/* Charts */
+.chart-card{padding:0}
+.chart-header{display:flex; justify-content:space-between; align-items:center; padding:12px 12px 0}
+.chart-legend{display:flex; gap:10px}
+.legend-item{display:flex; align-items:center; gap:6px; font-size:12px}
+.legend-dot{width:10px; height:10px; border-radius:50%}
+.chart{display:block; width:100%; height:240px}
+
+/* Utilities */
+.hidden{display:none !important}
+
