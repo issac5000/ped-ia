@@ -1082,6 +1082,8 @@
   bootstrap();
   if (!location.hash) location.hash = '#/';
   setActiveRoute(location.hash);
+  // Footer year (replaces inline script to satisfy CSP)
+  try { document.getElementById('y')?.textContent = String(new Date().getFullYear()); } catch {}
 
   // --- AI request helper ---
   async function askAI(question, child){
