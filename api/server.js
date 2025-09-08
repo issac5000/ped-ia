@@ -82,12 +82,17 @@ async function aiAdvice(body) {
   if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
   const question = String(body.question || '').slice(0, 2000);
   const child = safeChildSummary(body.child);
+  const history = Array.isArray(body.history) ? body.history.slice(-20) : [];
   const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
 Réponds de manière bienveillante, concrète et structurée en puces.
 Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
 Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.
 Toujours rappeler: "Information indicative — ne remplace pas un avis médical."`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
+  const convo = [{ role:'system', content: system },
+    ...history.filter(m=>m && (m.role==='user' || m.role==='assistant') && typeof m.content==='string').map(m=>({ role:m.role, content: m.content.slice(0,2000) })),
+    { role:'user', content: user }
+  ];
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -95,14 +100,7 @@ Toujours rappeler: "Information indicative — ne remplace pas un avis médical.
       'Authorization': `Bearer ${API_KEY}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      temperature: 0.4,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ]
-    })
+    body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.4, messages: convo })
   });
   if (!res.ok) {
     const t = await res.text();

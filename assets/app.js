@@ -249,10 +249,65 @@
 
   // --- AI page handlers ---
   function setupAIPage(){
-    const session = store.get(K.session);
-    const user = store.get(K.user);
-    const children = store.get(K.children, []);
-    const child = children.find(c => c.id === user?.primaryChildId) || children[0];
+    // Resolve current child from Supabase if connected, else from local store
+    let currentChild = null;
+    const mapRowToChild = (r) => ({
+      id: r.id,
+      firstName: r.first_name,
+      sex: r.sex,
+      dob: r.dob,
+      photo: r.photo_url,
+      context: {
+        allergies: r.context_allergies,
+        history: r.context_history,
+        care: r.context_care,
+        languages: r.context_languages,
+        feedingType: r.feeding_type,
+        eatingStyle: r.eating_style,
+        sleep: {
+          falling: r.sleep_falling,
+          sleepsThrough: r.sleep_sleeps_through,
+          nightWakings: r.sleep_night_wakings,
+          wakeDuration: r.sleep_wake_duration,
+          bedtime: r.sleep_bedtime,
+        },
+      },
+      milestones: Array.isArray(r.milestones) ? r.milestones : [],
+      growth: { measurements: [], sleep: [], teeth: [] }
+    });
+
+    const loadChild = async () => {
+      if (useRemote()) {
+        try {
+          const uid = authSession.user.id;
+          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+          const r = (rows||[]).find(x=>x.is_primary) || (rows||[])[0];
+          if (r) {
+            const child = mapRowToChild(r);
+            try {
+              const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
+                supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', r.id),
+                supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
+                supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
+              ]);
+              (gm||[]).forEach(m=>{
+                if (Number.isFinite(m.height_cm)) child.growth.measurements.push({ month: m.month, height: m.height_cm });
+                if (Number.isFinite(m.weight_kg)) child.growth.measurements.push({ month: m.month, weight: m.weight_kg });
+              });
+              (gs||[]).forEach(s=> child.growth.sleep.push({ month: s.month, hours: s.hours }));
+              (gt||[]).forEach(t=> child.growth.teeth.push({ month: t.month, count: t.count }));
+            } catch {}
+            return child;
+          }
+        } catch {}
+      } else {
+        const user = store.get(K.user);
+        const children = store.get(K.children, []);
+        const c = children.find(c => c.id === user?.primaryChildId) || children[0];
+        if (c) return c;
+      }
+      return null;
+    };
 
     // Recipes
     const fRecipes = document.getElementById('form-ai-recipes');
@@ -260,11 +315,11 @@
     const outRecipes = document.getElementById('ai-recipes-result');
     fRecipes?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!child) { outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>'; return; }
+      if (!currentChild) { outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>'; return; }
       const prefs = new FormData(fRecipes).get('prefs')?.toString() || '';
       sRecipes.textContent = 'Génération en cours…'; outRecipes.innerHTML='';
       try {
-        const text = await askAIRecipes(child, prefs);
+        const text = await askAIRecipes(currentChild, prefs);
         outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
       } catch (err){
         outRecipes.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
@@ -277,14 +332,14 @@
     const outStory = document.getElementById('ai-story-result');
     fStory?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!child) { outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>'; return; }
+      if (!currentChild) { outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>'; return; }
       const fd = new FormData(fStory);
       const theme = fd.get('theme')?.toString() || '';
       const duration = parseInt(fd.get('duration')?.toString() || '3');
       const sleepy = !!fd.get('sleepy');
       sStory.textContent = 'Génération en cours…'; outStory.innerHTML='';
       try {
-        const text = await askAIStory(child, { theme, duration, sleepy });
+        const text = await askAIStory(currentChild, { theme, duration, sleepy });
         outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
       } catch (err){
         outStory.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
@@ -295,18 +350,69 @@
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');
     const outChat = document.getElementById('ai-chat-result');
+    // Add reset button to chat toolbar
+    try {
+      const toolbar = fChat?.querySelector('.hstack') || fChat;
+      if (toolbar && !document.getElementById('ai-chat-reset')) {
+        const btnReset = document.createElement('button');
+        btnReset.type = 'button';
+        btnReset.id = 'ai-chat-reset';
+        btnReset.className = 'btn btn-secondary';
+        btnReset.textContent = 'Réinitialiser la discussion';
+        toolbar.appendChild(btnReset);
+        btnReset.addEventListener('click', (e) => {
+          e.preventDefault();
+          const key = chatKey(currentChild);
+          try { localStorage.removeItem(key); } catch {}
+          renderChat([]);
+          sChat.textContent = '';
+        });
+      }
+    } catch {}
     fChat?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const q = new FormData(fChat).get('q')?.toString().trim();
       if (!q) return;
       sChat.textContent = 'Réflexion en cours…'; outChat.innerHTML='';
       try {
-        const text = await askAI(q, child);
-        outChat.innerHTML = `<div>${text.replace(/\n/g,'<br/>')}</div>`;
+        const history = loadChat(currentChild);
+        history.push({ role:'user', content:q });
+        const text = await askAI(q, currentChild, history);
+        history.push({ role:'assistant', content:text });
+        saveChat(currentChild, history);
+        renderChat(history);
       } catch (err){
         outChat.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
       } finally { sChat.textContent=''; }
     });
+
+    // Load child asynchronously for IA personalization
+    const renderIndicator = (child) => {
+      const route = document.querySelector('section[data-route="/ai"]');
+      if (!route) return;
+      let box = document.getElementById('ai-profile-indicator');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'ai-profile-indicator';
+        box.className = 'card stack';
+        route.insertBefore(box, route.firstElementChild?.nextElementSibling || route.firstChild);
+      }
+      if (!child) {
+        box.innerHTML = `<div class="muted">Aucun profil enfant chargé pour l’IA. <a href="#/onboarding">Créer un profil</a>.</div>`;
+        return;
+      }
+      const ageTxt = formatAge(child.dob);
+      box.innerHTML = `
+        <div class="hstack">
+          <strong>Profil IA:</strong>
+          <span class="chip">${escapeHtml(child.firstName)} • ${ageTxt}</span>
+          <span class="chip">Allergies: ${escapeHtml(child.context.allergies||'—')}</span>
+          <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
+          <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
+        </div>`;
+    };
+
+    (async () => { currentChild = await loadChild(); renderIndicator(currentChild); renderChat(loadChat(currentChild)); })();
   }
 
   // Onboarding
@@ -1441,8 +1547,8 @@
   } catch {}
 
   // --- AI request helper ---
-  async function askAI(question, child){
-    const payload = { question, child };
+  async function askAI(question, child, history){
+    const payload = { question, child, history };
     const res = await fetch('/api/ai/advice', {
       method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
     });
@@ -1504,6 +1610,16 @@
       const r = t.getBoundingClientRect();
       const vh = window.innerHeight || document.documentElement.clientHeight;
       const vw = window.innerWidth || document.documentElement.clientWidth;
+    // Chat history helpers (local, per child)
+    const chatKey = (c) => `pedia_ai_chat_${c?.id||'anon'}`;
+    const loadChat = (c) => {
+      try { return JSON.parse(localStorage.getItem(chatKey(c))||'[]'); } catch { return []; }
+    };
+    const saveChat = (c, arr) => { try { localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20))); } catch {} };
+    const renderChat = (arr) => {
+      if (!outChat) return;
+      outChat.innerHTML = arr.map(m=>`<div class="${m.role==='user'?'':'card'}"><div class="muted">${m.role==='user'?'Vous':'Assistant'}</div><div>${escapeHtml(m.content).replace(/\n/g,'<br/>')}</div></div>`).join('');
+    };
       if (r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0) t.classList.add('in-view');
     });
   }

@@ -21,6 +21,7 @@ export default async function handler(req, res) {
     const body = JSON.parse(raw || '{}');
     const question = String(body.question || '').slice(0, 2000);
     const child = safeChildSummary(body.child);
+    const history = Array.isArray(body.history) ? body.history.slice(-20) : [];
 
     const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
 Réponds de manière bienveillante, concrète et structurée en puces.
@@ -40,6 +41,7 @@ Toujours rappeler: "Information indicative — ne remplace pas un avis médical.
         temperature: 0.4,
         messages: [
           { role: 'system', content: system },
+          ...history.filter(m=>m && (m.role==='user'||m.role==='assistant') && typeof m.content==='string').map(m=>({ role:m.role, content: m.content.slice(0,2000) })),
           { role: 'user', content: user }
         ]
       })
