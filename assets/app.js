@@ -86,16 +86,6 @@
       location.hash = '#/dashboard';
       return;
     }
-    // OAuth callback handling (hash route)
-    if (path === '/auth/callback') {
-      (async () => {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        authSession = session || null;
-        updateHeaderAuth();
-        location.hash = '#/dashboard';
-      })();
-      return;
-    }
     // Page hooks
     if (path === '/onboarding') renderOnboarding();
     if (path === '/dashboard') renderDashboard();
@@ -145,7 +135,7 @@
           auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         });
       }
-      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/auth/callback' } });
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
     } catch (e) { alert('Connexion Google indisponible'); }
   }
   $('#btn-login').addEventListener('click', async (e) => { e.preventDefault(); await signInGoogle(); });
@@ -1111,10 +1101,6 @@
 
   // Init
   bootstrap();
-  // If redirected on a clean path /auth/callback, map it to hash route for SPA handling
-  if (location.pathname === '/auth/callback' && location.hash !== '#/auth/callback') {
-    location.hash = '#/auth/callback';
-  }
   if (!location.hash) location.hash = '#/';
   setActiveRoute(location.hash);
   // Footer year (replaces inline script to satisfy CSP)
