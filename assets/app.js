@@ -29,6 +29,7 @@
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         authSession = { user };
+        await ensureProfile(user);
         if (DEBUG_AUTH) console.log("Utilisateur connecté après retour Google:", user.email);
         updateHeaderAuth();
         if (!location.hash || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup') {
@@ -44,8 +45,9 @@
       if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       }
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange(async (_event, session) => {
         authSession = session || null;
+        if (session?.user) await ensureProfile(session.user);
         updateHeaderAuth();
         if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup')) {
           location.hash = '#/dashboard';
@@ -60,6 +62,7 @@
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const useRemote = () => !!supabase && !!authSession?.user;
 
   const routes = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
@@ -145,6 +148,18 @@
   function updateHeaderAuth() {
     $('#btn-login').hidden = !!authSession?.user;
     $('#btn-logout').hidden = !authSession?.user;
+  }
+
+  // Ensure a row exists in profiles for the authenticated user
+  async function ensureProfile(user){
+    try {
+      if (!supabase || !user?.id) return;
+      const full_name = user.user_metadata?.full_name || user.email || '';
+      const avatar_url = user.user_metadata?.avatar_url || null;
+      await supabase.from('profiles').upsert({ id: user.id, full_name, avatar_url });
+    } catch (e) {
+      if (DEBUG_AUTH) console.warn('ensureProfile failed', e);
+    }
   }
   async function signInGoogle(){
     if (DEBUG_AUTH) console.log('signInGoogle clicked');
@@ -372,14 +387,60 @@
       if (Number.isFinite(h)) child.growth.measurements.push({ month: ageMAtCreation, height: h });
       if (Number.isFinite(w)) child.growth.measurements.push({ month: ageMAtCreation, weight: w });
       if (Number.isFinite(t)) child.growth.teeth.push({ month: ageMAtCreation, count: t });
+
+      if (useRemote()) {
+        try {
+          const uid = authSession.user.id;
+          // Insert child
+          const payload = {
+            user_id: uid,
+            first_name: child.firstName,
+            sex: child.sex,
+            dob: child.dob,
+            photo_url: child.photo,
+            context_allergies: child.context.allergies,
+            context_history: child.context.history,
+            context_care: child.context.care,
+            context_languages: child.context.languages,
+            feeding_type: child.context.feedingType,
+            eating_style: child.context.eatingStyle,
+            sleep_falling: child.context.sleep.falling,
+            sleep_sleeps_through: child.context.sleep.sleepsThrough,
+            sleep_night_wakings: child.context.sleep.nightWakings,
+            sleep_wake_duration: child.context.sleep.wakeDuration,
+            sleep_bedtime: child.context.sleep.bedtime,
+            milestones: child.milestones,
+            is_primary: true
+          };
+          const { data: insChild, error: errC } = await supabase.from('children').insert(payload).select('id').single();
+          if (errC) throw errC;
+          const childId = insChild.id;
+          // Insert initial measures
+          const msIns = [];
+          child.growth.measurements.forEach(m => {
+            if (Number.isFinite(m.height)) msIns.push({ child_id: childId, month: m.month, height_cm: m.height });
+            if (Number.isFinite(m.weight)) msIns.push({ child_id: childId, month: m.month, weight_kg: m.weight });
+          });
+          if (msIns.length) await supabase.from('growth_measurements').insert(msIns);
+          if (child.growth.teeth.length) await supabase.from('growth_teeth').insert(child.growth.teeth.map(ti=>({child_id: childId, month: ti.month, count: ti.count})));
+          alert('Profil enfant créé.');
+          location.hash = '#/dashboard';
+          return;
+        } catch (e) {
+          alert('Erreur Supabase — enregistrement local utilisé.');
+        }
+      }
+
+      // Fallback local
       const children = store.get(K.children, []);
       children.push(child);
       store.set(K.children, children);
       const user = store.get(K.user);
+      user.childIds = Array.isArray(user?.childIds) ? user.childIds : [];
       user.childIds.push(child.id);
       if (!user.primaryChildId) user.primaryChildId = child.id;
       store.set(K.user, user);
-      alert('Profil enfant créé.');
+      alert('Profil enfant créé (local).');
       location.hash = '#/dashboard';
     }, { once: true });
   }
@@ -395,16 +456,31 @@
 
   // Dashboard
   function renderDashboard() {
-    const user = store.get(K.user);
-    const all = store.get(K.children, []);
-    const child = all.find(c => c.id === user?.primaryChildId) || all[0];
+    let child = null; let all = [];
+    if (useRemote()) {
+      // Remote load
+      const uid = authSession.user.id;
+      // Load children, pick primary if any else first
+      // We assume a boolean is_primary column exists
+      // Fallback to first row if none primary
+      // Growth will be loaded after DOM skeleton is set
+    } else {
+      const user = store.get(K.user);
+      all = store.get(K.children, []);
+      child = all.find(c => c.id === user?.primaryChildId) || all[0];
+    }
     const dom = $('#dashboard-content');
-    if (!child) {
+    if (!useRemote() && !child) {
       dom.innerHTML = `<div class="card stack"><p>Aucun profil enfant. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`;
       return;
     }
-    const ageM = ageInMonths(child.dob);
-    const ageTxt = formatAge(child.dob);
+    // Placeholder while fetching remote
+    if (useRemote()) {
+      dom.innerHTML = `<div class="card">Chargement du profil…</div>`;
+    }
+    const renderForChild = (child) => {
+      const ageM = ageInMonths(child.dob);
+      const ageTxt = formatAge(child.dob);
     // Compute latest health snapshot values
     const msAll = normalizeMeasures(child.growth.measurements);
     const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
@@ -544,7 +620,7 @@
     dom.appendChild(healthBlock);
 
     // Handle measure form
-    $('#form-measure').addEventListener('submit', (e) => {
+    $('#form-measure').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.currentTarget);
       const month = +fd.get('month');
@@ -552,13 +628,31 @@
       const weight = parseFloat(fd.get('weight'));
       const sleep = parseFloat(fd.get('sleep'));
       const teeth = parseInt(fd.get('teeth'));
+      if (useRemote()) {
+        try {
+          const promises = [];
+          if (Number.isFinite(height) || Number.isFinite(weight)) {
+            const rows = [];
+            if (Number.isFinite(height)) rows.push({ child_id: child.id, month, height_cm: height });
+            if (Number.isFinite(weight)) rows.push({ child_id: child.id, month, weight_kg: weight });
+            if (rows.length) promises.push(supabase.from('growth_measurements').insert(rows));
+          }
+          if (Number.isFinite(sleep)) promises.push(supabase.from('growth_sleep').insert({ child_id: child.id, month, hours: sleep }));
+          if (Number.isFinite(teeth)) promises.push(supabase.from('growth_teeth').insert({ child_id: child.id, month, count: teeth }));
+          await Promise.all(promises);
+          renderDashboard();
+          return;
+        } catch (err) {
+          alert('Erreur Supabase — enregistrement local des mesures.');
+        }
+      }
+      // Fallback local
       const children = store.get(K.children, []);
       const c = children.find(x => x.id === child.id);
       if (Number.isFinite(height)) c.growth.measurements.push({ month, height });
       if (Number.isFinite(weight)) c.growth.measurements.push({ month, weight });
       if (Number.isFinite(sleep)) c.growth.sleep.push({ month, hours: sleep });
       if (Number.isFinite(teeth)) c.growth.teeth.push({ month, count: teeth });
-      // Normalize combined height/weight arrays into paired entries for charting convenience
       store.set(K.children, children);
       renderDashboard();
     });
@@ -605,6 +699,59 @@
     } catch {}
 
     // Assistant IA retiré du dashboard (disponible dans /ai)
+    };
+
+    if (!useRemote()) {
+      renderForChild(child);
+    } else {
+      (async () => {
+        try {
+          const uid = authSession.user.id;
+          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+          if (!rows || !rows.length) { dom.innerHTML = `<div class="card">Aucun profil. Créez‑en un.</div>`; return; }
+          const primary = rows.find(r=>r.is_primary) || rows[0];
+          const remoteChild = {
+            id: primary.id,
+            firstName: primary.first_name,
+            sex: primary.sex,
+            dob: primary.dob,
+            photo: primary.photo_url,
+            context: {
+              allergies: primary.context_allergies,
+              history: primary.context_history,
+              care: primary.context_care,
+              languages: primary.context_languages,
+              feedingType: primary.feeding_type,
+              eatingStyle: primary.eating_style,
+              sleep: {
+                falling: primary.sleep_falling,
+                sleepsThrough: primary.sleep_sleeps_through,
+                nightWakings: primary.sleep_night_wakings,
+                wakeDuration: primary.sleep_wake_duration,
+                bedtime: primary.sleep_bedtime
+              }
+            },
+            milestones: Array.isArray(primary.milestones)? primary.milestones : [],
+            growth: { measurements: [], sleep: [], teeth: [] }
+          };
+          // Load growth
+          const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
+            supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', primary.id),
+            supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
+            supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
+          ]);
+          (gm||[]).forEach(r=>{
+            if (Number.isFinite(r.height_cm)) remoteChild.growth.measurements.push({ month: r.month, height: r.height_cm });
+            if (Number.isFinite(r.weight_kg)) remoteChild.growth.measurements.push({ month: r.month, weight: r.weight_kg });
+          });
+          (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
+          (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
+          renderForChild(remoteChild);
+        } catch (e) {
+          dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
+        }
+      })();
+    }
   }
 
   function normalizeMeasures(entries) {
@@ -622,62 +769,105 @@
 
   // Community
   function renderCommunity() {
-    const forum = store.get(K.forum, { topics: [] });
-    const user = store.get(K.user);
-    const children = store.get(K.children, []);
-    const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-    const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
     const list = $('#forum-list');
     list.innerHTML = '';
-    if (!forum.topics.length) {
+    const showEmpty = () => {
       const empty = document.createElement('div');
       empty.className = 'card';
       empty.textContent = 'Aucun sujet pour le moment. Lancez la discussion !';
       list.appendChild(empty);
-    } else {
-      forum.topics.slice().reverse().forEach(t => {
+    };
+    const renderTopics = (topics, replies, authorsMap) => {
+      if (!topics.length) return showEmpty();
+      topics.slice().forEach(t => {
         const el = document.createElement('div');
         el.className = 'topic';
+        const author = authorsMap.get(t.user_id) || 'Anonyme';
+        const rs = (replies.get(t.id) || []).sort((a,b)=>a.created_at-b.created_at);
         el.innerHTML = `
           <div class="flex-between">
             <h3 style="margin:0">${escapeHtml(t.title)}</h3>
-            <span class="muted" title="Auteur">${t.author}</span>
+            <span class="muted" title="Auteur">${escapeHtml(author)}</span>
           </div>
           <p>${escapeHtml(t.content)}</p>
           <div class="stack">
-            ${t.replies.map(r=>`<div class="reply"><div class="muted">${r.author} • ${new Date(r.createdAt).toLocaleString()}</div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+            ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()}</div><div>${escapeHtml(r.content)}</div></div>`).join('')}
           </div>
           <form data-id="${t.id}" class="form-reply form-grid" style="margin-top:8px">
             <label>Réponse<textarea name="content" rows="2" required></textarea></label>
             <button class="btn btn-secondary" type="submit">Répondre</button>
-          </form>
-        `;
+          </form>`;
         list.appendChild(el);
       });
-      $$('.form-reply').forEach(f => f.addEventListener('submit', (e)=>{
+      $$('.form-reply').forEach(f => f.addEventListener('submit', async (e)=>{
         e.preventDefault();
         const id = e.currentTarget.getAttribute('data-id');
         const fd = new FormData(e.currentTarget);
         const content = fd.get('content').toString().trim();
         if (!content) return;
+        if (useRemote()) {
+          try {
+            await supabase.from('forum_replies').insert({ topic_id: id, user_id: authSession.user.id, content });
+            renderCommunity();
+            return;
+          } catch {}
+        }
+        // fallback local
         const forum = store.get(K.forum);
         const topic = forum.topics.find(x=>x.id===id);
+        const user = store.get(K.user);
+        const children = store.get(K.children, []);
+        const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
+        const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
         topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
         store.set(K.forum, forum);
         renderCommunity();
       }));
+    };
+    if (useRemote()) {
+      (async () => {
+        try {
+          const { data: topics } = await supabase.from('forum_topics').select('id,user_id,title,content,created_at').order('created_at',{ascending:false});
+          const ids = (topics||[]).map(t=>t.id);
+          const { data: reps } = ids.length? await supabase.from('forum_replies').select('id,topic_id,user_id,content,created_at').in('topic_id', ids) : { data: [] };
+          const userIds = new Set([...(topics||[]).map(t=>t.user_id), ...(reps||[]).map(r=>r.user_id)]);
+          const profiles = userIds.size? await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds)) : { data: [] };
+          const authorsMap = new Map((profiles.data||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+          const repliesMap = new Map();
+          (reps||[]).forEach(r=>{ const arr = repliesMap.get(r.topic_id)||[]; arr.push(r); repliesMap.set(r.topic_id, arr); });
+          renderTopics(topics||[], repliesMap, authorsMap);
+        } catch (e) { showEmpty(); }
+      })();
+    } else {
+      const forum = store.get(K.forum, { topics: [] });
+      const repliesMap = new Map();
+      forum.topics.forEach(t=> repliesMap.set(t.id, t.replies||[]));
+      const authors = new Map();
+      renderTopics(forum.topics.slice().reverse(), repliesMap, authors);
     }
 
     // New topic dialog
     const dlg = $('#dialog-topic');
     $('#btn-new-topic').onclick = () => { if (dlg) dlg.showModal(); };
-    $('#form-topic')?.addEventListener('submit', (e) => {
+    $('#form-topic')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.currentTarget);
       const title = fd.get('title').toString().trim();
       const content = fd.get('content').toString().trim();
       if (!title || !content) return;
+      if (useRemote()) {
+        try {
+          await supabase.from('forum_topics').insert({ user_id: authSession.user.id, title, content });
+          dlg.close();
+          renderCommunity();
+          return;
+        } catch {}
+      }
       const forum = store.get(K.forum);
+      const user = store.get(K.user);
+      const children = store.get(K.children, []);
+      const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
+      const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
       forum.topics.push({ id: genId(), title, content, author: whoAmI, createdAt: Date.now(), replies: [] });
       store.set(K.forum, forum);
       dlg.close();
@@ -690,37 +880,71 @@
   // Settings
   function renderSettings() {
     const user = store.get(K.user);
-    const privacy = store.get(K.privacy);
-    const children = store.get(K.children, []);
     const form = $('#form-settings');
     form.role.value = user?.role || 'maman';
-    form.showStats.checked = !!privacy.showStats;
-    form.allowMessages.checked = !!privacy.allowMessages;
-    form.onsubmit = (e)=>{
+    // Privacy load
+    (async () => {
+      if (useRemote()) {
+        try {
+          const uid = authSession.user.id;
+          const { data: p } = await supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle();
+          form.showStats.checked = !!p?.show_stats;
+          form.allowMessages.checked = !!p?.allow_messages;
+        } catch { form.showStats.checked = true; form.allowMessages.checked = true; }
+      } else {
+        const privacy = store.get(K.privacy);
+        form.showStats.checked = !!privacy.showStats;
+        form.allowMessages.checked = !!privacy.allowMessages;
+      }
+    })();
+    form.onsubmit = async (e)=>{
       e.preventDefault();
       const fd = new FormData(form);
       const role = fd.get('role').toString();
       const showStats = !!fd.get('showStats');
       const allowMessages = !!fd.get('allowMessages');
+      if (useRemote()) {
+        try {
+          const uid = authSession.user.id;
+          await supabase.from('privacy_settings').upsert({ user_id: uid, show_stats: showStats, allow_messages: allowMessages });
+          store.set(K.user, { ...user, role });
+          alert('Paramètres enregistrés');
+          return;
+        } catch {}
+      }
       store.set(K.user, { ...user, role });
       store.set(K.privacy, { showStats, allowMessages });
-      alert('Paramètres enregistrés');
+      alert('Paramètres enregistrés (local)');
     };
 
     const list = $('#children-list');
     list.innerHTML = '';
-    children.forEach(c => {
-      const row = document.createElement('div');
-      row.className = 'hstack';
-      row.innerHTML = `
-        <span class="chip">${c.firstName} (${formatAge(c.dob)})</span>
-        <button class="btn btn-secondary" data-edit="${c.id}">Modifier</button>
-        <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
-        <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
-      `;
-      list.appendChild(row);
-    });
-    list.addEventListener('click', (e)=>{
+    let children = [];
+    (async () => {
+      if (useRemote()) {
+        try {
+          const uid = authSession.user.id;
+          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+          children = rows || [];
+        } catch { children = []; }
+      } else {
+        children = store.get(K.children, []);
+      }
+      children.forEach(c => {
+        const firstName = c.first_name || c.firstName;
+        const dob = c.dob;
+        const row = document.createElement('div');
+        row.className = 'hstack';
+        row.innerHTML = `
+          <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
+          <button class="btn btn-secondary" data-edit="${c.id}">Modifier</button>
+          <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
+          <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
+        `;
+        list.appendChild(row);
+      });
+    })();
+    list.addEventListener('click', async (e)=>{
       const target = e.target;
       if (!(target instanceof HTMLElement)) return;
       const idE = target.getAttribute('data-edit');
@@ -733,15 +957,31 @@
         return;
       }
       if (idP) {
+        if (useRemote()) {
+          try {
+            const uid = authSession.user.id;
+            await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
+            await supabase.from('children').update({ is_primary: true }).eq('id', idP);
+            renderSettings();
+            return;
+          } catch {}
+        }
         store.set(K.user, { ...user, primaryChildId: idP });
         renderSettings();
       }
       if (idD) {
         if (!confirm('Supprimer ce profil enfant ?')) return;
+        if (useRemote()) {
+          try {
+            await supabase.from('children').delete().eq('id', idD);
+            renderSettings();
+            return;
+          } catch {}
+        }
         let children = store.get(K.children, []);
         children = children.filter(c=>c.id!==idD);
         store.set(K.children, children);
-        const u = { ...user, childIds: user.childIds.filter(x=>x!==idD) };
+        const u = { ...user, childIds: (user.childIds||[]).filter(x=>x!==idD) };
         if (u.primaryChildId===idD) u.primaryChildId = u.childIds[0] ?? null;
         store.set(K.user, u);
         renderSettings();
@@ -750,8 +990,40 @@
 
     // Child edit form render
     const editBox = document.getElementById('child-edit');
-    const currentEditId = editBox?.getAttribute('data-edit-id') || user?.primaryChildId || children[0]?.id || null;
-    const child = children.find(c=>c.id===currentEditId);
+    let currentEditId = editBox?.getAttribute('data-edit-id') || null;
+    if (!currentEditId && children[0]) currentEditId = children[0].id;
+    let child = null;
+    if (useRemote()) {
+      const c = (children||[]).find(x=>x.id===currentEditId) || children[0];
+      if (c) {
+        child = {
+          id: c.id,
+          firstName: c.first_name,
+          sex: c.sex,
+          dob: c.dob,
+          photo: c.photo_url,
+          context: {
+            allergies: c.context_allergies,
+            history: c.context_history,
+            care: c.context_care,
+            languages: c.context_languages,
+            feedingType: c.feeding_type,
+            eatingStyle: c.eating_style,
+            sleep: {
+              falling: c.sleep_falling,
+              sleepsThrough: c.sleep_sleeps_through,
+              nightWakings: c.sleep_night_wakings,
+              wakeDuration: c.sleep_wake_duration,
+              bedtime: c.sleep_bedtime,
+            }
+          }
+        };
+      }
+    } else {
+      const localChildren = store.get(K.children, []);
+      const uid = (store.get(K.user)||{}).primaryChildId;
+      child = localChildren.find(c=>c.id===currentEditId) || localChildren.find(c=>c.id===uid) || localChildren[0];
+    }
     if (editBox) {
       if (!child) {
         editBox.innerHTML = '<div class="muted">Sélectionnez un enfant pour modifier son profil.</div>';
@@ -848,42 +1120,78 @@
           e.preventDefault();
           const fd = new FormData(f);
           const id = fd.get('id').toString();
-          const childrenAll = store.get(K.children, []);
-          const c = childrenAll.find(x=>x.id===id);
-          if (!c) return;
-          let photoDataUrl = c.photo;
+          let photoDataUrl = child?.photo || null;
           const file = fd.get('photo');
           if (file instanceof File && file.size > 0) {
             try { photoDataUrl = await fileToDataUrl(file); } catch {}
           }
-          c.firstName = fd.get('firstName').toString().trim();
-          c.sex = fd.get('sex').toString();
+          const firstName = fd.get('firstName').toString().trim();
+          const sex = fd.get('sex').toString();
           const newDob = fd.get('dob').toString();
           const ageMNow = ageInMonths(newDob);
-          c.dob = newDob;
-          c.photo = photoDataUrl;
+          const payload = {
+            first_name: firstName,
+            sex,
+            dob: newDob,
+            photo_url: photoDataUrl,
+            context_allergies: fd.get('allergies').toString(),
+            context_history: fd.get('history').toString(),
+            context_care: fd.get('care').toString(),
+            context_languages: fd.get('languages').toString(),
+            feeding_type: fd.get('feedingType')?.toString() || '',
+            eating_style: fd.get('eatingStyle')?.toString() || '',
+            sleep_falling: fd.get('sleep_falling')?.toString() || '',
+            sleep_sleeps_through: fd.get('sleep_through')?.toString() === 'oui',
+            sleep_night_wakings: fd.get('sleep_wakings')?.toString() || '',
+            sleep_wake_duration: fd.get('sleep_wake_duration')?.toString() || '',
+            sleep_bedtime: fd.get('sleep_bedtime')?.toString() || '',
+          };
+          if (useRemote()) {
+            try {
+              await supabase.from('children').update(payload).eq('id', id);
+              // Optional new measures
+              const eh = parseFloat(fd.get('height'));
+              const ew = parseFloat(fd.get('weight'));
+              const et = parseInt(fd.get('teeth'));
+              const promises = [];
+              if (Number.isFinite(eh)) promises.push(supabase.from('growth_measurements').insert({ child_id: id, month: ageMNow, height_cm: eh }));
+              if (Number.isFinite(ew)) promises.push(supabase.from('growth_measurements').insert({ child_id: id, month: ageMNow, weight_kg: ew }));
+              if (Number.isFinite(et)) promises.push(supabase.from('growth_teeth').insert({ child_id: id, month: ageMNow, count: et }));
+              if (promises.length) await Promise.all(promises);
+              alert('Profil enfant mis à jour.');
+              renderSettings();
+              return;
+            } catch (err) {
+              alert('Erreur Supabase — modifications enregistrées localement');
+            }
+          }
+          // Local fallback
+          const childrenAll = store.get(K.children, []);
+          const c = childrenAll.find(x=>x.id===id);
+          if (!c) return;
+          c.firstName = firstName; c.sex = sex; c.dob = newDob; c.photo = photoDataUrl;
           c.context = {
-            allergies: fd.get('allergies').toString(),
-            history: fd.get('history').toString(),
-            care: fd.get('care').toString(),
-            languages: fd.get('languages').toString(),
-            feedingType: fd.get('feedingType')?.toString() || '',
-            eatingStyle: fd.get('eatingStyle')?.toString() || '',
+            allergies: payload.context_allergies,
+            history: payload.context_history,
+            care: payload.context_care,
+            languages: payload.context_languages,
+            feedingType: payload.feeding_type,
+            eatingStyle: payload.eating_style,
             sleep: {
-              falling: fd.get('sleep_falling')?.toString() || '',
-              sleepsThrough: fd.get('sleep_through')?.toString() === 'oui',
-              nightWakings: fd.get('sleep_wakings')?.toString() || '',
-              wakeDuration: fd.get('sleep_wake_duration')?.toString() || '',
-              bedtime: fd.get('sleep_bedtime')?.toString() || '',
+              falling: payload.sleep_falling,
+              sleepsThrough: payload.sleep_sleeps_through,
+              nightWakings: payload.sleep_night_wakings,
+              wakeDuration: payload.sleep_wake_duration,
+              bedtime: payload.sleep_bedtime,
             },
           };
           // Optional new measures
-          const eh = parseFloat(fd.get('height'));
-          const ew = parseFloat(fd.get('weight'));
-          const et = parseInt(fd.get('teeth'));
-          if (Number.isFinite(eh)) c.growth.measurements.push({ month: ageMNow, height: eh });
-          if (Number.isFinite(ew)) c.growth.measurements.push({ month: ageMNow, weight: ew });
-          if (Number.isFinite(et)) c.growth.teeth.push({ month: ageMNow, count: et });
+          const eh2 = parseFloat(fd.get('height'));
+          const ew2 = parseFloat(fd.get('weight'));
+          const et2 = parseInt(fd.get('teeth'));
+          if (Number.isFinite(eh2)) c.growth.measurements.push({ month: ageMNow, height: eh2 });
+          if (Number.isFinite(ew2)) c.growth.measurements.push({ month: ageMNow, weight: ew2 });
+          if (Number.isFinite(et2)) c.growth.teeth.push({ month: ageMNow, count: et2 });
           store.set(K.children, childrenAll);
           alert('Profil enfant mis à jour.');
           renderSettings();
