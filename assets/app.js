@@ -1,4 +1,4 @@
-// Ped’IA SPA — Front‑only prototype with localStorage + Supabase Auth (Google)
+// Ped’IA SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 (async () => {
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
   // Load Supabase env and client
@@ -8,34 +8,31 @@
     if (DEBUG_AUTH) console.log('ENV', env);
     if (env?.url && env?.anonKey) {
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      supabase = createClient(env.url, env.anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
-      // If redirected back from Google with a code, exchange it explicitly (works well with hash routing)
-      try {
-        const href = window.location.href;
-        const hasCode = href.includes('?') && new URL(href).searchParams.get('code');
-        if (hasCode) {
-          if (DEBUG_AUTH) console.log('Exchanging OAuth code for session…');
-          const { error } = await supabase.auth.exchangeCodeForSession(href);
-          if (error && DEBUG_AUTH) console.warn('exchangeCodeForSession error', error);
-          // Clean query params from URL (keep hash route)
-          const url = new URL(href);
-          url.search = '';
-          history.replaceState({}, '', url.toString());
-        }
-      } catch (e) { if (DEBUG_AUTH) console.warn('exchangeCodeForSession failed', e); }
+      supabase = createClient(env.url, env.anonKey);
       if (DEBUG_AUTH) console.log('Supabase client created');
+  
+      // Vérifier si un utilisateur est déjà connecté après redirection OAuth
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        authSession = { user };
+        if (DEBUG_AUTH) console.log("Utilisateur connecté après retour Google:", user.email);
+        updateHeaderAuth();
+        setActiveRoute(location.hash);
+      }
+  
+      // Récupérer la session en cours (utile si pas d'user direct)
       const { data: { session } } = await supabase.auth.getSession();
-      authSession = session || null;
+      authSession = session || authSession;
       supabase.auth.onAuthStateChange((_event, session) => {
         authSession = session || null;
         updateHeaderAuth();
         setActiveRoute(location.hash);
       });
-      if (DEBUG_AUTH) console.log('Session after init', !!authSession);
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
   }
+
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -95,27 +92,8 @@
     if (path === '/settings') renderSettings();
     if (path === '/ai') setupAIPage();
     if (path === '/contact') setupContact();
-    if (path === '/login' || path === '/signup') renderAuthDebug(path);
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
-  }
-
-  async function renderAuthDebug(where){
-    const el = document.getElementById(where === '/login' ? 'auth-debug-login' : 'auth-debug-signup');
-    if (!el) return;
-    try {
-      const r = await fetch('/api/env');
-      const env = await r.json();
-      let modOk = false;
-      try { await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'); modOk = true; } catch {}
-      const lines = [];
-      lines.push(`Env URL: ${env?.url ? 'OK' : 'manquante'}`);
-      lines.push(`Env anonKey: ${env?.anonKey ? 'OK' : 'manquante'}`);
-      lines.push(`Module import: ${modOk ? 'OK' : 'échec (CSP?)'}`);
-      el.textContent = lines.join(' • ');
-    } catch (e) {
-      el.textContent = 'Debug auth: échec de /api/env';
-    }
   }
 
   window.addEventListener('hashchange', () => setActiveRoute(location.hash));
