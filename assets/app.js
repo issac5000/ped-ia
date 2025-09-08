@@ -5,7 +5,7 @@
   try {
     const env = await fetch('/api/env').then(r=>r.json());
     if (env?.url && env?.anonKey) {
-      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       supabase = createClient(env.url, env.anonKey);
       const { data: { session } } = await supabase.auth.getSession();
       authSession = session || null;
@@ -111,7 +111,7 @@
       if (!supabase) {
         const env = await fetch('/api/env').then(r=>r.json());
         if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
-        const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
         supabase = createClient(env.url, env.anonKey);
       }
       await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
