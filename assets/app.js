@@ -12,6 +12,18 @@
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
       if (DEBUG_AUTH) console.log('Supabase client created');
+      // Robust handling: if we return from Google with ?code in URL, exchange for a session
+      try {
+        const urlNow = new URL(window.location.href);
+        if (urlNow.searchParams.get('code')) {
+          if (DEBUG_AUTH) console.log('Exchanging OAuth code for session…');
+          const { error: xErr } = await supabase.auth.exchangeCodeForSession(urlNow.toString());
+          if (xErr && DEBUG_AUTH) console.warn('exchangeCodeForSession error', xErr);
+          // Clean query params while preserving hash
+          urlNow.search = '';
+          history.replaceState({}, '', urlNow.toString());
+        }
+      } catch (e) { if (DEBUG_AUTH) console.warn('exchangeCodeForSession failed', e); }
   
       // Vérifier si un utilisateur est déjà connecté après redirection OAuth
       const { data: { user } } = await supabase.auth.getUser();
@@ -19,16 +31,27 @@
         authSession = { user };
         if (DEBUG_AUTH) console.log("Utilisateur connecté après retour Google:", user.email);
         updateHeaderAuth();
-        setActiveRoute(location.hash);
+        if (!location.hash || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup') {
+          location.hash = '#/dashboard';
+        } else {
+          setActiveRoute(location.hash);
+        }
       }
   
       // Récupérer la session en cours (utile si pas d'user direct)
       const { data: { session } } = await supabase.auth.getSession();
       authSession = session || authSession;
+      if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup')) {
+        location.hash = '#/dashboard';
+      }
       supabase.auth.onAuthStateChange((_event, session) => {
         authSession = session || null;
         updateHeaderAuth();
-        setActiveRoute(location.hash);
+        if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup')) {
+          location.hash = '#/dashboard';
+        } else {
+          setActiveRoute(location.hash);
+        }
       });
     }
   } catch (e) {
@@ -135,7 +158,7 @@
           auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         });
       }
-      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
     } catch (e) { alert('Connexion Google indisponible'); }
   }
   $('#btn-login').addEventListener('click', async (e) => { e.preventDefault(); await signInGoogle(); });
