@@ -1,5 +1,23 @@
-// Ped’IA SPA — Front‑only prototype with localStorage
-(() => {
+// Ped’IA SPA — Front‑only prototype with localStorage + Supabase Auth (Google)
+(async () => {
+  // Load Supabase env and client
+  let supabase = null; let authSession = null;
+  try {
+    const env = await fetch('/api/env').then(r=>r.json());
+    if (env?.url && env?.anonKey) {
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      supabase = createClient(env.url, env.anonKey);
+      const { data: { session } } = await supabase.auth.getSession();
+      authSession = session || null;
+      supabase.auth.onAuthStateChange((_event, session) => {
+        authSession = session || null;
+        updateHeaderAuth();
+        setActiveRoute(location.hash);
+      });
+    }
+  } catch (e) {
+    console.warn('Supabase init failed (env or import)', e);
+  }
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -41,11 +59,14 @@
     updateHeaderAuth();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     // Guard routes
-    const session = store.get(K.session);
-    const authed = !!session?.loggedIn;
+    const authed = !!authSession?.user;
     const needAuth = ['/dashboard','/community','/settings','/onboarding'];
     if (needAuth.includes(path) && !authed) {
-      location.hash = '#/signup';
+      location.hash = '#/login';
+      return;
+    }
+    if ((path === '/login' || path === '/signup') && authed) {
+      location.hash = '#/dashboard';
       return;
     }
     // Page hooks
@@ -82,12 +103,30 @@
 
   // Header auth buttons
   function updateHeaderAuth() {
-    const session = store.get(K.session);
-    $('#btn-login').hidden = !!session?.loggedIn;
-    $('#btn-logout').hidden = !session?.loggedIn;
+    $('#btn-login').hidden = !!authSession?.user;
+    $('#btn-logout').hidden = !authSession?.user;
   }
-  $('#btn-login').addEventListener('click', () => { location.hash = '#/login'; });
-  $('#btn-logout').addEventListener('click', () => { logout(); });
+  $('#btn-login').addEventListener('click', async () => {
+    if (!supabase) { location.hash = '#/login'; return; }
+    try {
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
+    } catch (e) {
+      alert('Connexion Google indisponible');
+    }
+  });
+  // Buttons on /login and /signup pages
+  $$('.btn-google-login').forEach(btn => btn.addEventListener('click', async () => {
+    if (!supabase) { alert('Auth non configurée'); return; }
+    try {
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
+    } catch (e) { alert('Connexion Google indisponible'); }
+  }));
+  $('#btn-logout').addEventListener('click', async () => {
+    try { await supabase?.auth.signOut(); } catch {}
+    alert('Déconnecté.');
+    updateHeaderAuth();
+    location.hash = '#/login';
+  });
 
   // Mobile nav toggle
   const navBtn = document.getElementById('nav-toggle');
@@ -117,41 +156,18 @@
   // Auth flows
   $('#form-signup')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const user = {
-      email: fd.get('email').toString().trim().toLowerCase(),
-      password: fd.get('password').toString(),
-      role: fd.get('role').toString(),
-      childIds: [],
-      primaryChildId: null,
-    };
-    store.set(K.user, user);
-    store.set(K.session, { loggedIn: true });
-    alert('Compte créé. Créons le profil de votre enfant.');
-    location.hash = '#/onboarding';
-  });
-
-  $('#form-login')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const email = fd.get('email').toString().trim().toLowerCase();
-    const pass = fd.get('password').toString();
-    const saved = store.get(K.user);
-    if (saved && saved.email === email && saved.password === pass) {
-      store.set(K.session, { loggedIn: true });
-      alert('Connexion réussie.');
-      location.hash = '#/dashboard';
-    } else {
-      alert('Identifiants incorrects ou compte inexistant.');
-    }
-  });
-
-  function logout() {
-    store.set(K.session, { loggedIn: false });
-    alert('Déconnecté.');
-    updateHeaderAuth();
+    alert('Veuillez utiliser "Se connecter avec Google".');
     location.hash = '#/login';
-  }
+  });
+
+  $('#form-login')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!supabase) { alert('Auth non configurée'); return; }
+    try { await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } }); }
+    catch { alert('Connexion Google indisponible'); }
+  });
+
+  function logout() { /* replaced by supabase signOut above */ }
 
   // Contact (demo: save locally)
   function setupContact(){

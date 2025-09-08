@@ -164,33 +164,23 @@
       <section data-route="/signup" class="route">
         <div class="page-header">
           <h2>Créer un compte</h2>
-          <p class="page-subtitle">Rejoignez Ped’IA et démarrez votre suivi en toute simplicité.</p>
+          <p class="page-subtitle">Connexion sécurisée via Google pour retrouver vos données partout.</p>
         </div>
-        <form id="form-signup" class="card form-grid" autocomplete="on">
-          <label>Email<input type="email" name="email" required /></label>
-          <label>Mot de passe<input type="password" name="password" minlength="6" required /></label>
-          <label>Rôle public
-            <select name="role" required>
-              <option value="maman">Maman</option>
-              <option value="papa">Papa</option>
-            </select>
-          </label>
-          <button class="btn btn-primary" type="submit">Créer mon compte</button>
-          <p class="muted">Déjà un compte ? <a href="#/login">Se connecter</a></p>
-        </form>
+        <div class="card stack">
+          <button class="btn btn-primary btn-google-login" type="button">Se connecter avec Google</button>
+          <p class="muted">En vous connectant, votre profil est associé à votre compte Google. Vos données sont stockées dans Supabase.</p>
+        </div>
       </section>
 
       <section data-route="/login" class="route">
         <div class="page-header">
           <h2>Se connecter</h2>
-          <p class="page-subtitle">Retrouvez vos données locales et vos outils.</p>
+          <p class="page-subtitle">Accédez à votre espace avec Google.</p>
         </div>
-        <form id="form-login" class="card form-grid" autocomplete="on">
-          <label>Email<input type="email" name="email" required /></label>
-          <label>Mot de passe<input type="password" name="password" minlength="6" required /></label>
-          <button class="btn btn-primary" type="submit">Connexion</button>
-          <p class="muted">Pas encore de compte ? <a href="#/signup">Créer un compte</a></p>
-        </form>
+        <div class="card stack">
+          <button class="btn btn-primary btn-google-login" type="button">Se connecter avec Google</button>
+          <p class="muted">Besoin d’un compte ? Utilisez aussi “Se connecter avec Google”.</p>
+        </div>
       </section>
 
       <!-- Onboarding enfant -->
@@ -544,6 +534,6 @@
       <script>document.getElementById('y').textContent = new Date().getFullYear();</script>
     </footer>
 
-    <script src="assets/app.js"></script>
+    <script type="module" src="assets/app.js"></script>
   </body>
   </html>
