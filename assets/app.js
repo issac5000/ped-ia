@@ -382,7 +382,8 @@
         saveChat(currentChild, history);
         renderChat(history);
       } catch (err){
-        outChat.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
+        const msg = (err && err.message) ? err.message : String(err||'IA indisponible');
+        outChat.innerHTML = `<div class="muted">Erreur IA: ${escapeHtml(msg)}</div>`;
       } finally { sChat.textContent=''; }
     });
 
