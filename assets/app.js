@@ -106,21 +106,23 @@
     $('#btn-login').hidden = !!authSession?.user;
     $('#btn-logout').hidden = !authSession?.user;
   }
-  $('#btn-login').addEventListener('click', async () => {
-    if (!supabase) { location.hash = '#/login'; return; }
+  async function signInGoogle(){
     try {
-      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
-    } catch (e) {
-      alert('Connexion Google indisponible');
-    }
-  });
-  // Buttons on /login and /signup pages
-  $$('.btn-google-login').forEach(btn => btn.addEventListener('click', async () => {
-    if (!supabase) { alert('Auth non configurée'); return; }
-    try {
+      if (!supabase) {
+        const env = await fetch('/api/env').then(r=>r.json());
+        if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
+        const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+        supabase = createClient(env.url, env.anonKey);
+      }
       await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } });
     } catch (e) { alert('Connexion Google indisponible'); }
-  }));
+  }
+  $('#btn-login').addEventListener('click', async (e) => { e.preventDefault(); await signInGoogle(); });
+  // Buttons on /login and /signup pages (event delegation for robustness)
+  document.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target.closest('.btn-google-login') : null;
+    if (t) { e.preventDefault(); signInGoogle(); }
+  });
   $('#btn-logout').addEventListener('click', async () => {
     try { await supabase?.auth.signOut(); } catch {}
     alert('Déconnecté.');
@@ -160,12 +162,7 @@
     location.hash = '#/login';
   });
 
-  $('#form-login')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!supabase) { alert('Auth non configurée'); return; }
-    try { await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/#/dashboard' } }); }
-    catch { alert('Connexion Google indisponible'); }
-  });
+  $('#form-login')?.addEventListener('submit', async (e) => { e.preventDefault(); await signInGoogle(); });
 
   function logout() { /* replaced by supabase signOut above */ }
 
