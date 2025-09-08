@@ -1,6 +1,4 @@
-// Vercel Serverless Function for AI advice
-// Path: /api/ai/advice
-
+// Serverless Function: /api/ai/story
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,49 +10,35 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
-
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
-
     const raw = await readBody(req);
     const body = JSON.parse(raw || '{}');
-    const question = String(body.question || '').slice(0, 2000);
     const child = safeChildSummary(body.child);
+    const theme = String(body.theme || '').slice(0, 200);
+    const duration = Math.max(1, Math.min(10, Number(body.duration || 3)));
+    const sleepy = !!body.sleepy;
 
-    const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
-Réponds de manière bienveillante, concrète et structurée en puces.
-Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
-Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.
-Toujours rappeler: "Information indicative — ne remplace pas un avis médical."`;
-    const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
+    const system = `Tu es Ped’IA, créateur d’histoires courtes pour 0–7 ans.
+Rédige une histoire de ${duration} minute(s), adaptée à l’âge, avec le prénom.
+Style ${sleepy ? 'très apaisant, vocabulaire doux, propice au coucher' : 'dynamique et bienveillant'}.
+Texte clair, phrases courtes. Termine par une petite morale positive.`;
+    const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0.4,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user }
-        ]
-      })
+      method:'POST', headers:{ 'Authorization':`Bearer ${apiKey}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.7, messages:[
+        {role:'system', content: system}, {role:'user', content: user}
+      ]})
     });
-    if (!r.ok) {
-      const t = await r.text();
-      return res.status(502).json({ error: 'OpenAI error', details: t });
-    }
-    const json = await r.json();
-    const text = json.choices?.[0]?.message?.content?.trim() || '';
-
+    if (!r.ok){ const t=await r.text(); return res.status(502).json({ error:'OpenAI error', details:t }); }
+    const j = await r.json();
+    const text = j.choices?.[0]?.message?.content?.trim() || '';
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).send(JSON.stringify({ text }));
-  } catch (e) {
+  } catch (e){
     return res.status(500).json({ error: 'IA indisponible', details: String(e?.message || e) });
   }
 }
@@ -79,3 +63,4 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+

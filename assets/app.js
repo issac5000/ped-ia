@@ -5,7 +5,7 @@
 
   const routes = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
-    "/community", "/compare", "/settings", "/about", "/contact", "/legal"
+    "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
 
   const store = {
@@ -43,7 +43,7 @@
     // Guard routes
     const session = store.get(K.session);
     const authed = !!session?.loggedIn;
-    const needAuth = ['/dashboard','/community','/compare','/settings','/onboarding'];
+    const needAuth = ['/dashboard','/community','/settings','/onboarding'];
     if (needAuth.includes(path) && !authed) {
       location.hash = '#/signup';
       return;
@@ -52,8 +52,9 @@
     if (path === '/onboarding') renderOnboarding();
     if (path === '/dashboard') renderDashboard();
     if (path === '/community') renderCommunity();
-    if (path === '/compare') renderCompare();
+    
     if (path === '/settings') renderSettings();
+    if (path === '/ai') setupAIPage();
     if (path === '/contact') setupContact();
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
@@ -174,6 +175,68 @@
     }, { once: true });
   }
 
+  // --- AI page handlers ---
+  function setupAIPage(){
+    const session = store.get(K.session);
+    const user = store.get(K.user);
+    const children = store.get(K.children, []);
+    const child = children.find(c => c.id === user?.primaryChildId) || children[0];
+
+    // Recipes
+    const fRecipes = document.getElementById('form-ai-recipes');
+    const sRecipes = document.getElementById('ai-recipes-status');
+    const outRecipes = document.getElementById('ai-recipes-result');
+    fRecipes?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!child) { outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>'; return; }
+      const prefs = new FormData(fRecipes).get('prefs')?.toString() || '';
+      sRecipes.textContent = 'Génération en cours…'; outRecipes.innerHTML='';
+      try {
+        const text = await askAIRecipes(child, prefs);
+        outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
+      } catch (err){
+        outRecipes.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
+      } finally { sRecipes.textContent=''; }
+    });
+
+    // Story
+    const fStory = document.getElementById('form-ai-story');
+    const sStory = document.getElementById('ai-story-status');
+    const outStory = document.getElementById('ai-story-result');
+    fStory?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!child) { outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>'; return; }
+      const fd = new FormData(fStory);
+      const theme = fd.get('theme')?.toString() || '';
+      const duration = parseInt(fd.get('duration')?.toString() || '3');
+      const sleepy = !!fd.get('sleepy');
+      sStory.textContent = 'Génération en cours…'; outStory.innerHTML='';
+      try {
+        const text = await askAIStory(child, { theme, duration, sleepy });
+        outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
+      } catch (err){
+        outStory.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
+      } finally { sStory.textContent=''; }
+    });
+
+    // Chat
+    const fChat = document.getElementById('form-ai-chat');
+    const sChat = document.getElementById('ai-chat-status');
+    const outChat = document.getElementById('ai-chat-result');
+    fChat?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = new FormData(fChat).get('q')?.toString().trim();
+      if (!q) return;
+      sChat.textContent = 'Réflexion en cours…'; outChat.innerHTML='';
+      try {
+        const text = await askAI(q, child);
+        outChat.innerHTML = `<div>${text.replace(/\n/g,'<br/>')}</div>`;
+      } catch (err){
+        outChat.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
+      } finally { sChat.textContent=''; }
+    });
+  }
+
   // Onboarding
   const DEV_QUESTIONS = [
     'Sourit socialement',
@@ -214,17 +277,28 @@
       if (file instanceof File && file.size > 0) {
         photoDataUrl = await fileToDataUrl(file);
       }
+      const dobStr = fd.get('dob').toString();
+      const ageMAtCreation = ageInMonths(dobStr);
       const child = {
         id: genId(),
         firstName: fd.get('firstName').toString().trim(),
         sex: fd.get('sex').toString(),
-        dob: fd.get('dob').toString(),
+        dob: dobStr,
         photo: photoDataUrl,
         context: {
           allergies: fd.get('allergies').toString(),
           history: fd.get('history').toString(),
           care: fd.get('care').toString(),
           languages: fd.get('languages').toString(),
+          feedingType: fd.get('feedingType')?.toString() || '',
+          eatingStyle: fd.get('eatingStyle')?.toString() || '',
+          sleep: {
+            falling: fd.get('sleep_falling')?.toString() || '',
+            sleepsThrough: fd.get('sleep_through')?.toString() === 'oui',
+            nightWakings: fd.get('sleep_wakings')?.toString() || '',
+            wakeDuration: fd.get('sleep_wake_duration')?.toString() || '',
+            bedtime: fd.get('sleep_bedtime')?.toString() || '',
+          },
         },
         milestones: DEV_QUESTIONS.map((_, i) => !!fd.get(`dev_${i}`)),
         growth: {
@@ -234,6 +308,13 @@
         },
         createdAt: Date.now(),
       };
+      // Initial measures if provided
+      const h = parseFloat(fd.get('height'));
+      const w = parseFloat(fd.get('weight'));
+      const t = parseInt(fd.get('teeth'));
+      if (Number.isFinite(h)) child.growth.measurements.push({ month: ageMAtCreation, height: h });
+      if (Number.isFinite(w)) child.growth.measurements.push({ month: ageMAtCreation, weight: w });
+      if (Number.isFinite(t)) child.growth.teeth.push({ month: ageMAtCreation, count: t });
       const children = store.get(K.children, []);
       children.push(child);
       store.set(K.children, children);
@@ -267,6 +348,12 @@
     }
     const ageM = ageInMonths(child.dob);
     const ageTxt = formatAge(child.dob);
+    // Compute latest health snapshot values
+    const msAll = normalizeMeasures(child.growth.measurements);
+    const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
+    const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
+    const lastTeeth = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
+    const lastSleepHours = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
     dom.innerHTML = `
       <div class="grid-2">
         <div class="card stack">
@@ -282,6 +369,9 @@
             <span class="chip">Allergies: ${child.context.allergies || '—'}</span>
             <span class="chip">Mode de garde: ${child.context.care || '—'}</span>
             <span class="chip">Langues: ${child.context.languages || '—'}</span>
+            <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
+            <span class="chip">Appétit: ${labelEatingStyle(child.context.eatingStyle)}</span>
+            <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
           </div>
           <div class="hstack">
             ${child.milestones.map((v,i)=> v?`<span class="badge">✅ ${DEV_QUESTIONS[i]}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
@@ -359,29 +449,42 @@
         <div class="card stack">
           <h3>Actions rapides</h3>
           <div class="hstack">
-            <a class="btn btn-secondary" href="#/compare">Voir le comparateur</a>
-            <a class="btn btn-secondary" href="#/community">Aller à la communauté</a>
+            <a class="btn btn-secondary" href="#/ai">Fonctionnalité IA</a>
+            <a class="btn btn-secondary" href="#/community">Communauté</a>
           </div>
         </div>
       </div>
 
-      <div class="grid-2" style="margin-top:12px">
-        <div class="card stack">
-          <h3>Assistant IA</h3>
-          <p class="muted">Posez une question (sommeil, alimentation, repères…). Réponse non médicale.</p>
-          <form id="form-ai" class="form-grid">
-            <label>Votre question
-              <textarea name="q" rows="3" placeholder="Ex: Mon enfant de ${ageTxt} se réveille la nuit, que faire ?" required></textarea>
-            </label>
-            <div class="hstack">
-              <button class="btn btn-primary" type="submit">Demander à l’IA</button>
-              <span id="ai-status" class="muted"></span>
-            </div>
-          </form>
-          <div id="ai-answer" class="card"></div>
-        </div>
-      </div>
+      
     `;
+
+    // Inject Profil santé card after main content
+    const healthBlock = document.createElement('div');
+    healthBlock.className = 'grid-2';
+    healthBlock.style.marginTop = '12px';
+    healthBlock.innerHTML = `
+      <div class="card stack">
+        <h3>Profil santé</h3>
+        <div class="hstack">
+          <span class="chip">Taille: ${Number.isFinite(latestH)? `${latestH} cm` : '—'}</span>
+          <span class="chip">Poids: ${Number.isFinite(latestW)? `${latestW} kg` : '—'}</span>
+          <span class="chip">Dents: ${Number.isFinite(lastTeeth)? `${lastTeeth}` : '—'}</span>
+          <span class="chip">Sommeil (dernier): ${Number.isFinite(lastSleepHours)? `${lastSleepHours} h/24h` : '—'}</span>
+        </div>
+        <div class="hstack">
+          <span class="chip">Endormissement: ${child.context.sleep?.falling || '—'}</span>
+          <span class="chip">Nuits complètes: ${typeof child.context.sleep?.sleepsThrough==='boolean' ? (child.context.sleep.sleepsThrough?'Oui':'Non') : '—'}</span>
+          <span class="chip">Réveils: ${child.context.sleep?.nightWakings || '—'}</span>
+          <span class="chip">Éveils: ${child.context.sleep?.wakeDuration || '—'}</span>
+          <span class="chip">Coucher: ${child.context.sleep?.bedtime || '—'}</span>
+        </div>
+        <div class="hstack">
+          <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
+          <span class="chip">Appétit: ${labelEatingStyle(child.context.eatingStyle)}</span>
+          <span class="chip">Allergies: ${child.context.allergies || '—'}</span>
+        </div>
+      </div>`;
+    dom.appendChild(healthBlock);
 
     // Handle measure form
     $('#form-measure').addEventListener('submit', (e) => {
@@ -410,24 +513,41 @@
     drawChart($('#chart-sleep'), buildSeries(child.growth.sleep.map(s=>({x:s.month,y:s.hours}))), buildSeries(sleepRecommendedSeries()));
     drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
 
-    // Assistant IA
-    const formAI = $('#form-ai');
-    const elStatus = $('#ai-status');
-    const elAnswer = $('#ai-answer');
-    formAI?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      elStatus.textContent = 'Réflexion en cours…';
-      elAnswer.textContent = '';
-      const q = new FormData(formAI).get('q').toString().trim();
-      try {
-        const res = await askAI(q, child);
-        elAnswer.innerHTML = `<div>${res.replace(/\n/g,'<br/>')}</div>`;
-        elStatus.textContent = '';
-      } catch (err) {
-        elStatus.textContent = '';
-        elAnswer.innerHTML = `<div class="muted">Serveur IA indisponible. ${renderAdvice(ageM)}</div>`;
-      }
-    });
+    // Plain-language chart notes for parents
+    try {
+      const latestHPoint = [...ms].reverse().find(m=>Number.isFinite(m.height));
+      const hMed = latestHPoint? medianAt('height', latestHPoint.month) : undefined;
+      const noteH = document.createElement('div'); noteH.className='muted';
+      if (latestHPoint && Number.isFinite(hMed)) {
+        const diff = latestHPoint.height - hMed; const pos = diff>1? 'au‑dessus' : diff<-1? 'en‑dessous' : 'autour';
+        noteH.textContent = `Dernière taille: ${latestHPoint.height} cm (${pos} de la médiane OMS ~ ${hMed.toFixed(1)} cm).`;
+      } else { noteH.textContent = 'Ajoutez une taille pour voir la comparaison à la médiane OMS.'; }
+      document.getElementById('chart-height')?.parentElement?.appendChild(noteH);
+
+      const latestWPoint = [...ms].reverse().find(m=>Number.isFinite(m.weight));
+      const wMed = latestWPoint? medianAt('weight', latestWPoint.month) : undefined;
+      const noteW = document.createElement('div'); noteW.className='muted';
+      if (latestWPoint && Number.isFinite(wMed)) {
+        const diff = latestWPoint.weight - wMed; const pos = diff>0.2? 'au‑dessus' : diff<-0.2? 'en‑dessous' : 'autour';
+        noteW.textContent = `Dernier poids: ${latestWPoint.weight} kg (${pos} de la médiane OMS ~ ${wMed.toFixed(2)} kg).`;
+      } else { noteW.textContent = 'Ajoutez un poids pour voir la comparaison à la médiane OMS.'; }
+      document.getElementById('chart-weight')?.parentElement?.appendChild(noteW);
+
+      const latestS = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
+      const rec = sleepRecommendation(ageM);
+      const noteS = document.createElement('div'); noteS.className='muted';
+      if (latestS) noteS.textContent = `Dernier sommeil: ${latestS.hours} h/24h. Recommandé: ${rec.min}–${rec.max} h.`;
+      else noteS.textContent = `Recommandé à ${Math.round(ageM/12)} an(s): ${rec.min}–${rec.max} h/24h.`;
+      document.getElementById('chart-sleep')?.parentElement?.appendChild(noteS);
+
+      const latestT = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
+      const noteT = document.createElement('div'); noteT.className='muted';
+      if (latestT) noteT.textContent = `Dernier relevé: ${latestT.count} dent(s). Le calendrier d’éruption varie beaucoup — comparez surtout avec les observations précédentes.`;
+      else noteT.textContent = 'Ajoutez un relevé de dents pour suivre l’évolution.';
+      document.getElementById('chart-teeth')?.parentElement?.appendChild(noteT);
+    } catch {}
+
+    // Assistant IA retiré du dashboard (disponible dans /ai)
   }
 
   function normalizeMeasures(entries) {
@@ -508,69 +628,7 @@
     }, { once: true });
   }
 
-  // Compare
-  function renderCompare() {
-    const user = store.get(K.user);
-    const children = store.get(K.children, []);
-    const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-    const dom = $('#compare-content');
-    if (!child) { dom.innerHTML = '<div class="card">Ajoutez un enfant pour comparer.</div>'; return; }
-
-    // Community mean: across local children
-    const msChild = normalizeMeasures(child.growth.measurements);
-    const monthly = new Map();
-    children.forEach(c => {
-      normalizeMeasures(c.growth.measurements).forEach(m => {
-        const k = m.month;
-        const v = monthly.get(k) || {month:k, h:[], w:[]};
-        if (typeof m.height==='number') v.h.push(m.height);
-        if (typeof m.weight==='number') v.w.push(m.weight);
-        monthly.set(k, v);
-      })
-    });
-    const avg = (arr)=> arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : undefined;
-    const communityH = Array.from(monthly.values()).map(v=>({x:v.month,y:avg(v.h)})).filter(p=>Number.isFinite(p.y)).sort((a,b)=>a.x-b.x);
-    const communityW = Array.from(monthly.values()).map(v=>({x:v.month,y:avg(v.w)})).filter(p=>Number.isFinite(p.y)).sort((a,b)=>a.x-b.x);
-
-    dom.innerHTML = `
-      <div class="grid-2">
-        <div class="card chart-card">
-          <div class="chart-header">
-            <h3>Taille (cm)</h3>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>${child.firstName}</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>Moy. communauté</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>OMS médiane</span>
-            </div>
-          </div>
-          <svg class="chart" id="cmp-h"></svg>
-        </div>
-        <div class="card chart-card">
-          <div class="chart-header">
-            <h3>Poids (kg)</h3>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>${child.firstName}</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>Moy. communauté</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>OMS médiane</span>
-            </div>
-          </div>
-          <svg class="chart" id="cmp-w"></svg>
-        </div>
-      </div>
-    `;
-
-    drawMulti($('#cmp-h'), [
-      { color: 'var(--turquoise)', data: msChild.map(m=>({x:m.month,y:m.height})).filter(p=>Number.isFinite(p.y)) },
-      { color: 'var(--orange)', data: communityH },
-      { color: 'var(--violet)', data: whoSeries('height') },
-    ]);
-
-    drawMulti($('#cmp-w'), [
-      { color: 'var(--turquoise)', data: msChild.map(m=>({x:m.month,y:m.weight})).filter(p=>Number.isFinite(p.y)) },
-      { color: 'var(--orange)', data: communityW },
-      { color: 'var(--violet)', data: whoSeries('weight') },
-    ]);
-  }
+  // (Comparateur retiré — les courbes sont dans le Dashboard)
 
   // Settings
   function renderSettings() {
@@ -599,6 +657,7 @@
       row.className = 'hstack';
       row.innerHTML = `
         <span class="chip">${c.firstName} (${formatAge(c.dob)})</span>
+        <button class="btn btn-secondary" data-edit="${c.id}">Modifier</button>
         <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
         <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
       `;
@@ -607,8 +666,15 @@
     list.addEventListener('click', (e)=>{
       const target = e.target;
       if (!(target instanceof HTMLElement)) return;
+      const idE = target.getAttribute('data-edit');
       const idP = target.getAttribute('data-primary');
       const idD = target.getAttribute('data-del');
+      if (idE) {
+        const editBox = document.getElementById('child-edit');
+        editBox?.setAttribute('data-edit-id', idE);
+        renderSettings();
+        return;
+      }
       if (idP) {
         store.set(K.user, { ...user, primaryChildId: idP });
         renderSettings();
@@ -624,6 +690,153 @@
         renderSettings();
       }
     });
+
+    // Child edit form render
+    const editBox = document.getElementById('child-edit');
+    const currentEditId = editBox?.getAttribute('data-edit-id') || user?.primaryChildId || children[0]?.id || null;
+    const child = children.find(c=>c.id===currentEditId);
+    if (editBox) {
+      if (!child) {
+        editBox.innerHTML = '<div class="muted">Sélectionnez un enfant pour modifier son profil.</div>';
+      } else {
+        editBox.innerHTML = `
+          <h3>Modifier le profil enfant</h3>
+          <form id="form-child-edit" class="form-grid" autocomplete="on">
+            <input type="hidden" name="id" value="${child.id}" />
+            <label>Prénom<input type="text" name="firstName" value="${escapeHtml(child.firstName)}" required /></label>
+            <label>Sexe
+              <select name="sex" required>
+                <option value="fille" ${child.sex==='fille'?'selected':''}>Fille</option>
+                <option value="garçon" ${child.sex==='garçon'?'selected':''}>Garçon</option>
+              </select>
+            </label>
+            <label>Date de naissance<input type="date" name="dob" value="${child.dob}" required /></label>
+            <h4>Mesures actuelles (optionnel)</h4>
+            <div class="grid-2">
+              <label>Taille (cm)<input type="number" step="0.1" name="height" /></label>
+              <label>Poids (kg)<input type="number" step="0.01" name="weight" /></label>
+            </div>
+            <label>Dents (nb)<input type="number" step="1" name="teeth" /></label>
+            <label>Photo/avatar<input type="file" name="photo" accept="image/*" /></label>
+            <h4>Contexte</h4>
+            <label>Allergies<input type="text" name="allergies" value="${escapeHtml(child.context.allergies||'')}" /></label>
+            <label>Antécédents<input type="text" name="history" value="${escapeHtml(child.context.history||'')}" /></label>
+            <label>Mode de garde<input type="text" name="care" value="${escapeHtml(child.context.care||'')}" /></label>
+            <label>Langues parlées<input type="text" name="languages" value="${escapeHtml(child.context.languages||'')}" /></label>
+            <h4>Habitudes alimentaires</h4>
+            <label>Type d’alimentation
+              <select name="feedingType">
+                ${['','allaitement_exclusif','mixte_allaitement_biberon','allaitement_diversification','biberon_diversification','lait_poudre_vache'].map(v=>`<option value="${v}" ${ (child.context.feedingType||'')===v?'selected':'' }>${({
+                  '':'—',
+                  'allaitement_exclusif':'Allaitement exclusif',
+                  'mixte_allaitement_biberon':'Mixte (allaitement + biberon)',
+                  'allaitement_diversification':'Diversification + allaitement',
+                  'biberon_diversification':'Biberon + diversification',
+                  'lait_poudre_vache':'Lait en poudre / lait de vache'
+                })[v]}</option>`).join('')}
+              </select>
+            </label>
+            <label>Appétit / façon de manger
+              <select name="eatingStyle">
+                ${['','mange_tres_bien','appetit_variable','selectif_difficile','petites_portions'].map(v=>`<option value="${v}" ${ (child.context.eatingStyle||'')===v?'selected':'' }>${({
+                  '':'—',
+                  'mange_tres_bien':'Mange très bien',
+                  'appetit_variable':'Appétit variable',
+                  'selectif_difficile':'Sélectif / difficile',
+                  'petites_portions':'Petites portions'
+                })[v]}</option>`).join('')}
+              </select>
+            </label>
+            <h4>Sommeil</h4>
+            <div class="grid-2">
+              <label>Endormissement
+                <select name="sleep_falling">
+                  ${['','facile','moyen','difficile'].map(v=>`<option value="${v}" ${ (child.context.sleep?.falling||'')===v?'selected':'' }>${({
+                    '':'—','facile':'Facile','moyen':'Moyen','difficile':'Difficile'
+                  })[v]}</option>`).join('')}
+                </select>
+              </label>
+              <label>Nuits complètes
+                <select name="sleep_through">
+                  ${['','oui','non'].map(v=>`<option value="${v}" ${ ((child.context.sleep?.sleepsThrough?'oui':'non')===v)?'selected':'' }>${({
+                    '':'—','oui':'Oui','non':'Non'
+                  })[v]}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+            <div class="grid-2">
+              <label>Réveils nocturnes
+                <select name="sleep_wakings">
+                  ${['','0','1','2','3+'].map(v=>`<option value="${v}" ${ (child.context.sleep?.nightWakings||'')===v?'selected':'' }>${v||'—'}</option>`).join('')}
+                </select>
+              </label>
+              <label>Durée des éveils
+                <select name="sleep_wake_duration">
+                  ${['','<5min','5-15min','15-30min','30-60min','>60min'].map(v=>`<option value="${v}" ${ (child.context.sleep?.wakeDuration||'')===v?'selected':'' }>${v||'—'}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+            <label>Heure du coucher (approx.)
+              <input type="time" name="sleep_bedtime" value="${child.context.sleep?.bedtime||''}" />
+            </label>
+            <div class="hstack">
+              <button class="btn btn-primary" type="submit">Enregistrer</button>
+              <button class="btn btn-secondary" type="button" id="btn-cancel-edit">Annuler</button>
+            </div>
+          </form>
+        `;
+        // Bind submit
+        const f = document.getElementById('form-child-edit');
+        f?.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const fd = new FormData(f);
+          const id = fd.get('id').toString();
+          const childrenAll = store.get(K.children, []);
+          const c = childrenAll.find(x=>x.id===id);
+          if (!c) return;
+          let photoDataUrl = c.photo;
+          const file = fd.get('photo');
+          if (file instanceof File && file.size > 0) {
+            try { photoDataUrl = await fileToDataUrl(file); } catch {}
+          }
+          c.firstName = fd.get('firstName').toString().trim();
+          c.sex = fd.get('sex').toString();
+          const newDob = fd.get('dob').toString();
+          const ageMNow = ageInMonths(newDob);
+          c.dob = newDob;
+          c.photo = photoDataUrl;
+          c.context = {
+            allergies: fd.get('allergies').toString(),
+            history: fd.get('history').toString(),
+            care: fd.get('care').toString(),
+            languages: fd.get('languages').toString(),
+            feedingType: fd.get('feedingType')?.toString() || '',
+            eatingStyle: fd.get('eatingStyle')?.toString() || '',
+            sleep: {
+              falling: fd.get('sleep_falling')?.toString() || '',
+              sleepsThrough: fd.get('sleep_through')?.toString() === 'oui',
+              nightWakings: fd.get('sleep_wakings')?.toString() || '',
+              wakeDuration: fd.get('sleep_wake_duration')?.toString() || '',
+              bedtime: fd.get('sleep_bedtime')?.toString() || '',
+            },
+          };
+          // Optional new measures
+          const eh = parseFloat(fd.get('height'));
+          const ew = parseFloat(fd.get('weight'));
+          const et = parseInt(fd.get('teeth'));
+          if (Number.isFinite(eh)) c.growth.measurements.push({ month: ageMNow, height: eh });
+          if (Number.isFinite(ew)) c.growth.measurements.push({ month: ageMNow, weight: ew });
+          if (Number.isFinite(et)) c.growth.teeth.push({ month: ageMNow, count: et });
+          store.set(K.children, childrenAll);
+          alert('Profil enfant mis à jour.');
+          renderSettings();
+        }, { once: true });
+        document.getElementById('btn-cancel-edit')?.addEventListener('click', ()=>{
+          editBox.removeAttribute('data-edit-id');
+          renderSettings();
+        });
+      }
+    }
 
     $('#btn-export').onclick = () => {
       const data = {
@@ -682,6 +895,34 @@
     const m = ageInMonths(dob);
     const y = Math.floor(m/12); const rm = m%12;
     return y ? `${y} an${y>1?'s':''} ${rm?`• ${rm} mois`:''}` : `${rm} mois`;
+  }
+  function labelFeedingType(v){
+    const map = {
+      '': '—',
+      'allaitement_exclusif': 'Allaitement exclusif',
+      'mixte_allaitement_biberon': 'Mixte',
+      'allaitement_diversification': 'Diversification + allaitement',
+      'biberon_diversification': 'Biberon + diversification',
+      'lait_poudre_vache': 'Lait en poudre / vache'
+    }; return map[v] || '—';
+  }
+  function labelEatingStyle(v){
+    const map = {
+      '': '—',
+      'mange_tres_bien':'Mange très bien',
+      'appetit_variable':'Appétit variable',
+      'selectif_difficile':'Sélectif / difficile',
+      'petites_portions':'Petites portions'
+    }; return map[v] || '—';
+  }
+  function summarizeSleep(s){
+    if (!s) return '—';
+    const parts = [];
+    if (s.falling) parts.push(`endormissement ${s.falling}`);
+    if (typeof s.sleepsThrough === 'boolean') parts.push(s.sleepsThrough? 'nuits complètes' : 'réveils');
+    if (s.nightWakings) parts.push(`${s.nightWakings} réveil(s)`);
+    if (s.wakeDuration) parts.push(`${s.wakeDuration}`);
+    return parts.join(' • ') || '—';
   }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
 
@@ -742,6 +983,17 @@
   // SVG Chart utils (lightweight)
   function buildSeries(list){ return [{color:'var(--turquoise)', data:list.filter(p=>Number.isFinite(p.y))}]; }
   function drawChart(svg, seriesA, seriesB){ drawMulti(svg, [...(seriesA||[]), ...(seriesB?[{color:'var(--violet)', data:seriesB[0].data}]:[])]); }
+  function medianAt(kind, m){
+    const arr = whoSeries(kind);
+    if (!arr || !arr.length) return undefined;
+    if (m <= arr[0].x) return arr[0].y;
+    if (m >= arr[arr.length-1].x) return arr[arr.length-1].y;
+    for (let i=1;i<arr.length;i++){
+      const a = arr[i-1], b = arr[i];
+      if (m>=a.x && m<=b.x){ const t = (m-a.x)/((b.x-a.x)||1); return a.y + t*(b.y-a.y); }
+    }
+    return arr[arr.length-1].y;
+  }
 
   function drawMulti(svg, series){
     if (!svg) return;
@@ -827,6 +1079,26 @@
     if (!res.ok) throw new Error('AI backend error');
     const data = await res.json();
     return data.text || 'Aucune réponse.';
+  }
+
+  async function askAIRecipes(child, prefs){
+    const payload = { child, prefs };
+    const res = await fetch('/api/ai/recipes', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('AI backend error');
+    const data = await res.json();
+    return data.text || '';
+  }
+
+  async function askAIStory(child, opts){
+    const payload = { child, ...opts };
+    const res = await fetch('/api/ai/story', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('AI backend error');
+    const data = await res.json();
+    return data.text || '';
   }
 
   // Reveal on scroll animations

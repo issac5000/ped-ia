@@ -85,6 +85,7 @@ async function aiAdvice(body) {
   const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
 Réponds de manière bienveillante, concrète et structurée en puces.
 Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
+Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.
 Toujours rappeler: "Information indicative — ne remplace pas un avis médical."`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
 
@@ -112,6 +113,51 @@ Toujours rappeler: "Information indicative — ne remplace pas un avis médical.
   return { text };
 }
 
+async function aiRecipes(body){
+  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const child = safeChildSummary(body.child);
+  const prefs = String(body.prefs || '').slice(0, 400);
+  const system = `Tu es Ped’IA, assistant nutrition 0–7 ans.
+Donne des idées de menus et recettes adaptées à l’âge, en excluant les allergènes indiqués.
+Prends en compte le type d’alimentation (allaitement/biberon/diversification), le style d’appétit et, si pertinent, les repères de sommeil.
+Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.
+Rappelle: "Information indicative — ne remplace pas un avis médical."`;
+  const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
+      {role:'system', content: system}, {role:'user', content: user}
+    ]})
+  });
+  if (!r.ok){ const t=await r.text(); throw new Error(`OpenAI error ${r.status}: ${t}`); }
+  const j = await r.json();
+  const text = j.choices?.[0]?.message?.content?.trim() || '';
+  return { text };
+}
+
+async function aiStory(body){
+  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const child = safeChildSummary(body.child);
+  const theme = String(body.theme || '').slice(0, 200);
+  const duration = Math.max(1, Math.min(10, Number(body.duration || 3)));
+  const sleepy = !!body.sleepy;
+  const system = `Tu es Ped’IA, créateur d’histoires courtes pour 0–7 ans.
+Rédige une histoire de ${duration} minute(s), adaptée à l’âge, avec le prénom.
+Style ${sleepy ? 'très apaisant, vocabulaire doux, propice au coucher' : 'dynamique et bienveillant'}.
+Texte clair, phrases courtes. Termine par une petite morale positive.`;
+  const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.7, messages:[
+      {role:'system', content: system}, {role:'user', content: user}
+    ]})
+  });
+  if (!r.ok){ const t=await r.text(); throw new Error(`OpenAI error ${r.status}: ${t}`); }
+  const j = await r.json();
+  const text = j.choices?.[0]?.message?.content?.trim() || '';
+  return { text };
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   // CORS preflight
@@ -127,6 +173,26 @@ const server = createServer(async (req, res) => {
     try {
       const body = await parseJson(req);
       const out = await aiAdvice(body);
+      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ai/recipes') {
+    try {
+      const body = await parseJson(req);
+      const out = await aiRecipes(body);
+      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ai/story') {
+    try {
+      const body = await parseJson(req);
+      const out = await aiStory(body);
       return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });

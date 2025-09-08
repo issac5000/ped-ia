@@ -19,9 +19,9 @@
           <a href="#/" class="nav-link">Accueil</a>
           <a href="#/dashboard" class="nav-link">Dashboard</a>
           <a href="#/community" class="nav-link">Communauté</a>
-          <a href="#/compare" class="nav-link">Comparateur</a>
+          
           <a href="#/about" class="nav-link">À propos</a>
-          <a href="#/contact" class="nav-link">Contact</a>
+          <a href="#/ai" class="nav-link">Fonctionnalité IA</a>
           <a href="#/settings" class="nav-link">Paramètres</a>
         </nav>
         <div class="auth-actions">
@@ -49,7 +49,7 @@
               <p class="lead">Suivez l’essentiel sans bruit visuel: croissance, sommeil, jalons et conseils IA, dans une interface nette et apaisée.</p>
               <div class="hero-actions">
                 <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
-                <a href="#/compare" class="btn btn-secondary">Voir les outils</a>
+                <a href="#/ai" class="btn btn-secondary">Voir les outils</a>
               </div>
               <div class="hero-stats">
                 <div class="stat"><strong>0–7 ans</strong><span>Repères adaptés</span></div>
@@ -211,6 +211,7 @@
           <label>Date de naissance<input type="date" name="dob" required /></label>
           <label>Taille (cm)<input type="number" step="0.1" name="height" /></label>
           <label>Poids (kg)<input type="number" step="0.01" name="weight" /></label>
+          <label>Dents (nb)<input type="number" step="1" name="teeth" /></label>
           <label>Photo/avatar<input type="file" name="photo" accept="image/*" /></label>
 
           <h3>Contexte</h3>
@@ -218,6 +219,66 @@
           <label>Antécédents<input type="text" name="history" placeholder="Familiaux, médicaux…" /></label>
           <label>Mode de garde<input type="text" name="care" placeholder="Crèche, nounou, maison…" /></label>
           <label>Langues parlées<input type="text" name="languages" placeholder="Français, anglais…" /></label>
+
+          <h3>Habitudes alimentaires</h3>
+          <label>Type d’alimentation
+            <select name="feedingType">
+              <option value="">—</option>
+              <option value="allaitement_exclusif">Allaitement exclusif</option>
+              <option value="mixte_allaitement_biberon">Mixte (allaitement + biberon)</option>
+              <option value="allaitement_diversification">Diversification + allaitement</option>
+              <option value="biberon_diversification">Biberon + diversification</option>
+              <option value="lait_poudre_vache">Lait en poudre / lait de vache</option>
+            </select>
+          </label>
+          <label>Appétit / façon de manger
+            <select name="eatingStyle">
+              <option value="">—</option>
+              <option value="mange_tres_bien">Mange très bien</option>
+              <option value="appetit_variable">Appétit variable</option>
+              <option value="selectif_difficile">Sélectif / difficile</option>
+              <option value="petites_portions">Petites portions</option>
+            </select>
+          </label>
+
+          <h3>Sommeil</h3>
+          <label>Endormissement
+            <select name="sleep_falling">
+              <option value="">—</option>
+              <option value="facile">Facile</option>
+              <option value="moyen">Moyen</option>
+              <option value="difficile">Difficile</option>
+            </select>
+          </label>
+          <label>Nuits complètes
+            <select name="sleep_through">
+              <option value="">—</option>
+              <option value="oui">Oui</option>
+              <option value="non">Non</option>
+            </select>
+          </label>
+          <label>Réveils nocturnes
+            <select name="sleep_wakings">
+              <option value="">—</option>
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3+">3+</option>
+            </select>
+          </label>
+          <label>Durée des éveils nocturnes
+            <select name="sleep_wake_duration">
+              <option value="">—</option>
+              <option value="<5min">Moins de 5 min</option>
+              <option value="5-15min">5–15 min</option>
+              <option value="15-30min">15–30 min</option>
+              <option value="30-60min">30–60 min</option>
+              <option value=">60min">Plus de 60 min</option>
+            </select>
+          </label>
+          <label>Heure du coucher (approx.)
+            <input type="time" name="sleep_bedtime" />
+          </label>
 
           <h3>Questionnaire développement (10)</h3>
           <div class="qgrid" id="dev-questions"></div>
@@ -258,14 +319,7 @@
         </dialog>
       </section>
 
-      <!-- Comparateur -->
-      <section data-route="/compare" class="route">
-        <div class="page-header">
-          <h2>Comparateur</h2>
-          <p class="page-subtitle">Comparez avec les repères OMS et les tendances de la communauté.</p>
-        </div>
-        <div id="compare-content" class="stack"></div>
-      </section>
+      
 
       <!-- À propos -->
       <section data-route="/about" class="route">
@@ -277,6 +331,104 @@
           <div class="card stack">
             <p>Ped’IA est un projet qui vise à offrir aux parents un espace simple, beau et utile pour suivre l’évolution des enfants de 0 à 7 ans.</p>
             <p>Notre approche : sobriété, bienveillance et respect des données. Nous combinons des repères publics (OMS) et un assistant IA pour vous guider, sans jamais remplacer les professionnels de santé.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fonctionnalité IA -->
+      <section data-route="/ai" class="route">
+        <div class="page-header">
+          <h2>Fonctionnalité IA</h2>
+          <p class="page-subtitle">Des outils personnalisés selon l’âge, les allergies et les infos de votre espace membre.</p>
+        </div>
+
+        <div class="stack">
+          <div class="card stack">
+            <h3>Recettes personnalisées</h3>
+            <p class="muted">Propositions adaptées à l’âge, aux allergies et aux préférences (issues de votre profil et de celui de l’enfant).</p>
+            <form id="form-ai-recipes" class="form-grid">
+              <label>Préférences / contraintes (optionnel)
+                <input type="text" name="prefs" placeholder="Ex: végétarien, sans gluten, sans lait…" />
+              </label>
+              <div class="hstack">
+                <button class="btn btn-primary" type="submit">Générer des recettes</button>
+                <span id="ai-recipes-status" class="muted"></span>
+              </div>
+            </form>
+            <div id="ai-recipes-result" class="card"></div>
+            <div class="hstack">
+              <a class="btn btn-secondary" href="#/onboarding">Mettre à jour allergies</a>
+              <a class="btn btn-secondary" href="#/settings">Mettre à jour préférences</a>
+            </div>
+          </div>
+
+          <div class="card stack">
+            <h3>Générateur d’histoires personnalisées</h3>
+            <p class="muted">Des histoires courtes adaptées à l’âge, au prénom et aux centres d’intérêt de l’enfant.</p>
+            <form id="form-ai-story" class="form-grid">
+              <label>Thème (optionnel)
+                <input type="text" name="theme" placeholder="Ex: animaux, espace, pirates…" />
+              </label>
+              <label>Durée
+                <select name="duration">
+                  <option value="1">1 min</option>
+                  <option value="3" selected>3 min</option>
+                  <option value="5">5 min</option>
+                </select>
+              </label>
+              <label class="switch">
+                <input type="checkbox" name="sleepy" />
+                <span>Mode dodo (apaisant)</span>
+              </label>
+              <div class="hstack">
+                <button class="btn btn-primary" type="submit">Générer l’histoire</button>
+                <span id="ai-story-status" class="muted"></span>
+              </div>
+            </form>
+            <div id="ai-story-result" class="card"></div>
+          </div>
+
+          <div class="card stack">
+            <h3>Chatbot personnalisé</h3>
+            <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
+            <form id="form-ai-chat" class="form-grid">
+              <label>Votre question
+                <textarea name="q" rows="3" placeholder="Ex: Mon enfant se réveille la nuit, que faire ?" required></textarea>
+              </label>
+              <div class="hstack">
+                <button class="btn btn-primary" type="submit">Demander</button>
+                <span id="ai-chat-status" class="muted"></span>
+              </div>
+            </form>
+            <div id="ai-chat-result" class="card"></div>
+            <ul class="pillars">
+              <li class="pillar">Sommeil: routines, réveils nocturnes, siestes</li>
+              <li class="pillar">Alimentation: portions, diversification, textures</li>
+              <li class="pillar">Développement: jalons, activités adaptées</li>
+              <li class="pillar">Bien‑être: émotions, écrans, organisation</li>
+            </ul>
+          </div>
+
+          <div class="card stack">
+            <h3>Idées IA personnalisées (suggestions)</h3>
+            <p class="muted">Quelques pistes à intégrer ensuite, toujours basées sur vos données locales.</p>
+            <div class="features">
+              <div class="feature">
+                <div class="feature-ico">🗓️</div>
+                <h4>Planning intelligent</h4>
+                <p>Rappels vaccin/suivi pédiatrique et activités adaptées à l’âge.</p>
+              </div>
+              <div class="feature">
+                <div class="feature-ico">🎯</div>
+                <h4>Objectifs doux</h4>
+                <p>Mini‑objectifs hebdo (lecture, motricité, langage) selon les jalons.</p>
+              </div>
+              <div class="feature">
+                <div class="feature-ico">🧩</div>
+                <h4>Jeux éducatifs</h4>
+                <p>Suggestions d’activités courtes, matérielles ou sans écran.</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -339,6 +491,7 @@
           <div class="card stack">
             <h3>Gestion multi‑enfants</h3>
             <div id="children-list" class="stack"></div>
+            <div id="child-edit" class="stack"></div>
             <a class="btn btn-secondary" href="#/onboarding">Ajouter un profil enfant</a>
             <h3>Export & compte</h3>
             <div class="hstack">
@@ -366,7 +519,7 @@
             <div class="f-title">Produit</div>
             <a class="f-link" href="#/">Accueil</a>
             <a class="f-link" href="#/dashboard">Dashboard</a>
-            <a class="f-link" href="#/compare">Comparateur</a>
+            
             <a class="f-link" href="#/community">Communauté</a>
           </div>
           <div class="f-col">
