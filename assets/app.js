@@ -80,8 +80,27 @@
     if (path === '/settings') renderSettings();
     if (path === '/ai') setupAIPage();
     if (path === '/contact') setupContact();
+    if (path === '/login' || path === '/signup') renderAuthDebug(path);
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
+  }
+
+  async function renderAuthDebug(where){
+    const el = document.getElementById(where === '/login' ? 'auth-debug-login' : 'auth-debug-signup');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/env');
+      const env = await r.json();
+      let modOk = false;
+      try { await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'); modOk = true; } catch {}
+      const lines = [];
+      lines.push(`Env URL: ${env?.url ? 'OK' : 'manquante'}`);
+      lines.push(`Env anonKey: ${env?.anonKey ? 'OK' : 'manquante'}`);
+      lines.push(`Module import: ${modOk ? 'OK' : 'échec (CSP?)'}`);
+      el.textContent = lines.join(' • ');
+    } catch (e) {
+      el.textContent = 'Debug auth: échec de /api/env';
+    }
   }
 
   window.addEventListener('hashchange', () => setActiveRoute(location.hash));
