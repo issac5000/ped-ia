@@ -1,5 +1,8 @@
 // Ped’IA SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 (async () => {
+  // Dom helpers available early
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
   // Load Supabase env and client
   let supabase = null; let authSession = null;
@@ -60,8 +63,7 @@
     console.warn('Supabase init failed (env or import)', e);
   }
 
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  // (moved $ and $$ above)
   const useRemote = () => !!supabase && !!authSession?.user;
 
   const routes = [
@@ -307,6 +309,16 @@
         if (c) return c;
       }
       return null;
+    };
+
+    // Chat history helpers (local, per child)
+    const chatKey = (c) => `pedia_ai_chat_${c?.id||'anon'}`;
+    const loadChat = (c) => { try { return JSON.parse(localStorage.getItem(chatKey(c))||'[]'); } catch { return []; } };
+    const saveChat = (c, arr) => { try { localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20))); } catch {} };
+    const renderChat = (arr) => {
+      const el = document.getElementById('ai-chat-result');
+      if (!el) return;
+      el.innerHTML = arr.map(m=>`<div class="${m.role==='user'?'':'card'}"><div class="muted">${m.role==='user'?'Vous':'Assistant'}</div><div>${escapeHtml(m.content).replace(/\n/g,'<br/>')}</div></div>`).join('');
     };
 
     // Recipes
@@ -1615,16 +1627,6 @@
       const r = t.getBoundingClientRect();
       const vh = window.innerHeight || document.documentElement.clientHeight;
       const vw = window.innerWidth || document.documentElement.clientWidth;
-    // Chat history helpers (local, per child)
-    const chatKey = (c) => `pedia_ai_chat_${c?.id||'anon'}`;
-    const loadChat = (c) => {
-      try { return JSON.parse(localStorage.getItem(chatKey(c))||'[]'); } catch { return []; }
-    };
-    const saveChat = (c, arr) => { try { localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20))); } catch {} };
-    const renderChat = (arr) => {
-      if (!outChat) return;
-      outChat.innerHTML = arr.map(m=>`<div class="${m.role==='user'?'':'card'}"><div class="muted">${m.role==='user'?'Vous':'Assistant'}</div><div>${escapeHtml(m.content).replace(/\n/g,'<br/>')}</div></div>`).join('');
-    };
       if (r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0) t.classList.add('in-view');
     });
   }
