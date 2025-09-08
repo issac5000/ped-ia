@@ -1,12 +1,15 @@
 // Ped’IA SPA — Front‑only prototype with localStorage + Supabase Auth (Google)
 (async () => {
+  const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
   // Load Supabase env and client
   let supabase = null; let authSession = null;
   try {
     const env = await fetch('/api/env').then(r=>r.json());
+    if (DEBUG_AUTH) console.log('ENV', env);
     if (env?.url && env?.anonKey) {
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       supabase = createClient(env.url, env.anonKey);
+      if (DEBUG_AUTH) console.log('Supabase client created');
       const { data: { session } } = await supabase.auth.getSession();
       authSession = session || null;
       supabase.auth.onAuthStateChange((_event, session) => {
@@ -107,9 +110,11 @@
     $('#btn-logout').hidden = !authSession?.user;
   }
   async function signInGoogle(){
+    if (DEBUG_AUTH) console.log('signInGoogle clicked');
     try {
       if (!supabase) {
         const env = await fetch('/api/env').then(r=>r.json());
+        if (DEBUG_AUTH) console.log('ENV (on click)', env);
         if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
         const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
         supabase = createClient(env.url, env.anonKey);
@@ -1083,7 +1088,10 @@
   if (!location.hash) location.hash = '#/';
   setActiveRoute(location.hash);
   // Footer year (replaces inline script to satisfy CSP)
-  try { document.getElementById('y')?.textContent = String(new Date().getFullYear()); } catch {}
+  try {
+    const yEl = document.getElementById('y');
+    if (yEl) yEl.textContent = String(new Date().getFullYear());
+  } catch {}
 
   // --- AI request helper ---
   async function askAI(question, child){
