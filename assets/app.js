@@ -8,7 +8,21 @@
     if (DEBUG_AUTH) console.log('ENV', env);
     if (env?.url && env?.anonKey) {
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      supabase = createClient(env.url, env.anonKey);
+      supabase = createClient(env.url, env.anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+      // If redirected back from Google with a code, exchange it explicitly (works well with hash routing)
+      try {
+        const href = window.location.href;
+        const hasCode = href.includes('?') && new URL(href).searchParams.get('code');
+        if (hasCode) {
+          if (DEBUG_AUTH) console.log('Exchanging OAuth code for session…');
+          const { error } = await supabase.auth.exchangeCodeForSession(href);
+          if (error && DEBUG_AUTH) console.warn('exchangeCodeForSession error', error);
+          // Clean query params from URL (keep hash route)
+          const url = new URL(href);
+          url.search = '';
+          history.replaceState({}, '', url.toString());
+        }
+      } catch (e) { if (DEBUG_AUTH) console.warn('exchangeCodeForSession failed', e); }
       if (DEBUG_AUTH) console.log('Supabase client created');
       const { data: { session } } = await supabase.auth.getSession();
       authSession = session || null;
@@ -17,6 +31,7 @@
         updateHeaderAuth();
         setActiveRoute(location.hash);
       });
+      if (DEBUG_AUTH) console.log('Session after init', !!authSession);
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
