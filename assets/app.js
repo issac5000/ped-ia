@@ -1552,8 +1552,12 @@
     const res = await fetch('/api/ai/advice', {
       method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('AI backend error');
-    const data = await res.json();
+    const raw = await res.text();
+    if (!res.ok) {
+      try { const j = JSON.parse(raw); throw new Error(j.error || j.details || raw || 'AI backend error'); }
+      catch { throw new Error(raw || 'AI backend error'); }
+    }
+    let data; try { data = JSON.parse(raw); } catch { data = { text: raw }; }
     return data.text || 'Aucune réponse.';
   }
 
