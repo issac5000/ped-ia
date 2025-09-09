@@ -21,8 +21,7 @@ export default async function handler(req, res) {
     const system = `Tu es Ped’IA, assistant nutrition 0–7 ans.
 Donne des idées de menus et recettes adaptées à l’âge, en excluant les allergènes indiqués.
 Prends en compte le type d’alimentation (allaitement/biberon/diversification), le style d’appétit, et les préférences fournies.
-Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.
-Rappelle: "Information indicative — ne remplace pas un avis médical."`;
+Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
     const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {

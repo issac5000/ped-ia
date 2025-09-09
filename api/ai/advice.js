@@ -26,8 +26,7 @@ export default async function handler(req, res) {
     const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
 Réponds de manière bienveillante, concrète et structurée en puces.
 Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
-Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.
-Toujours rappeler: "Information indicative — ne remplace pas un avis médical."`;
+Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.`;
     const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {

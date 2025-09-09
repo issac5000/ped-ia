@@ -30,10 +30,10 @@ body::before{
   filter: blur(60px) saturate(110%);
 }
 .container{width:min(1100px,92%); margin-inline:auto}
-.site-header{position:sticky; top:0; background:rgba(255,255,255,.9); backdrop-filter:saturate(140%) blur(10px); border-bottom:1px solid var(--border); z-index:10}
-.header-inner{display:flex; align-items:center; justify-content:space-between; padding:12px 0; flex-wrap:nowrap}
+.site-header{position:sticky; top:0; background:rgba(255,255,255,.9); backdrop-filter:saturate(140%) blur(10px); border-bottom:1px solid var(--border); z-index:100}
+.header-inner{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:12px 0}
 .brand, .auth-actions, .nav-toggle{flex-shrink:0}
-.main-nav{flex:1 1 auto; min-width:0; white-space:nowrap; flex-wrap:nowrap}
+.main-nav{flex:0 0 auto; min-width:0; white-space:nowrap; flex-wrap:wrap; justify-content:center}
 .nav-toggle{display:none; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; border:1px solid var(--border); background:#ffffff; color:var(--text); cursor:pointer}
 .brand{display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--text)}
 .logo{font-size:22px}
@@ -41,7 +41,7 @@ body::before{
 .main-nav{display:flex; gap:6px; flex-wrap:nowrap}
 .main-nav .nav-link{padding:8px 12px; border-radius:12px; text-decoration:none; color:var(--text); opacity:.9; transition:all .2s ease}
 .main-nav .nav-link:hover{background:#f2f6ff; transform:translateY(-1px)}
-.auth-actions{display:flex; gap:8px}
+.auth-actions{display:flex; gap:8px; justify-content:center}
 
 .site-footer{border-top:1px solid var(--border); margin-top:56px; background:#ffffff}
 .site-footer .container{padding:28px 0}
@@ -64,8 +64,7 @@ body::before{
 .masthead-inner{
   padding:8px 0; text-align:center; font-weight:800; letter-spacing:.2px;
   font-size:clamp(18px, 2.6vw, 24px);
-  background:linear-gradient(90deg, #ffffff, #dfe4ff 40%, #b4f0e7 80%);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
+  color:#000000;
 }
 
 /* Backdrop for mobile menu */
@@ -76,7 +75,7 @@ body::before{
 @media(max-width:900px){.hero{padding:44px 0 24px}}
 .hero-content{display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:24px}
 @media(max-width:900px){.hero-content{grid-template-columns:1fr}}
-.hero h1{font-size:clamp(32px, 5.4vw, 56px); margin:4px 0 10px; letter-spacing:.2px; background:linear-gradient(90deg, #fff, #dfe4ff 35%, #b4f0e7 70%); -webkit-background-clip:text; background-clip:text; color:transparent}
+.hero h1{font-size:clamp(32px, 5.4vw, 56px); margin:4px 0 10px; letter-spacing:.2px; color:#000000}
 .hero-copy{max-width:620px}
 .hero-badge{background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.22)}
 .lead{color:var(--muted); margin:0 0 18px}
@@ -235,13 +234,13 @@ input[type="file"]{padding:8px}
 @media(max-width:900px){
   .container{width:94%}
   .container{overflow-x:hidden}
-  .header-inner{position:relative; gap:8px; justify-content:flex-start}
+  .header-inner{position:relative; gap:8px; justify-content:center}
   .brand{order:0}
   .main-nav{order:1}
   .auth-actions{order:2; margin-left:auto}
   .nav-toggle{order:3; margin-left:8px}
   .nav-toggle{display:inline-flex}
-  .main-nav{display:none; position:absolute; top:calc(100% + 8px); left:0; right:0; background:#ffffff; border:1px solid var(--border); border-radius:16px; padding:8px; box-shadow:0 18px 48px rgba(30,50,100,.15); z-index:12}
+  .main-nav{display:none; position:absolute; top:calc(100% + 8px); left:0; right:0; background:#ffffff; border:1px solid var(--border); border-radius:16px; padding:8px; box-shadow:0 18px 48px rgba(30,50,100,.15); z-index:150}
   .main-nav.open{display:grid; grid-template-columns:1fr; gap:6px}
   .main-nav .nav-link{display:block; padding:12px; border-radius:12px}
   .main-nav .nav-link:hover{background:#f2f6ff}

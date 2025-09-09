@@ -86,8 +86,7 @@ async function aiAdvice(body) {
   const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
 Réponds de manière bienveillante, concrète et structurée en puces.
 Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
-Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.
-Toujours rappeler: "Information indicative — ne remplace pas un avis médical."`;
+Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
   const convo = [{ role:'system', content: system },
     ...history.filter(m=>m && (m.role==='user' || m.role==='assistant') && typeof m.content==='string').map(m=>({ role:m.role, content: m.content.slice(0,2000) })),
@@ -118,8 +117,7 @@ async function aiRecipes(body){
   const system = `Tu es Ped’IA, assistant nutrition 0–7 ans.
 Donne des idées de menus et recettes adaptées à l’âge, en excluant les allergènes indiqués.
 Prends en compte le type d’alimentation (allaitement/biberon/diversification), le style d’appétit et, si pertinent, les repères de sommeil.
-Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.
-Rappelle: "Information indicative — ne remplace pas un avis médical."`;
+Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
