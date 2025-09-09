@@ -138,6 +138,8 @@ a.btn, a.btn:visited, a.btn:hover, a.btn:focus{ text-decoration:none !important;
 .stack{display:grid; gap:12px}
 .hstack{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
 .flex-between{display:flex; justify-content:space-between; align-items:center; gap:12px}
+.card-header{display:grid; gap:6px}
+.card-header h3,.card-header p{margin:0}
 
 .form-grid{display:grid; gap:12px}
 label{display:grid; gap:6px; font-size:14px}
@@ -145,6 +147,7 @@ input, select, textarea{width:100%; background:#ffffff; border:1px solid var(--b
 input::placeholder, textarea::placeholder{color:#8aa0bf}
 input:focus, select:focus, textarea:focus{box-shadow:0 0 0 2px rgba(138,182,255,.5); border-color:#b9cffd}
 input[type="file"]{padding:8px}
+input[type="checkbox"]{width:auto}
 .switch{display:flex; align-items:center; gap:10px}
 .muted{color:var(--muted)}
 
