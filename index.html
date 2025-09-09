@@ -35,6 +35,7 @@
     </header>
     <div id="page-logo" class="page-logo" hidden>
       <div class="container">
+        <canvas id="page-top-canvas" class="page-top-canvas" aria-hidden="true"></canvas>
         <img src="/logo.png" alt="Logo" class="page-logo-img" />
       </div>
     </div>
@@ -458,13 +459,7 @@
             <div id="children-list" class="stack"></div>
             <div id="child-edit" class="stack"></div>
             <a class="btn btn-secondary" href="#/onboarding">Ajouter un profil enfant</a>
-            <h3>Export & compte</h3>
-            <div class="hstack">
-              <button id="btn-export" class="btn btn-secondary">Exporter (JSON)</button>
-              <input id="input-import" type="file" accept="application/json" class="hidden" />
-              <button id="btn-import" class="btn btn-secondary">Importer (JSON)</button>
-              <button id="btn-delete-account" class="btn btn-danger">Supprimer le compte</button>
-            </div>
+            <button id="btn-delete-account" class="btn btn-danger">Supprimer le compte</button>
           </div>
         </div>
       </section>

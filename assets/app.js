@@ -132,11 +132,14 @@
     // Hero particles: enable only on home
     if (path === '/') {
       startHeroParticles();
-      // Particles kept only in hero; remove any section particles if present
       stopSectionParticles();
+      // Hide top logo particles on home
+      stopTopLogoParticles();
     } else {
       stopHeroParticles();
       stopSectionParticles();
+      // Enable top logo particles for non-home routes
+      startTopLogoParticles();
     }
   }
 
@@ -293,6 +296,96 @@
         if (sec) heroParticlesState.ctx.clearRect(0,0,sec.clientWidth,sec.clientHeight);
       }
       heroParticlesState.ctx = null; heroParticlesState.parts = [];
+    } catch {}
+  }
+
+  // Top logo particles (for all non-home pages)
+  let topParticles = { raf: 0, cvs: null, ctx: null, parts: [], lastT: 0, resize: null };
+  function startTopLogoParticles(){
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const holder = document.getElementById('page-logo');
+      const cvs = document.getElementById('page-top-canvas');
+      if (!holder || holder.hidden || !cvs) return;
+      const cont = holder.querySelector('.container');
+      if (!cont) return;
+      const rect = cont.getBoundingClientRect();
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      cvs.width = Math.floor(rect.width * dpr);
+      cvs.height = Math.floor(rect.height * dpr);
+      const ctx = cvs.getContext('2d'); ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr, dpr);
+      topParticles.cvs = cvs; topParticles.ctx = ctx; topParticles.parts = []; topParticles.lastT = 0;
+      // Palette from CSS variables
+      const cs = getComputedStyle(document.documentElement);
+      const palette = [
+        cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+        cs.getPropertyValue('--orange').trim()||'#ffcba4',
+        cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+        '#ffd9e6'
+      ];
+      const W = cont.clientWidth, H = cont.clientHeight;
+      const N = Math.max(16, Math.min(36, Math.round((W*H)/55000)));
+      for (let i=0;i<N;i++){
+        const u = Math.random();
+        const r = u < .6 ? (4 + Math.random()*7) : (u < .9 ? (10 + Math.random()*10) : (18 + Math.random()*16));
+        topParticles.parts.push({
+          x: Math.random()*W,
+          y: Math.random()*H,
+          r,
+          vx: (Math.random()*.25 - .125),
+          vy: (Math.random()*.25 - .125),
+          hue: palette[Math.floor(Math.random()*palette.length)],
+          alpha: .18 + Math.random()*.32,
+          drift: Math.random()*Math.PI*2,
+          spin: .001 + Math.random()*.003
+        });
+      }
+      const step = (t)=>{
+        const ctx = topParticles.ctx; if (!ctx) return;
+        const now = t || performance.now();
+        const dt = topParticles.lastT ? Math.min(40, now - topParticles.lastT) : 16;
+        topParticles.lastT = now;
+        const W = cont.clientWidth, H = cont.clientHeight;
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.clearRect(0,0,W,H);
+        for (const p of topParticles.parts){
+          p.drift += p.spin*dt;
+          p.x += p.vx + Math.cos(p.drift)*.035;
+          p.y += p.vy + Math.sin(p.drift)*.035;
+          if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
+          if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.hue;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        }
+        topParticles.raf = requestAnimationFrame(step);
+      };
+      cancelAnimationFrame(topParticles.raf);
+      topParticles.raf = requestAnimationFrame(step);
+      const onR = ()=>{
+        const rect = cont.getBoundingClientRect();
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        cvs.width = Math.floor(rect.width * dpr);
+        cvs.height = Math.floor(rect.height * dpr);
+        topParticles.ctx?.setTransform(1,0,0,1,0,0);
+        topParticles.ctx?.scale(dpr, dpr);
+      };
+      window.addEventListener('resize', onR);
+      topParticles.resize = onR;
+    } catch {}
+  }
+  function stopTopLogoParticles(){
+    try {
+      cancelAnimationFrame(topParticles.raf);
+      topParticles.raf = 0;
+      if (topParticles.resize) window.removeEventListener('resize', topParticles.resize);
+      topParticles.resize = null;
+      if (topParticles.ctx && topParticles.cvs){
+        const holder = document.getElementById('page-logo');
+        const cont = holder?.querySelector('.container');
+        if (cont) topParticles.ctx.clearRect(0,0,cont.clientWidth,cont.clientHeight);
+      }
+      topParticles.ctx = null; topParticles.parts = [];
     } catch {}
   }
 
@@ -1718,7 +1811,8 @@
       }
     }
 
-    $('#btn-export').onclick = () => {
+    const btnExport = $('#btn-export');
+    if (btnExport) btnExport.onclick = () => {
       const data = {
         user: store.get(K.user),
         children: store.get(K.children, []),
@@ -1731,7 +1825,8 @@
       a.href = url; a.download = 'pedia_export.json'; a.click();
       setTimeout(()=>URL.revokeObjectURL(url), 1000);
     };
-    $('#btn-delete-account').onclick = () => {
+    const btnDelete = $('#btn-delete-account');
+    if (btnDelete) btnDelete.onclick = () => {
       if (!confirm('Supprimer le compte et toutes les données locales ?')) return;
       localStorage.removeItem(K.user);
       localStorage.removeItem(K.children);
@@ -1743,25 +1838,28 @@
       location.hash = '#/';
     };
     const inputImport = $('#input-import');
-    $('#btn-import').onclick = () => inputImport.click();
-    inputImport.addEventListener('change', async (e) => {
-      const f = inputImport.files?.[0]; if (!f) return;
-      try {
-        const text = await f.text();
-        const data = JSON.parse(text);
-        if (!confirm('Importer ces données et écraser les actuelles ?')) return;
-        if (data.user) localStorage.setItem(K.user, JSON.stringify(data.user));
-        if (data.children) localStorage.setItem(K.children, JSON.stringify(data.children));
-        if (data.forum) localStorage.setItem(K.forum, JSON.stringify(data.forum));
-        if (data.privacy) localStorage.setItem(K.privacy, JSON.stringify(data.privacy));
-        alert('Import terminé.');
-        renderSettings();
-      } catch (e) {
-        alert('Fichier invalide.');
-      } finally {
-        inputImport.value = '';
-      }
-    });
+    const btnImport = $('#btn-import');
+    if (btnImport && inputImport) {
+      btnImport.onclick = () => inputImport.click();
+      inputImport.addEventListener('change', async (e) => {
+        const f = inputImport.files?.[0]; if (!f) return;
+        try {
+          const text = await f.text();
+          const data = JSON.parse(text);
+          if (!confirm('Importer ces données et écraser les actuelles ?')) return;
+          if (data.user) localStorage.setItem(K.user, JSON.stringify(data.user));
+          if (data.children) localStorage.setItem(K.children, JSON.stringify(data.children));
+          if (data.forum) localStorage.setItem(K.forum, JSON.stringify(data.forum));
+          if (data.privacy) localStorage.setItem(K.privacy, JSON.stringify(data.privacy));
+          alert('Import terminé.');
+          renderSettings();
+        } catch (e) {
+          alert('Fichier invalide.');
+        } finally {
+          inputImport.value = '';
+        }
+      });
+    }
   }
 
   // Helpers
@@ -1844,7 +1942,7 @@
     if (!box) {
       box = document.createElement('div');
       box.id = 'child-switcher-box';
-      box.className = 'hstack';
+      box.className = 'stack';
       // Insert right after the page header if present (so titles appear before selector)
       const header = container.querySelector('.page-header') || container.firstElementChild;
       if (header && header.nextSibling) {
@@ -1860,7 +1958,7 @@
       <label>Enfant
         <select id="child-switcher">${options}</select>
       </label>
-      <a class="btn btn-secondary" href="#/onboarding" style="margin-left:8px">Ajouter</a>
+      <a class="btn btn-secondary" href="#/onboarding">Ajouter</a>
     `;
     const sel = box.querySelector('#child-switcher');
     if (sel && !sel.dataset.bound) {
