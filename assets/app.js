@@ -130,7 +130,14 @@
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
     // Hero particles: enable only on home
-    if (path === '/') { startHeroParticles(); startSectionParticles(); } else { stopHeroParticles(); stopSectionParticles(); }
+    if (path === '/') {
+      startHeroParticles();
+      // Particles kept only in hero; remove any section particles if present
+      stopSectionParticles();
+    } else {
+      stopHeroParticles();
+      stopSectionParticles();
+    }
   }
 
   window.addEventListener('hashchange', () => setActiveRoute(location.hash));
@@ -1838,7 +1845,15 @@
       box = document.createElement('div');
       box.id = 'child-switcher-box';
       box.className = 'hstack';
-      container.insertBefore(box, container.firstChild);
+      // Insert right after the page header if present (so titles appear before selector)
+      const header = container.querySelector('.page-header') || container.firstElementChild;
+      if (header && header.nextSibling) {
+        header.parentNode.insertBefore(box, header.nextSibling);
+      } else if (header) {
+        header.parentNode.appendChild(box);
+      } else {
+        container.insertBefore(box, container.firstChild);
+      }
     }
     const options = items.map(c => `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${escapeHtml(c.firstName)}${c.dob?` • ${formatAge(c.dob)}`:''}</option>`).join('');
     box.innerHTML = `
