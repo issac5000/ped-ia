@@ -241,7 +241,8 @@ input[type="file"]{padding:8px}
   .nav-toggle{order:3; margin-left:8px}
   .nav-toggle{display:inline-flex}
   .main-nav{display:none; position:absolute; top:calc(100% + 8px); left:0; right:0; background:#ffffff; border:1px solid var(--border); border-radius:16px; padding:8px; box-shadow:0 18px 48px rgba(30,50,100,.15); z-index:150}
-  .main-nav.open{display:grid; grid-template-columns:1fr; gap:6px}
+  .main-nav.open{display:block !important}
+  .main-nav.open .nav-link{display:block}
   .main-nav .nav-link{display:block; padding:12px; border-radius:12px}
   .main-nav .nav-link:hover{background:#f2f6ff}
   .auth-actions{gap:6px}
