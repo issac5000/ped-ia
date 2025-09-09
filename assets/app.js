@@ -793,7 +793,7 @@
     try {
       const latestHPoint = [...ms].reverse().find(m=>Number.isFinite(m.height));
       const hMed = latestHPoint? medianAt('height', latestHPoint.month) : undefined;
-      const noteH = document.createElement('div'); noteH.className='muted';
+      const noteH = document.createElement('div'); noteH.className='chart-note';
       if (latestHPoint && Number.isFinite(hMed)) {
         const diff = latestHPoint.height - hMed; const pos = diff>1? 'au‑dessus' : diff<-1? 'en‑dessous' : 'autour';
         noteH.textContent = `Dernière taille: ${latestHPoint.height} cm (${pos} de la médiane OMS ~ ${hMed.toFixed(1)} cm).`;
@@ -802,7 +802,7 @@
 
       const latestWPoint = [...ms].reverse().find(m=>Number.isFinite(m.weight));
       const wMed = latestWPoint? medianAt('weight', latestWPoint.month) : undefined;
-      const noteW = document.createElement('div'); noteW.className='muted';
+      const noteW = document.createElement('div'); noteW.className='chart-note';
       if (latestWPoint && Number.isFinite(wMed)) {
         const diff = latestWPoint.weight - wMed; const pos = diff>0.2? 'au‑dessus' : diff<-0.2? 'en‑dessous' : 'autour';
         noteW.textContent = `Dernier poids: ${latestWPoint.weight} kg (${pos} de la médiane OMS ~ ${wMed.toFixed(2)} kg).`;
@@ -811,13 +811,13 @@
 
       const latestS = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
       const rec = sleepRecommendation(ageM);
-      const noteS = document.createElement('div'); noteS.className='muted';
+      const noteS = document.createElement('div'); noteS.className='chart-note';
       if (latestS) noteS.textContent = `Dernier sommeil: ${latestS.hours} h/24h. Recommandé: ${rec.min}–${rec.max} h.`;
       else noteS.textContent = `Recommandé à ${Math.round(ageM/12)} an(s): ${rec.min}–${rec.max} h/24h.`;
       document.getElementById('chart-sleep')?.parentElement?.appendChild(noteS);
 
       const latestT = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
-      const noteT = document.createElement('div'); noteT.className='muted';
+      const noteT = document.createElement('div'); noteT.className='chart-note';
       if (latestT) noteT.textContent = `Dernier relevé: ${latestT.count} dent(s). Le calendrier d’éruption varie beaucoup — comparez surtout avec les observations précédentes.`;
       else noteT.textContent = 'Ajoutez un relevé de dents pour suivre l’évolution.';
       document.getElementById('chart-teeth')?.parentElement?.appendChild(noteT);
@@ -1503,10 +1503,14 @@
 
     // Grid
     const grid = document.createElementNS('http://www.w3.org/2000/svg','g');
-    grid.setAttribute('stroke', '#223'); grid.setAttribute('stroke-width','1'); grid.setAttribute('opacity','0.6');
+    grid.setAttribute('stroke', '#1f2447');
+    grid.setAttribute('stroke-width', '1');
+    grid.setAttribute('opacity', '0.4');
+    grid.setAttribute('stroke-dasharray', '2,4');
     for(let i=0;i<=6;i++){
       const y = top + i*(innerH/6);
-      const l = line(left,y, left+innerW, y); l.setAttribute('stroke','#1f2447'); grid.appendChild(l);
+      const l = line(left,y, left+innerW, y);
+      grid.appendChild(l);
     }
     svg.appendChild(grid);
     // Axes
@@ -1523,6 +1527,8 @@
       path.setAttribute('fill','none');
       path.setAttribute('stroke', getComputedStyle(document.documentElement).getPropertyValue(s.color?.match(/^var/)? s.color.slice(4,-1):'') || s.color || '#0ff');
       path.setAttribute('stroke-width','2.5');
+      path.setAttribute('stroke-linecap','round');
+      path.setAttribute('stroke-linejoin','round');
       svg.appendChild(path);
       // Points
       pts.forEach((p,i)=>{
