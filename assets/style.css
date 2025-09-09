@@ -203,6 +203,17 @@ input[type="file"]{padding:8px}
 /* Utilities */
 .hidden{display:none !important}
 
+/* Chat UI */
+.chat-window{display:grid; grid-template-rows:1fr auto; gap:10px; height:380px; border:1px solid var(--border); border-radius:18px; padding:10px; background:#fff}
+.chat-messages{overflow:auto; padding:6px; display:grid; gap:8px}
+.chat-input{display:grid; gap:8px}
+.chat-textarea{width:100%; resize:none; min-height:44px; max-height:120px; padding:12px 14px; border:1px solid var(--border); border-radius:12px}
+.chat-actions{display:flex; justify-content:space-between; align-items:center; gap:10px}
+.bubble{max-width:80%; padding:10px 12px; border-radius:16px; line-height:1.35}
+.bubble.assistant{background:#f3f6ff; border:1px solid var(--border)}
+.bubble.user{background:#eafaf6; border:1px solid #d1efe5; margin-left:auto}
+.chat-messages .meta{font-size:11px; color:var(--muted); margin-bottom:2px}
+
 /* Reveal-on-scroll animations */
 .reveal{opacity:0; transform:translateY(12px); transition:opacity .6s ease, transform .6s ease; will-change:opacity, transform}
 .reveal.fade-in{transform:none}

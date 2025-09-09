@@ -361,10 +361,10 @@
     // Chat
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');
-    const outChat = document.getElementById('ai-chat-result');
+    const msgsEl = document.getElementById('ai-chat-messages');
     // Add reset button to chat toolbar
     try {
-      const toolbar = fChat?.querySelector('.hstack') || fChat;
+      const toolbar = fChat?.querySelector('.chat-actions') || fChat;
       if (toolbar && !document.getElementById('ai-chat-reset')) {
         const btnReset = document.createElement('button');
         btnReset.type = 'button';
@@ -385,17 +385,26 @@
       e.preventDefault();
       const q = new FormData(fChat).get('q')?.toString().trim();
       if (!q) return;
-      sChat.textContent = 'Réflexion en cours…'; outChat.innerHTML='';
+      sChat.textContent = 'Réflexion en cours…';
+      // Render immediate user bubble
+      const history = loadChat(currentChild);
+      history.push({ role:'user', content:q });
+      saveChat(currentChild, history);
+      renderChat(history);
+      // Show typing indicator
+      const typing = document.createElement('div'); typing.className='bubble assistant'; typing.textContent='Assistant écrit…'; msgsEl?.appendChild(typing); msgsEl?.scrollTo(0, msgsEl.scrollHeight);
       try {
-        const history = loadChat(currentChild);
-        history.push({ role:'user', content:q });
-        const text = await askAI(q, currentChild, history);
-        history.push({ role:'assistant', content:text });
-        saveChat(currentChild, history);
-        renderChat(history);
+        const resp = await askAI(q, currentChild, history);
+        const newH = loadChat(currentChild);
+        newH.push({ role:'assistant', content:resp });
+        saveChat(currentChild, newH);
+        renderChat(newH);
       } catch (err){
         const msg = (err && err.message) ? err.message : String(err||'IA indisponible');
-        outChat.innerHTML = `<div class="muted">Erreur IA: ${escapeHtml(msg)}</div>`;
+        const newH = loadChat(currentChild);
+        newH.push({ role:'assistant', content:`[Erreur IA] ${msg}` });
+        saveChat(currentChild, newH);
+        renderChat(newH);
       } finally { sChat.textContent=''; }
     });
 
@@ -425,7 +434,7 @@
         </div>`;
     };
 
-    (async () => { currentChild = await loadChild(); renderIndicator(currentChild); renderChat(loadChat(currentChild)); })();
+    (async () => { currentChild = await loadChild(); renderIndicator(currentChild); renderChat(loadChat(currentChild)); const m=document.getElementById('ai-chat-messages'); m?.scrollTo(0, m.scrollHeight); })();
   }
 
   // Onboarding
