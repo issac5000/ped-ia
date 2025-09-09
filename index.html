@@ -19,15 +19,16 @@
         </a>
         <button id="nav-toggle" class="nav-toggle" aria-controls="main-nav" aria-expanded="false" title="Menu">☰</button>
         <nav id="main-nav" class="main-nav" aria-label="Navigation principale">
-          <a href="#/" class="nav-link">Accueil</a>
-          <a href="#/dashboard" class="nav-link">Dashboard</a>
-          <a href="#/community" class="nav-link">Communauté</a>
-          
-          <a href="#/about" class="nav-link">À propos</a>
-          <a href="#/ai" class="nav-link">Fonctionnalité IA</a>
-          <a href="#/settings" class="nav-link">Paramètres</a>
+          <a href="#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
+          <a href="#/dashboard" class="nav-link"><span class="nav-ico">📊</span><span>Dashboard</span></a>
+          <a href="#/community" class="nav-link"><span class="nav-ico">💬</span><span>Communauté</span></a>
+
+          <a href="#/about" class="nav-link"><span class="nav-ico">ℹ️</span><span>À propos</span></a>
+          <a href="#/ai" class="nav-link"><span class="nav-ico">🤖</span><span>Fonctionnalité IA</span></a>
+          <a href="#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
         </nav>
         <div class="auth-actions">
+          <span id="login-status" class="login-status" hidden>connecté <span class="check">✔</span></span>
           <button id="btn-login" class="btn btn-secondary">Se connecter</button>
           <button id="btn-logout" class="btn btn-secondary" hidden>Se déconnecter</button>
         </div>
@@ -48,8 +49,8 @@
         <div class="hero">
           <div class="hero-content">
             <div class="hero-copy">
-              <h1>Votre copilote parental, clair et rassurant</h1>
-              <p class="lead">Suivez l’essentiel sans bruit visuel: croissance, sommeil, jalons et conseils IA, dans une interface nette et apaisée.</p>
+              <h1 class="hero-title">Votre copilote parental, clair et rassurant</h1>
+              <p class="lead">suivez l’évolution de vos enfants avec votre pédiatre virtuel à portée de mains 24h/24</p>
               <div class="hero-actions">
                 <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
                 <a href="#/ai" class="btn btn-secondary">Voir les outils</a>
