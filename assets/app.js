@@ -364,16 +364,16 @@
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');
     const msgsEl = document.getElementById('ai-chat-messages');
-    // Add reset button to chat toolbar
+    // Add reset button at top of chat window
     try {
-      const toolbar = fChat?.querySelector('.chat-actions') || fChat;
-      if (toolbar && !document.getElementById('ai-chat-reset')) {
+      const chatWindow = fChat?.closest('.chat-window');
+      if (chatWindow && !document.getElementById('ai-chat-reset')) {
         const btnReset = document.createElement('button');
         btnReset.type = 'button';
         btnReset.id = 'ai-chat-reset';
-        btnReset.className = 'btn btn-secondary';
+        btnReset.className = 'btn btn-secondary chat-reset';
         btnReset.textContent = 'Réinitialiser la discussion';
-        toolbar.appendChild(btnReset);
+        chatWindow.prepend(btnReset);
         btnReset.addEventListener('click', (e) => {
           e.preventDefault();
           const key = chatKey(currentChild);
