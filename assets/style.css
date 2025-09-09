@@ -182,7 +182,8 @@ h3{
 
 /* Settings page harmonization */
 section[data-route="/settings"] #form-settings{
-  gap:10px;
+  /* tighter spacing inside the settings form */
+  gap:8px;
 }
 section[data-route="/settings"] #form-settings h3{
   margin:4px 0 2px;
@@ -190,18 +191,51 @@ section[data-route="/settings"] #form-settings h3{
 section[data-route="/settings"] #form-settings label{
   gap:6px;
 }
+/* smaller save button inside the settings form */
 section[data-route="/settings"] #form-settings .btn{
-  padding:10px 14px; border-radius:12px; font-size:14px;
+  padding:8px 12px; border-radius:12px; font-size:13px;
 }
 section[data-route="/settings"] .card.stack{ gap:10px }
 section[data-route="/settings"] .hstack{ gap:8px }
 section[data-route="/settings"] .btn{ padding:10px 14px; border-radius:12px; font-size:14px }
 
+/* keep settings layout stacked (one column) even on wide screens */
+section[data-route="/settings"] .grid-2{ grid-template-columns:1fr !important }
+
+/* slightly more compact fields in settings */
+section[data-route="/settings"] #form-settings input,
+section[data-route="/settings"] #form-settings select,
+section[data-route="/settings"] #form-settings textarea{
+  padding:10px 12px;
+  border-radius:12px;
+}
+
 /* Dashboard child switcher and Add button alignment */
-#child-switcher-box{ align-items:stretch }
-#child-switcher-box label{ display:flex; flex-direction:column; justify-content:flex-end }
-#child-switcher-box select{ height:44px; padding:10px 12px; border-radius:12px }
-#child-switcher-box .btn{ height:44px; padding:10px 12px; border-radius:12px; display:inline-flex; align-items:center }
+#child-switcher-box{
+  /* center the selector + button row and add breathing space */
+  justify-content:center;
+  align-items:center;
+  gap:12px;
+  margin:8px 0 16px;
+}
+#child-switcher-box label{
+  /* keep compact label so control aligns nicely with the button */
+  display:grid;
+  gap:6px;
+  margin:0;
+}
+#child-switcher-box select{
+  height:44px;
+  padding:10px 12px;
+  border-radius:12px;
+}
+#child-switcher-box .btn{
+  height:44px;
+  padding:10px 12px;
+  border-radius:12px;
+  display:inline-flex;
+  align-items:center;
+}
 .hero-actions{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
 .hero-stats{display:flex; gap:12px; margin-top:12px; flex-wrap:wrap}
 .hero-stats .stat{display:grid; gap:2px; padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:#ffffff}
