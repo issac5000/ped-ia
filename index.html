@@ -76,16 +76,6 @@
               <p>Suivi taille/poids avec repères OMS intégrés.</p>
             </div>
             <div class="feature">
-              <div class="feature-ico">💤</div>
-              <h3>Sommeil</h3>
-              <p>Rythme et recommandations adaptées à l’âge.</p>
-            </div>
-            <div class="feature">
-              <div class="feature-ico">🦷</div>
-              <h3>Dents</h3>
-              <p>Éruption dentaire et conseils d’hygiène ludiques.</p>
-            </div>
-            <div class="feature">
               <div class="feature-ico">🧠</div>
               <h3>Conseils IA</h3>
               <p>Réponses contextualisées et structurées en puces.</p>
@@ -94,11 +84,6 @@
               <div class="feature-ico">👨‍👩‍👧‍👦</div>
               <h3>Communauté</h3>
               <p>Partagez expériences et astuces entre parents.</p>
-            </div>
-            <div class="feature">
-              <div class="feature-ico">🗂️</div>
-              <h3>Exports</h3>
-              <p>Export/Import JSON pour garder vos données.</p>
             </div>
           </div>
         </div>
@@ -296,7 +281,14 @@
         <div class="page-header">
           <h2>Communauté</h2>
           <p class="page-subtitle">Échangez conseils et expériences avec d’autres parents.</p>
-          <div class="page-actions">
+        <div class="page-actions">
+            <div id="forum-cats" class="hstack">
+              <button class="btn btn-secondary cat" data-cat="all">Tous</button>
+              <button class="btn btn-secondary cat" data-cat="Sommeil">Sommeil</button>
+              <button class="btn btn-secondary cat" data-cat="Alimentation">Alimentation</button>
+              <button class="btn btn-secondary cat" data-cat="Développement">Développement</button>
+              <button class="btn btn-secondary cat" data-cat="Divers">Divers</button>
+            </div>
             <button id="btn-new-topic" class="btn btn-primary">Nouveau sujet</button>
           </div>
         </div>
@@ -304,10 +296,18 @@
         <dialog id="dialog-topic" class="dialog">
           <form method="dialog" id="form-topic" class="form-grid">
             <h3>Nouveau sujet</h3>
+            <label>Catégorie
+              <select name="category">
+                <option value="Sommeil">Sommeil</option>
+                <option value="Alimentation">Alimentation</option>
+                <option value="Développement">Développement</option>
+                <option value="Divers" selected>Divers</option>
+              </select>
+            </label>
             <label>Titre<input name="title" required /></label>
             <label>Message<textarea name="content" rows="4" required></textarea></label>
             <menu class="dialog-actions">
-              <button value="cancel" class="btn btn-secondary">Annuler</button>
+              <button value="cancel" id="btn-cancel-topic" class="btn btn-secondary">Annuler</button>
               <button value="submit" class="btn btn-primary">Publier</button>
             </menu>
           </form>

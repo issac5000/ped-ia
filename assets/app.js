@@ -896,6 +896,19 @@
   function renderCommunity() {
     const list = $('#forum-list');
     list.innerHTML = '';
+    // Category filter handlers
+    const cats = $('#forum-cats');
+    if (cats && !cats.dataset.bound) {
+      cats.addEventListener('click', (e)=>{
+        const b = e.target.closest('.cat'); if (!b) return;
+        const all = cats.querySelectorAll('.cat'); all.forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        cats.setAttribute('data-active', b.dataset.cat || 'all');
+        renderCommunity();
+      });
+      cats.dataset.bound='1';
+    }
+    const activeCat = cats?.getAttribute('data-active') || 'all';
     const showEmpty = () => {
       const empty = document.createElement('div');
       empty.className = 'card';
@@ -905,14 +918,20 @@
     const renderTopics = (topics, replies, authorsMap) => {
       if (!topics.length) return showEmpty();
       topics.slice().forEach(t => {
+        // Extract category from title prefix like [Sommeil] Titre
+        let title = t.title || '';
+        let cat = 'Divers';
+        const m = title.match(/^\[(.*?)\]\s*(.*)$/);
+        if (m) { cat = m[1]; title = m[2]; }
+        if (activeCat !== 'all' && cat !== activeCat) return;
         const el = document.createElement('div');
         el.className = 'topic';
         const author = authorsMap.get(t.user_id) || 'Anonyme';
         const rs = (replies.get(t.id) || []).sort((a,b)=>a.created_at-b.created_at);
         el.innerHTML = `
           <div class="flex-between">
-            <h3 style="margin:0">${escapeHtml(t.title)}</h3>
-            <span class="muted" title="Auteur">${escapeHtml(author)}</span>
+            <h3 style="margin:0">${escapeHtml(title)}</h3>
+            <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span></div>
           </div>
           <p>${escapeHtml(t.content)}</p>
           <div class="stack">
@@ -921,7 +940,9 @@
           <form data-id="${t.id}" class="form-reply form-grid" style="margin-top:8px">
             <label>Réponse<textarea name="content" rows="2" required></textarea></label>
             <button class="btn btn-secondary" type="submit">Répondre</button>
-          </form>`;
+          </form>
+          ${ (authSession?.user?.id && t.user_id===authSession.user.id) ? `<button class="btn btn-danger" data-del-topic="${t.id}" style="margin-top:8px">Supprimer le sujet</button>`:''}
+        `;
         list.appendChild(el);
       });
       $$('.form-reply').forEach(f => f.addEventListener('submit', async (e)=>{
@@ -948,6 +969,20 @@
         store.set(K.forum, forum);
         renderCommunity();
       }));
+      // Delete topic buttons
+      list.addEventListener('click', async (e)=>{
+        const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
+        const id = btn.getAttribute('data-del-topic');
+        if (!confirm('Supprimer ce sujet ?')) return;
+        if (useRemote()) {
+          try { await supabase.from('forum_topics').delete().eq('id', id); renderCommunity(); return; } catch {}
+        }
+        // Local fallback
+        const forum = store.get(K.forum);
+        forum.topics = forum.topics.filter(t=>t.id!==id);
+        store.set(K.forum, forum);
+        renderCommunity();
+      }, { once: true });
     };
     if (useRemote()) {
       (async () => {
@@ -977,9 +1012,11 @@
     $('#form-topic')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.currentTarget);
-      const title = fd.get('title').toString().trim();
+      let title = fd.get('title').toString().trim();
       const content = fd.get('content').toString().trim();
+      const category = fd.get('category')?.toString() || 'Divers';
       if (!title || !content) return;
+      if (category && category !== 'Divers' && !/^\[.*\]/.test(title)) title = `[${category}] ${title}`;
       if (useRemote()) {
         try {
           await supabase.from('forum_topics').insert({ user_id: authSession.user.id, title, content });
