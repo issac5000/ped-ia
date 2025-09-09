@@ -150,6 +150,7 @@
   function updateHeaderAuth() {
     $('#btn-login').hidden = !!authSession?.user;
     $('#btn-logout').hidden = !authSession?.user;
+    $('#login-status').hidden = !authSession?.user;
   }
 
   // Ensure a row exists in profiles for the authenticated user
