@@ -217,7 +217,7 @@ input[type="checkbox"]{width:auto}
 .hidden{display:none !important}
 
 /* Chat UI */
-.chat-window{display:grid; grid-template-rows:auto 1fr auto; gap:10px; height:380px; border:1px solid var(--border); border-radius:18px; padding:10px; background:#fff}
+.chat-window{display:grid; grid-template-rows:1fr auto; gap:10px; height:380px; border:1px solid var(--border); border-radius:18px; padding:10px; background:#fff}
 .chat-messages{overflow:auto; padding:6px; display:grid; gap:8px}
 .chat-input{display:grid; gap:8px}
 .chat-row{display:flex; gap:8px; align-items:flex-end}
