@@ -337,25 +337,27 @@
           <p class="page-subtitle">Des outils personnalisés selon l’âge, les allergies et les infos de votre espace membre.</p>
         </div>
 
-        <div class="stack">
-          <div class="card stack">
-            <h3>Recettes personnalisées</h3>
-            <p class="muted">Propositions adaptées à l’âge, aux allergies et aux préférences (issues de votre profil et de celui de l’enfant).</p>
-            <form id="form-ai-recipes" class="form-grid">
-              <label>Préférences / contraintes (optionnel)
-                <input type="text" name="prefs" placeholder="Ex: végétarien, sans gluten, sans lait…" />
-              </label>
-              <div class="hstack">
-                <button class="btn btn-primary" type="submit">Générer des recettes</button>
-                <span id="ai-recipes-status" class="muted"></span>
+          <div class="stack">
+            <div class="card stack">
+              <div class="card-header">
+                <h3>Recettes personnalisées</h3>
+                <p class="muted">Propositions adaptées à l’âge, aux allergies et aux préférences (issues de votre profil et de celui de l’enfant).</p>
               </div>
-            </form>
-            <div id="ai-recipes-result" class="card"></div>
-            <div class="hstack">
-              <a class="btn btn-secondary" href="#/onboarding">Mettre à jour allergies</a>
-              <a class="btn btn-secondary" href="#/settings">Mettre à jour préférences</a>
+              <form id="form-ai-recipes" class="form-grid">
+                <label>Préférences / contraintes (optionnel)
+                  <input type="text" name="prefs" placeholder="Ex: végétarien, sans gluten, sans lait…" />
+                </label>
+                <div class="hstack">
+                  <button class="btn btn-primary" type="submit">Générer des recettes</button>
+                  <span id="ai-recipes-status" class="muted"></span>
+                </div>
+              </form>
+              <div id="ai-recipes-result" class="card"></div>
+              <div class="hstack">
+                <a class="btn btn-secondary" href="#/onboarding">Mettre à jour allergies</a>
+                <a class="btn btn-secondary" href="#/settings">Mettre à jour préférences</a>
+              </div>
             </div>
-          </div>
 
           <div class="card stack">
             <div class="card-header">
