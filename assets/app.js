@@ -316,9 +316,10 @@
     const loadChat = (c) => { try { return JSON.parse(localStorage.getItem(chatKey(c))||'[]'); } catch { return []; } };
     const saveChat = (c, arr) => { try { localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20))); } catch {} };
     const renderChat = (arr) => {
-      const el = document.getElementById('ai-chat-result');
+      const el = document.getElementById('ai-chat-messages');
       if (!el) return;
-      el.innerHTML = arr.map(m=>`<div class="${m.role==='user'?'':'card'}"><div class="muted">${m.role==='user'?'Vous':'Assistant'}</div><div>${escapeHtml(m.content).replace(/\n/g,'<br/>')}</div></div>`).join('');
+      el.innerHTML = arr.map(m=>{ const role = m.role==='user' ? 'user' : 'assistant'; return `<div class=\"meta\">${role==='user'?'Vous':'Assistant'}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div>`; }).join('');
+      el.scrollTo(0, el.scrollHeight);
     };
 
     // Recipes
@@ -392,7 +393,8 @@
       saveChat(currentChild, history);
       renderChat(history);
       // Show typing indicator
-      const typing = document.createElement('div'); typing.className='bubble assistant'; typing.textContent='Assistant écrit…'; msgsEl?.appendChild(typing); msgsEl?.scrollTo(0, msgsEl.scrollHeight);
+      document.getElementById('ai-typing')?.remove();
+      const typing = document.createElement('div'); typing.id='ai-typing'; typing.className='bubble assistant'; typing.textContent='Assistant écrit…'; msgsEl?.appendChild(typing); msgsEl?.scrollTo(0, msgsEl.scrollHeight);
       try {
         const resp = await askAI(q, currentChild, history);
         const newH = loadChat(currentChild);
@@ -405,7 +407,7 @@
         newH.push({ role:'assistant', content:`[Erreur IA] ${msg}` });
         saveChat(currentChild, newH);
         renderChat(newH);
-      } finally { sChat.textContent=''; }
+      } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); }
     });
 
     // Load child asynchronously for IA personalization
