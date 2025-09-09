@@ -407,13 +407,15 @@
     const renderIndicator = (child) => {
       const route = document.querySelector('section[data-route="/ai"]');
       if (!route) return;
+      const container = route.querySelector('.stack');
+      if (!container) return;
       let box = document.getElementById('ai-profile-indicator');
       if (!box) {
         box = document.createElement('div');
         box.id = 'ai-profile-indicator';
-        box.className = 'card stack';
-        route.insertBefore(box, route.firstElementChild?.nextElementSibling || route.firstChild);
+        box.className = 'card';
       }
+      container.insertBefore(box, container.firstChild);
       if (!child) {
         box.innerHTML = `<div class="muted">Aucun profil enfant chargé pour l’IA. <a href="#/onboarding">Créer un profil</a>.</div>`;
         return;
