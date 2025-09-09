@@ -137,14 +137,42 @@
     bd?.classList.remove('open');
   });
 
-  // On resize to desktop, ensure menu closed
+  // Detect header overflow and toggle forced mobile header if needed
+  function evaluateHeaderFit(){
+    try {
+      const header = document.querySelector('.header-inner');
+      const brand = header?.querySelector('.brand');
+      const nav = header?.querySelector('#main-nav');
+      const auth = header?.querySelector('.auth-actions');
+      if (!header || !brand || !nav || !auth) return;
+      const padding = 40; // spacing/gap buffer
+      const cs = getComputedStyle(header);
+      const areas = (cs.gridTemplateAreas || '').toString();
+      const twoRowLayout = areas.includes('nav'); // matches the medium breakpoint layout with nav on its own row
+      let needMobile = false;
+      if (twoRowLayout) {
+        // In two-row layout, only switch to mobile if nav itself overflows container width
+        needMobile = nav.scrollWidth > header.clientWidth;
+      } else {
+        // Single-row layout: compute true overflow
+        const total = brand.offsetWidth + nav.scrollWidth + auth.offsetWidth + padding;
+        needMobile = total > header.clientWidth;
+      }
+      document.body.classList.toggle('force-mobile', needMobile);
+    } catch {}
+  }
+
+  // On resize, close menu if needed and re-evaluate header fit
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 900) {
+    if (window.innerWidth > 900 && !document.body.classList.contains('force-mobile')) {
       mainNav?.classList.remove('open');
       navBtn?.setAttribute('aria-expanded','false');
       navBackdrop?.classList.remove('open');
     }
+    evaluateHeaderFit();
   });
+  // Re-evaluate after full load (fonts/assets can change widths)
+  window.addEventListener('load', evaluateHeaderFit);
 
   // Header auth buttons
   function updateHeaderAuth() {
@@ -1622,6 +1650,8 @@
   bootstrap();
   if (!location.hash) location.hash = '#/';
   setActiveRoute(location.hash);
+  // Evaluate header fit on load
+  evaluateHeaderFit();
   // Footer year (replaces inline script to satisfy CSP)
   try {
     const yEl = document.getElementById('y');

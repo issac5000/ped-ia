@@ -16,7 +16,6 @@
         <a class="brand" href="#/">
           <span class="brand-text">Ped’IA</span>
         </a>
-        <button id="nav-toggle" class="nav-toggle" aria-controls="main-nav" aria-expanded="false" title="Menu">☰</button>
         <nav id="main-nav" class="main-nav" aria-label="Navigation principale">
           <a href="#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
           <a href="#/dashboard" class="nav-link"><span class="nav-ico">📊</span><span>Dashboard</span></a>
@@ -27,6 +26,7 @@
           <a href="#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
         </nav>
         <div class="auth-actions">
+          <button id="nav-toggle" class="nav-toggle" aria-controls="main-nav" aria-expanded="false" title="Menu">☰</button>
           <span id="login-status" class="login-status" hidden>connecté</span>
           <button id="btn-login" class="btn btn-secondary">Se connecter</button>
           <button id="btn-logout" class="btn btn-secondary" hidden>Se déconnecter</button>
@@ -36,7 +36,7 @@
 
     <div class="masthead">
       <div class="container">
-        <div class="masthead-inner">Ped’IA — votre pédiatre digital</div>
+        <div class="masthead-inner">Ped’IA, votre pédiatre digital</div>
       </div>
     </div>
 
@@ -49,15 +49,10 @@
           <div class="hero-content">
             <div class="hero-copy">
               <h1 class="hero-title">Votre copilote parental, clair et rassurant</h1>
-              <p class="lead">suivez l’évolution de vos enfants avec votre pédiatre virtuel à portée de mains 24h/24</p>
+              <p class="lead">Suivez l’évolution de vos enfants avec votre pédiatre virtuel à portée de mains 24h/24</p>
               <div class="hero-actions">
                 <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
-                <a href="#/ai" class="btn btn-secondary">Voir les outils</a>
-              </div>
-              <div class="hero-stats">
-                <div class="stat"><strong>0–7 ans</strong><span>Repères adaptés</span></div>
-                <div class="stat"><strong>IA</strong><span>Conseils contextuels</span></div>
-                <div class="stat"><strong>Local</strong><span>Données chez vous</span></div>
+                <a href="#/ai" class="btn btn-primary">Voir les outils</a>
               </div>
             </div>
             <div class="hero-visual" aria-hidden="true">
@@ -139,13 +134,7 @@
           </div>
         </div>
 
-        <div class="cta-banner">
-          <div class="cta-inner">
-            <h3>Prêt·e à commencer ?</h3>
-            <p>Créez un profil en 1 minute et suivez les premières étapes.</p>
-            <a class="btn btn-primary" href="#/signup">Créer un compte</a>
-          </div>
-        </div>
+        
       </section>
 
       <!-- Auth: Connexion / Création de compte -->
@@ -484,41 +473,24 @@
 
     <footer class="site-footer">
       <div class="container">
-        <div class="footer-grid">
-          <div class="f-brand">
-            <a class="brand" href="#/">
-              <span class="logo">🤖👶</span>
+        <div class="footer-simple">
+          <div class="fs-left">
+            <a class="brand" href="#/" aria-label="Accueil Ped’IA">
               <span class="brand-text">Ped’IA</span>
             </a>
-            <p class="f-tag">Le copilote parental 0–7 ans: courbes, jalons, sommeil et conseils IA dans une interface apaisée.</p>
+            <p class="fs-tag">Le copilote parental 0–7 ans</p>
           </div>
-          <div class="f-col">
-            <div class="f-title">Produit</div>
-            <a class="f-link" href="#/">Accueil</a>
-            <a class="f-link" href="#/dashboard">Dashboard</a>
-            
-            <a class="f-link" href="#/community">Communauté</a>
-          </div>
-          <div class="f-col">
-            <div class="f-title">Ressources</div>
-            <a class="f-link" href="#/about">À propos</a>
-            <a class="f-link" href="#/contact">Contact</a>
-            <a class="f-link" href="#/">FAQ</a>
-          </div>
-          <div class="f-col">
-            <div class="f-title">Légal</div>
-            <a class="f-link" href="#/legal">Mentions légales</a>
-            <a class="f-link" href="#/legal">Confidentialité</a>
+          <div class="fs-right">
+            <a class="fs-link" href="#/about">À propos</a>
+            <a class="fs-link" href="#/contact">Contact</a>
+            <a class="fs-link" href="#/legal">Mentions légales</a>
+            <a class="fs-link" href="#/legal">Confidentialité</a>
           </div>
         </div>
-        <div class="footer-bottom">
-          <div class="fb-left">© <span id="y"></span> Ped’IA</div>
-          <div class="fb-right">
-            <span class="fb-note">Infos indicatives, pas de conseil médical</span>
-          </div>
+        <div class="footer-simple">
+          <span class="fs-year">© <span id="y"></span> Ped’IA — Infos indicatives, pas de conseil médical</span>
         </div>
       </div>
-      
     </footer>
 
     <script type="module" src="assets/app.js?v=2"></script>
