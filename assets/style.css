@@ -133,10 +133,12 @@ body{
 #page-logo:not([hidden]) ~ main .route.active{ padding-top:12px }
 #page-logo:not([hidden]) ~ main .page-header{ margin-top:0 }
 
-.hero{padding:4px 0 28px; margin-bottom:16px}
+.hero{position:relative; padding:4px 0 28px; margin-bottom:16px; overflow:hidden}
 @media(max-width:900px){.hero{padding:4px 0 6px; margin-bottom:2px}}
 .hero-content{display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:24px}
 @media(max-width:900px){.hero-content{grid-template-columns:1fr}}
+.hero-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9}
+.hero-content{position:relative; z-index:1}
 .hero h1{font-size:clamp(32px, 5.4vw, 56px); margin:0 0 8px; letter-spacing:.2px; font-weight:800; line-height:1.18}
 .hero-title{
   background:linear-gradient(90deg, var(--orange-strong), var(--blue-strong));
@@ -287,7 +289,7 @@ input[type="checkbox"]{width:auto}
 @keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.5}}
 
 /* Landing sections */
-.section{padding:32px 0}
+.section{position:relative; padding:32px 0; overflow:visible}
 .hero + .section{padding-top:44px}
 @media(max-width:900px){.hero + .section{padding-top:8px}}
 
@@ -305,6 +307,9 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
   background: var(--section-alt);
   z-index: -1; pointer-events: none;
 }
+
+/* Canvas for section particles */
+.section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9}
 .section.alt{background:#f8faff; border-top:none; border-bottom:none}
 .section-title{margin:0 0 8px; font-size:clamp(24px, 3.4vw, 32px); text-align:center; font-weight:800}
 .section-subtitle{margin:0 0 24px; color:var(--muted); text-align:center}

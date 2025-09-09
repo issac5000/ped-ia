@@ -129,6 +129,8 @@
     if (path === '/contact') setupContact();
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
+    // Hero particles: enable only on home
+    if (path === '/') { startHeroParticles(); startSectionParticles(); } else { stopHeroParticles(); stopSectionParticles(); }
   }
 
   window.addEventListener('hashchange', () => setActiveRoute(location.hash));
@@ -192,6 +194,192 @@
   });
   // Re-evaluate after full load (fonts/assets can change widths)
   window.addEventListener('load', evaluateHeaderFit);
+
+  // Soft pastel particles in hero
+  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null };
+  function startHeroParticles(){
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const sec = document.querySelector('section[data-route="/"] .hero');
+      const cvs = document.getElementById('hero-canvas');
+      if (!sec || !cvs) return;
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      const rect = sec.getBoundingClientRect();
+      cvs.width = Math.floor(rect.width * dpr);
+      cvs.height = Math.floor(rect.height * dpr);
+      const ctx = cvs.getContext('2d'); ctx.scale(dpr, dpr);
+      heroParticlesState.canvas = cvs; heroParticlesState.ctx = ctx; heroParticlesState.parts = [];
+      // Palette from CSS variables
+      const cs = getComputedStyle(document.documentElement);
+      const palette = [
+        cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+        cs.getPropertyValue('--orange').trim()||'#ffcba4',
+        cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+        '#ffd9e6'
+      ];
+      const W = rect.width, H = rect.height;
+      // Fewer, larger bubbles to increase visual variety
+      const N = Math.max(20, Math.min(48, Math.round(W*H/45000)));
+      for (let i=0;i<N;i++) {
+        // Size buckets: small (50%), medium (35%), large (15%) with clearly different radii
+        const u = Math.random();
+        const r = u < .5 ? (5 + Math.random()*8)       // 5–13px
+                : (u < .85 ? (12 + Math.random()*12)   // 12–24px
+                : (22 + Math.random()*20));            // 22–42px
+        heroParticlesState.parts.push({
+          x: Math.random()*W,
+          y: Math.random()*H,
+          r,
+          vx: (Math.random()*.35 - .175),
+          vy: (Math.random()*.35 - .175),
+          hue: palette[Math.floor(Math.random()*palette.length)],
+          alpha: .22 + Math.random()*.35,
+          drift: Math.random()*Math.PI*2,
+          spin: .0015 + Math.random()*.0035
+        });
+      }
+      const step = (t)=>{
+        const ctx = heroParticlesState.ctx; if (!ctx) return;
+        const now = t || performance.now();
+        const dt = heroParticlesState.lastT? Math.min(40, now - heroParticlesState.lastT) : 16;
+        heroParticlesState.lastT = now;
+        const W = sec.clientWidth, H = sec.clientHeight;
+        // Clear
+        ctx.clearRect(0,0,W,H);
+        // Draw parts
+        for (const p of heroParticlesState.parts){
+          p.drift += p.spin*dt;
+          p.x += p.vx + Math.cos(p.drift)*.05;
+          p.y += p.vy + Math.sin(p.drift)*.05;
+          // Wrap
+          if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
+          if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.hue;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        }
+        heroParticlesState.raf = requestAnimationFrame(step);
+      };
+      cancelAnimationFrame(heroParticlesState.raf);
+      heroParticlesState.raf = requestAnimationFrame(step);
+      // Resize handler
+      const onR = ()=>{
+        const rect = sec.getBoundingClientRect();
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        cvs.width = Math.floor(rect.width * dpr);
+        cvs.height = Math.floor(rect.height * dpr);
+        heroParticlesState.ctx?.setTransform(1,0,0,1,0,0);
+        heroParticlesState.ctx?.scale(dpr, dpr);
+      };
+      window.addEventListener('resize', onR);
+      heroParticlesState.resize = onR;
+    } catch {}
+  }
+  function stopHeroParticles(){
+    try {
+      cancelAnimationFrame(heroParticlesState.raf);
+      heroParticlesState.raf = 0;
+      if (heroParticlesState.resize) window.removeEventListener('resize', heroParticlesState.resize);
+      heroParticlesState.resize = null;
+      if (heroParticlesState.ctx){
+        const sec = document.querySelector('section[data-route="/"] .hero');
+        if (sec) heroParticlesState.ctx.clearRect(0,0,sec.clientWidth,sec.clientHeight);
+      }
+      heroParticlesState.ctx = null; heroParticlesState.parts = [];
+    } catch {}
+  }
+
+  // Particles for alternating light-background sections on home
+  let sectionParticlesStates = [];
+  function startSectionParticles(){
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      stopSectionParticles();
+      const root = document.querySelector('section[data-route="/"]');
+      if (!root) return;
+      const sections = Array.from(root.querySelectorAll(':scope > .section'));
+      sections.forEach((sec, idx) => {
+        // Apply ONLY to light-background sections (even-of-type): indexes 1,3,5,...
+        if (idx % 2 === 0) return; // skip dark background sections 0,2,4,...
+        const cvs = document.createElement('canvas');
+        cvs.className = 'section-canvas';
+        sec.prepend(cvs);
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const rect = sec.getBoundingClientRect();
+        cvs.width = Math.floor(rect.width * dpr);
+        cvs.height = Math.floor(rect.height * dpr);
+        const ctx = cvs.getContext('2d'); ctx.scale(dpr, dpr);
+        // Palette
+        const cs = getComputedStyle(document.documentElement);
+        const palette = [
+          cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+          cs.getPropertyValue('--orange').trim()||'#ffcba4',
+          cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+          '#ffd9e6'
+        ];
+        const W = rect.width, H = rect.height;
+        const area = Math.max(1, W*H);
+        const N = Math.max(14, Math.min(36, Math.round(area/52000)));
+        const parts = [];
+        for (let i=0;i<N;i++){
+          const u = Math.random();
+          const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));
+          parts.push({
+            x: Math.random()*W,
+            y: Math.random()*H,
+            r,
+            vx: (Math.random()*.28 - .14),
+            vy: (Math.random()*.28 - .14),
+            hue: palette[Math.floor(Math.random()*palette.length)],
+            alpha: .2 + Math.random()*.35,
+            drift: Math.random()*Math.PI*2,
+            spin: .001 + Math.random()*.003
+          });
+        }
+        const state = { sec, cvs, ctx, parts, raf: 0, lastT: 0 };
+        const step = (t)=>{
+          const now = t || performance.now();
+          const dt = state.lastT? Math.min(40, now - state.lastT) : 16;
+          state.lastT = now;
+          const W = sec.clientWidth, H = sec.clientHeight;
+          ctx.setTransform(1,0,0,1,0,0);
+          ctx.clearRect(0,0,W,H);
+          for (const p of state.parts){
+            p.drift += p.spin*dt;
+            p.x += p.vx + Math.cos(p.drift)*.04;
+            p.y += p.vy + Math.sin(p.drift)*.04;
+            if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
+            if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.hue;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+          }
+          state.raf = requestAnimationFrame(step);
+        };
+        state.raf = requestAnimationFrame(step);
+        sectionParticlesStates.push(state);
+      });
+      const onR = ()=>{
+        sectionParticlesStates.forEach(st => {
+          const rect = st.sec.getBoundingClientRect();
+          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          st.cvs.width = Math.floor(rect.width * dpr);
+          st.cvs.height = Math.floor(rect.height * dpr);
+          st.ctx.setTransform(dpr,0,0,dpr,0,0);
+        });
+      };
+      window.addEventListener('resize', onR);
+      startSectionParticles._resize = onR;
+    } catch {}
+  }
+  function stopSectionParticles(){
+    try {
+      (sectionParticlesStates||[]).forEach(st => { cancelAnimationFrame(st.raf); st.raf=0; st.ctx?.clearRect(0,0,st.cvs.width, st.cvs.height); st.cvs.remove(); });
+      sectionParticlesStates = [];
+      if (startSectionParticles._resize) window.removeEventListener('resize', startSectionParticles._resize);
+      startSectionParticles._resize = null;
+    } catch {}
+  }
 
   // Header auth buttons
   function updateHeaderAuth() {
