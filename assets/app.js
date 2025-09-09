@@ -364,25 +364,17 @@
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');
     const msgsEl = document.getElementById('ai-chat-messages');
-    // Add reset button at top of chat window
-    try {
-      const chatWindow = fChat?.closest('.chat-window');
-      if (chatWindow && !document.getElementById('ai-chat-reset')) {
-        const btnReset = document.createElement('button');
-        btnReset.type = 'button';
-        btnReset.id = 'ai-chat-reset';
-        btnReset.className = 'btn btn-secondary chat-reset';
-        btnReset.textContent = 'Réinitialiser la discussion';
-        chatWindow.prepend(btnReset);
-        btnReset.addEventListener('click', (e) => {
-          e.preventDefault();
-          const key = chatKey(currentChild);
-          try { localStorage.removeItem(key); } catch {}
-          renderChat([]);
-          sChat.textContent = '';
-        });
-      }
-    } catch {}
+    const btnReset = document.getElementById('ai-chat-reset');
+    if (btnReset && !btnReset.dataset.bound) {
+      btnReset.addEventListener('click', (e) => {
+        e.preventDefault();
+        const key = chatKey(currentChild);
+        try { localStorage.removeItem(key); } catch {}
+        renderChat([]);
+        sChat.textContent = '';
+      });
+      btnReset.dataset.bound = '1';
+    }
     if (fChat && !fChat.dataset.bound) fChat.addEventListener('submit', async (e) => {
       e.preventDefault();
       const q = new FormData(fChat).get('q')?.toString().trim();

@@ -358,8 +358,10 @@
           </div>
 
           <div class="card stack">
-            <h3>Générateur d’histoires personnalisées</h3>
-            <p class="muted">Des histoires courtes adaptées à l’âge, au prénom et aux centres d’intérêt de l’enfant.</p>
+            <div class="card-header">
+              <h3>Générateur d’histoires personnalisées</h3>
+              <p class="muted">Des histoires courtes adaptées à l’âge, au prénom et aux centres d’intérêt de l’enfant.</p>
+            </div>
             <form id="form-ai-story" class="form-grid">
               <label>Thème (optionnel)
                 <input type="text" name="theme" placeholder="Ex: animaux, espace, pirates…" />
@@ -384,8 +386,11 @@
           </div>
 
           <div class="card stack">
-            <h3>Chatbot personnalisé</h3>
-            <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
+            <div class="card-header">
+              <h3>Chatbot personnalisé</h3>
+              <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
+            </div>
+            <button id="ai-chat-reset" class="btn btn-secondary chat-reset" type="button">Réinitialiser la discussion</button>
             <div class="chat-window">
               <div id="ai-chat-messages" class="chat-messages"></div>
               <form id="form-ai-chat" class="chat-input" autocomplete="off">
