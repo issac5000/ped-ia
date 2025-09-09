@@ -1501,16 +1501,28 @@
     const xScale = x => left + (x-minX)/(maxX-minX||1)*innerW;
     const yScale = y => top + (1-(y-minY)/(maxY-minY||1))*innerH;
 
-    // Grid
+    // Grid + Y ticks
     const grid = document.createElementNS('http://www.w3.org/2000/svg','g');
     grid.setAttribute('stroke', '#1f2447');
     grid.setAttribute('stroke-width', '1');
     grid.setAttribute('opacity', '0.4');
     grid.setAttribute('stroke-dasharray', '2,4');
+    const stepY = (maxY - minY) / 6;
     for(let i=0;i<=6;i++){
       const y = top + i*(innerH/6);
       const l = line(left,y, left+innerW, y);
       grid.appendChild(l);
+      // Y-axis labels
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', left - 4);
+      t.setAttribute('y', y);
+      t.setAttribute('text-anchor','end');
+      t.setAttribute('dominant-baseline','middle');
+      t.setAttribute('font-size','10');
+      t.setAttribute('fill','#aab0c0');
+      const val = maxY - stepY * i;
+      t.textContent = stepY < 1 ? val.toFixed(1) : Math.round(val);
+      svg.appendChild(t);
     }
     svg.appendChild(grid);
     // Axes
