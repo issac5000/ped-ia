@@ -1525,12 +1525,20 @@
       path.setAttribute('stroke-width','2.5');
       svg.appendChild(path);
       // Points
-      pts.forEach(p=>{
+      pts.forEach((p,i)=>{
         const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        const isChild = idx === 0;
+        const isLatest = isChild && i === pts.length - 1;
         c.setAttribute('cx', xScale(p.x));
         c.setAttribute('cy', yScale(p.y));
-        c.setAttribute('r','2.5');
+        c.setAttribute('r', isChild ? (isLatest ? '6' : '4') : '2.5');
         c.setAttribute('fill', s.color || 'cyan');
+        if (isChild) {
+          c.setAttribute('stroke', '#fff');
+          c.setAttribute('stroke-width', '1.5');
+          c.classList.add('child-point');
+          if (isLatest) c.classList.add('child-point-latest');
+        }
         svg.appendChild(c);
       });
     });

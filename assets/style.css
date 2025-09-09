@@ -184,6 +184,9 @@ input[type="checkbox"]{width:auto}
 .legend-item{display:flex; align-items:center; gap:6px; font-size:12px}
 .legend-dot{width:10px; height:10px; border-radius:50%}
 .chart{display:block; width:100%; height:240px}
+.child-point{stroke:#ffffff; stroke-width:1.5}
+.child-point-latest{animation:breathe 2s ease-in-out infinite; transform-box:fill-box; transform-origin:center}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.5}}
 
 /* Landing sections */
 .section{padding:32px 0}
