@@ -386,10 +386,12 @@
             <div class="chat-window">
               <div id="ai-chat-messages" class="chat-messages"></div>
               <form id="form-ai-chat" class="chat-input" autocomplete="off">
-                <textarea name="q" class="chat-textarea" rows="1" placeholder="Écrire un message… (Entrée pour envoyer, Shift+Entrée = retour)" required></textarea>
+                <div class="chat-row">
+                  <textarea name="q" class="chat-textarea" rows="1" placeholder="Écrire un message… (Entrée pour envoyer, Shift+Entrée = retour)" required></textarea>
+                  <button class="btn btn-primary chat-send" type="submit">Envoyer</button>
+                </div>
                 <div class="chat-actions">
                   <span id="ai-chat-status" class="muted"></span>
-                  <button class="btn btn-primary" type="submit">Envoyer</button>
                 </div>
               </form>
             </div>

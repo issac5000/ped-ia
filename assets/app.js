@@ -326,7 +326,7 @@
     const fRecipes = document.getElementById('form-ai-recipes');
     const sRecipes = document.getElementById('ai-recipes-status');
     const outRecipes = document.getElementById('ai-recipes-result');
-    fRecipes?.addEventListener('submit', async (e) => {
+    if (fRecipes && !fRecipes.dataset.bound) fRecipes.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!currentChild) { outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>'; return; }
       const prefs = new FormData(fRecipes).get('prefs')?.toString() || '';
@@ -337,13 +337,13 @@
       } catch (err){
         outRecipes.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
       } finally { sRecipes.textContent=''; }
-    });
+    }); fRecipes && (fRecipes.dataset.bound='1');
 
     // Story
     const fStory = document.getElementById('form-ai-story');
     const sStory = document.getElementById('ai-story-status');
     const outStory = document.getElementById('ai-story-result');
-    fStory?.addEventListener('submit', async (e) => {
+    if (fStory && !fStory.dataset.bound) fStory.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!currentChild) { outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>'; return; }
       const fd = new FormData(fStory);
@@ -357,7 +357,7 @@
       } catch (err){
         outStory.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
       } finally { sStory.textContent=''; }
-    });
+    }); fStory && (fStory.dataset.bound='1');
 
     // Chat
     const fChat = document.getElementById('form-ai-chat');
@@ -382,7 +382,7 @@
         });
       }
     } catch {}
-    fChat?.addEventListener('submit', async (e) => {
+    if (fChat && !fChat.dataset.bound) fChat.addEventListener('submit', async (e) => {
       e.preventDefault();
       const q = new FormData(fChat).get('q')?.toString().trim();
       if (!q) return;
@@ -408,7 +408,7 @@
         saveChat(currentChild, newH);
         renderChat(newH);
       } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); }
-    });
+    }); fChat && (fChat.dataset.bound='1');
 
     // Load child asynchronously for IA personalization
     const renderIndicator = (child) => {
