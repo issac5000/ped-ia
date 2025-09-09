@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ped’IA — Suivi & évolution 0–7 ans</title>
-    <meta name="description" content="Ped’IA: Suivi du développement 0–7 ans, conseils IA et communauté pour parents." />
+    <title>Synap'Kids — Suivi & évolution 0–7 ans</title>
+    <meta name="description" content="Synap'Kids: Suivi du développement 0–7 ans, conseils IA et communauté pour parents." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -14,7 +14,7 @@
     <header class="site-header">
       <div class="container header-inner">
         <a class="brand" href="#/">
-          <span class="brand-text">Ped’IA</span>
+          <img src="/logotexte.png" alt="Synap'Kids" class="brand-text-logo" />
         </a>
         <nav id="main-nav" class="main-nav" aria-label="Navigation principale">
           <a href="#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
@@ -33,10 +33,9 @@
         </div>
       </div>
     </header>
-
-    <div class="masthead">
+    <div id="page-logo" class="page-logo" hidden>
       <div class="container">
-        <div class="masthead-inner">Ped’IA, votre pédiatre digital</div>
+        <img src="/logo.png" alt="Logo" class="page-logo-img" />
       </div>
     </div>
 
@@ -56,7 +55,7 @@
               </div>
             </div>
             <div class="hero-visual" aria-hidden="true">
-              <img src="/famille.png" alt="Famille" class="hero-image" loading="eager" />
+              <img src="/logo.png" alt="Logo" class="hero-image" loading="eager" />
             </div>
           </div>
         </div>
@@ -107,7 +106,7 @@
 
         <div class="section">
           <h2 class="section-title">Ils en parlent</h2>
-          <p class="section-subtitle">Des retours de parents qui utilisent Ped’IA au quotidien.</p>
+          <p class="section-subtitle">Des retours de parents qui utilisent Synap'Kids au quotidien.</p>
           <div class="testimonials">
             <div class="testimonial">
               <p>“Interface douce et hyper claire — on se sent accompagnés.”</p>
@@ -129,7 +128,7 @@
           <p class="section-subtitle">Les réponses aux questions les plus fréquentes.</p>
           <div class="faq">
             <details class="faq-item"><summary>Mes données sont‑elles privées ?</summary><p>Oui. Par défaut, tout est stocké localement dans votre navigateur. Vous pouvez exporter/supprimer vos données à tout moment.</p></details>
-            <details class="faq-item"><summary>Ped’IA donne‑t‑il des diagnostics ?</summary><p>Non. Les conseils sont indicatifs et ne remplacent pas un avis médical.</p></details>
+            <details class="faq-item"><summary>Synap'Kids donne‑t‑il des diagnostics ?</summary><p>Non. Les conseils sont indicatifs et ne remplacent pas un avis médical.</p></details>
             <details class="faq-item"><summary>Puis‑je suivre plusieurs enfants ?</summary><p>Oui, ajoutez autant de profils que nécessaire dans Paramètres.</p></details>
           </div>
         </div>
@@ -157,7 +156,6 @@
         </div>
         <div class="card stack">
           <button class="btn btn-primary btn-google-login" type="button">Se connecter avec Google</button>
-          <p class="muted">Besoin d’un compte ? Utilisez aussi “Se connecter avec Google”.</p>
           <div id="auth-debug-login" class="muted"></div>
         </div>
       </section>
@@ -309,11 +307,11 @@
       <section data-route="/about" class="route">
         <div class="stack">
           <div class="page-header">
-            <h2>À propos de Ped’IA</h2>
+            <h2>À propos de Synap'Kids</h2>
             <p class="page-subtitle">Notre mission: un accompagnement bienveillant et clair pour les parents.</p>
           </div>
           <div class="card stack">
-            <p>Ped’IA est un projet qui vise à offrir aux parents un espace simple, beau et utile pour suivre l’évolution des enfants de 0 à 7 ans.</p>
+            <p>Synap'Kids est un projet qui vise à offrir aux parents un espace simple, beau et utile pour suivre l’évolution des enfants de 0 à 7 ans.</p>
             <p>Notre approche : sobriété, bienveillance et respect des données. Nous combinons des repères publics (OMS) et un assistant IA pour vous guider, sans jamais remplacer les professionnels de santé.</p>
           </div>
         </div>
@@ -422,7 +420,7 @@
           <p class="page-subtitle">Rappels importants et traitement des données.</p>
         </div>
         <div class="card stack">
-          <p>Ped’IA n’est pas un dispositif médical. Les informations fournies sont indicatives et ne remplacent pas l’avis d’un professionnel de santé.</p>
+          <p>Synap'Kids n’est pas un dispositif médical. Les informations fournies sont indicatives et ne remplacent pas l’avis d’un professionnel de santé.</p>
           <p>Vos données demeurent sur votre appareil, sauf si vous les exportez volontairement. En cas de publication dans la communauté, évitez toute donnée sensible.</p>
         </div>
       </section>
@@ -475,8 +473,8 @@
       <div class="container">
         <div class="footer-simple">
           <div class="fs-left">
-            <a class="brand" href="#/" aria-label="Accueil Ped’IA">
-              <span class="brand-text">Ped’IA</span>
+            <a class="brand" href="#/" aria-label="Accueil Synap'Kids">
+              <span class="brand-text">Synap'Kids</span>
             </a>
             <p class="fs-tag">Le copilote parental 0–7 ans</p>
           </div>
@@ -488,7 +486,7 @@
           </div>
         </div>
         <div class="footer-simple">
-          <span class="fs-year">© <span id="y"></span> Ped’IA — Infos indicatives, pas de conseil médical</span>
+          <span class="fs-year">© <span id="y"></span> Synap'Kids — Infos indicatives, pas de conseil médical</span>
         </div>
       </div>
     </footer>

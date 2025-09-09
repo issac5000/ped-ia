@@ -1,4 +1,4 @@
-// Ped’IA SPA — Front-only prototype with localStorage + Supabase Auth (Google)
+// Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 (async () => {
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -101,6 +101,11 @@
     $$('.route').forEach(s => s.classList.remove('active'));
     const route = $(`section[data-route="${path}"]`);
     if (route) route.classList.add('active');
+    // Toggle page logo visibility (show on all except home)
+    try {
+      const pl = document.getElementById('page-logo');
+      if (pl) pl.hidden = (path === '/' || path === '');
+    } catch {}
     updateHeaderAuth();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     // Guard routes
@@ -162,14 +167,28 @@
     } catch {}
   }
 
-  // On resize, close menu if needed and re-evaluate header fit
-  window.addEventListener('resize', () => {
-    if (window.innerWidth > 900 && !document.body.classList.contains('force-mobile')) {
+  // On resize/orientation, re-evaluate header fit and reset menu state if not mobile
+  function onViewportChange(){
+    // Fallback: if viewport is wide, drop mobile mode before measuring
+    if (window.innerWidth >= 900) document.body.classList.remove('force-mobile');
+    // Measure and decide
+    evaluateHeaderFit();
+    const isMobile = document.body.classList.contains('force-mobile');
+    if (!isMobile) {
+      // Ensure desktop state: nav visible, hamburger closed, backdrop hidden
       mainNav?.classList.remove('open');
       navBtn?.setAttribute('aria-expanded','false');
       navBackdrop?.classList.remove('open');
+      if (mainNav) mainNav.style.removeProperty('display');
     }
-    evaluateHeaderFit();
+  }
+  window.addEventListener('resize', onViewportChange);
+  window.addEventListener('orientationchange', onViewportChange);
+  // Also re-check after resize settles to account for font reflow
+  let resizeRaf = null;
+  window.addEventListener('resize', () => {
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(onViewportChange);
   });
   // Re-evaluate after full load (fonts/assets can change widths)
   window.addEventListener('load', evaluateHeaderFit);
