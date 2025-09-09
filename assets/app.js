@@ -722,26 +722,6 @@
             ${child.milestones.map((v,i)=> v?`<span class="badge">✅ ${DEV_QUESTIONS[i]}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
           </div>
         </div>
-
-        <form id="form-measure" class="card form-grid">
-          <h3>Ajouter une mesure</h3>
-          <label>Mois
-            <input type="number" name="month" min="0" max="84" value="${ageM}" />
-          </label>
-          <label>Taille (cm)
-            <input type="number" step="0.1" name="height" />
-          </label>
-          <label>Poids (kg)
-            <input type="number" step="0.01" name="weight" />
-          </label>
-          <label>Sommeil (h/24h)
-            <input type="number" step="0.1" name="sleep" />
-          </label>
-          <label>Dents (nb)
-            <input type="number" step="1" name="teeth" />
-          </label>
-          <button class="btn btn-primary" type="submit">Enregistrer</button>
-        </form>
       </div>
 
       <div class="grid-2" style="margin-top:12px">
@@ -831,8 +811,9 @@
       </div>`;
     dom.appendChild(healthBlock);
 
-    // Handle measure form
-    $('#form-measure').addEventListener('submit', async (e) => {
+    // Handle measure form (removed UI; guard if present)
+    const formMeasure = $('#form-measure');
+    if (formMeasure) formMeasure.addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       if (form.dataset.busy === '1') return; // anti double-clic
