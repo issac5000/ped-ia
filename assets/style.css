@@ -325,8 +325,10 @@ input[type="checkbox"]{width:auto}
 .grid-2{display:grid; gap:12px; grid-template-columns:1fr;}
 @media(min-width:900px){.grid-2{grid-template-columns:1.2fr .8fr}}
 
-.route{display:none; padding:24px 0}
-.route.active{display:block}
+.route{padding:24px 0}
+html:not(.js) .route:not([data-route="/"]){display:none}
+html.js .route{display:none}
+html.js .route.active{display:block}
 
 .chip{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background:#ffffff; padding:6px 12px; border-radius:999px; font-size:12px}
 
