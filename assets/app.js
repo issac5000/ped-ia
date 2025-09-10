@@ -28,10 +28,12 @@ console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Load Supabase env and client
-  let supabase = null; 
+  let supabase = null;
   let authSession = null;
   // Reveal observer (initialized later in setupScrollAnimations)
   let revealObserver = null;
+  // Track dashboard renders to avoid stale async updates
+  let dashboardRenderSeq = 0;
 
   // ✅ Fix: useRemote défini dès le départ
   const useRemote = () => !!supabase && !!authSession?.user;
@@ -1012,14 +1014,10 @@ try {
 
   // Dashboard
   function renderDashboard() {
+    const renderSeq = ++dashboardRenderSeq;
     let child = null; let all = [];
     if (useRemote()) {
-      // Remote load
-      const uid = authSession.user.id;
-      // Load children, pick primary if any else first
-      // We assume a boolean is_primary column exists
-      // Fallback to first row if none primary
-      // Growth will be loaded after DOM skeleton is set
+      // Remote load — actual fetch happens later
     } else {
       const user = store.get(K.user);
       all = store.get(K.children, []);
@@ -1308,6 +1306,7 @@ try {
       renderForChild(child);
     } else {
       (async () => {
+        const seq = renderSeq;
         try {
           const uid = authSession?.user?.id;
           if (!uid) {
@@ -1322,10 +1321,11 @@ try {
             const selId = (slimLocal.find(s=>s.isPrimary) || slimLocal[0]).id;
             renderChildSwitcher(dom.parentElement || dom, slimLocal, selId, () => renderDashboard());
             const child = all.find(c => c.id === selId) || all[0];
-            renderForChild(child);
+            if (seq === dashboardRenderSeq) renderForChild(child);
             return;
           }
           const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+          if (seq !== dashboardRenderSeq) return;
           if (!rows || !rows.length) {
             dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
             return;
@@ -1334,6 +1334,7 @@ try {
           const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
           const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
           renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
+          if (seq !== dashboardRenderSeq) return;
           const primary = rows.find(r=>r.is_primary) || rows[0];
           const remoteChild = {
             id: primary.id,
@@ -1365,15 +1366,17 @@ try {
             supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
             supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
           ]);
+          if (seq !== dashboardRenderSeq) return;
           (gm||[]).forEach(r=>{
             if (Number.isFinite(r.height_cm)) remoteChild.growth.measurements.push({ month: r.month, height: r.height_cm });
             if (Number.isFinite(r.weight_kg)) remoteChild.growth.measurements.push({ month: r.month, weight: r.weight_kg });
           });
           (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
           (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
-          renderForChild(remoteChild);
+          if (seq === dashboardRenderSeq) renderForChild(remoteChild);
         } catch (e) {
-          dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
+          if (seq === dashboardRenderSeq)
+            dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
         }
       })();
     }
