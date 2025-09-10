@@ -1065,6 +1065,7 @@ try {
   // Dashboard
   function renderDashboard() {
     let child = null; let all = [];
+    try { console.log('Step UI: entering renderDashboard', document.querySelector('#app')); } catch {}
     if (useRemote()) {
       // Remote load
       const uid = authSession.user.id;
@@ -1078,6 +1079,15 @@ try {
       child = all.find(c => c.id === user?.primaryChildId) || all[0];
     }
     const dom = $('#dashboard-content');
+    try { console.log('Step UI: dashboard content container', dom); } catch {}
+    if (!dom) {
+      const appEl = document.querySelector('#app');
+      if (appEl) {
+        console.warn('Dashboard container missing — injecting fallback');
+        appEl.insertAdjacentHTML('beforeend', '<p>Aucune donnée disponible</p>');
+      }
+      return;
+    }
     // Local: render child switcher if children exist
     if (!useRemote()) {
       const u = store.get(K.user) || {};
@@ -1255,6 +1265,7 @@ try {
               throw new Error('Pas de user_id');
             }
             const promises = [];
+            console.log('Step 0: initializing promises array');
             if (Number.isFinite(height) || Number.isFinite(weight)) {
               const payload = {
                 child_id: child.id,
@@ -1264,6 +1275,7 @@ try {
               };
               if (payload.child_id && Number.isInteger(payload.month)) {
                 console.log('Sending growth_measurements:', payload);
+                console.log('Step 1: pushing growth_measurements');
                 promises.push(
                   supabase
                     .from('growth_measurements')
@@ -1274,29 +1286,36 @@ try {
               }
             }
             if (Number.isFinite(sleep) && child?.id) {
-              try {
-                const { data, error } = await supabase
-                  .from('growth_sleep')
-                  .insert([{ child_id: child.id, month, hours: sleep }]);
-                if (error) {
-                  console.error('Erreur insert growth_sleep:', error);
-                } else {
-                  console.log('Insert growth_sleep OK:', data);
+              console.log('Step 2: pushing growth_sleep insert promise');
+              promises.push((async () => {
+                try {
+                  const { data, error } = await supabase
+                    .from('growth_sleep')
+                    .insert([{ child_id: child.id, month, hours: sleep }]);
+                  if (error) {
+                    console.error('Erreur insert growth_sleep:', error);
+                  } else {
+                    console.log('Insert growth_sleep OK:', data);
+                  }
+                } catch (err) {
+                  console.error('Exception insert growth_sleep:', err);
                 }
-              } catch (err) {
-                console.error('Exception insert growth_sleep:', err);
-              }
+              })());
             }
             if (Number.isFinite(teeth)) {
               const payload = { child_id: child.id, month, count: teeth };
               console.log('Sending growth_teeth:', payload);
+              console.log('Step 3: pushing growth_teeth');
               promises.push(
                 supabase
                   .from('growth_teeth')
                   .insert([payload])
               );
             }
-            await Promise.all(promises);
+            console.log('Step 4: before Promise.all on measures', { count: promises.length });
+            await Promise.allSettled(promises);
+            console.log('Step 5: Promise.all resolved for measures');
+            console.log('Step UI: before renderDashboard', document.querySelector('#app'));
             renderDashboard();
             handled = true;
           } catch (err) {
