@@ -1,4 +1,5 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
+document.documentElement.classList.add('js');
 import { DEV_QUESTIONS } from './questions-dev.js';
 console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 (async () => {
