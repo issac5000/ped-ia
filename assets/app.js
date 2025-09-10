@@ -963,14 +963,24 @@ try {
           const byMonth = {};
           child.growth.measurements.forEach(m => {
             const monthKey = m.month;
-            if (!byMonth[monthKey]) byMonth[monthKey] = { user_id: uid, child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
+            if (!byMonth[monthKey]) byMonth[monthKey] = { child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
             if (Number.isFinite(m.height)) byMonth[monthKey].height_cm = m.height;
             if (Number.isFinite(m.weight)) byMonth[monthKey].weight_kg = m.weight;
           });
           const msArr = Object.values(byMonth);
-          if (msArr.length) await supabase
+          // Validate and log payloads; skip invalid ones
+          const validMsArr = [];
+          msArr.forEach(p => {
+            if (p && p.child_id && Number.isInteger(p.month)) {
+              console.log('Sending growth_measurements:', p);
+              validMsArr.push(p);
+            } else {
+              console.warn('Skip growth_measurements, invalid payload:', p);
+            }
+          });
+          if (validMsArr.length) await supabase
             .from('growth_measurements')
-            .upsert(msArr, { onConflict: 'child_id,month' });
+            .upsert(validMsArr, { onConflict: 'child_id,month' });
           if (child.growth.teeth.length) await supabase
             .from('growth_teeth')
             .insert(child.growth.teeth.map(ti=>({ user_id: uid, child_id: childId, month: ti.month, count: ti.count })));
@@ -1183,17 +1193,21 @@ try {
             const promises = [];
             if (Number.isFinite(height) || Number.isFinite(weight)) {
               const payload = {
-                user_id: uid,
                 child_id: child.id,
                 month,
                 height_cm: Number.isFinite(height) ? Number(height) : null,
                 weight_kg: Number.isFinite(weight) ? Number(weight) : null,
               };
-              promises.push(
-                supabase
-                  .from('growth_measurements')
-                  .upsert([payload], { onConflict: 'child_id,month' })
-              );
+              if (payload.child_id && Number.isInteger(payload.month)) {
+                console.log('Sending growth_measurements:', payload);
+                promises.push(
+                  supabase
+                    .from('growth_measurements')
+                    .upsert([payload], { onConflict: 'child_id,month' })
+                );
+              } else {
+                console.warn('Skip growth_measurements, invalid payload:', payload);
+              }
             }
             if (Number.isFinite(sleep)) promises.push(
               supabase
@@ -1851,17 +1865,21 @@ try {
               const promises = [];
               if (Number.isFinite(eh) || Number.isFinite(ew)) {
                 const payload = {
-                  user_id: uid,
                   child_id: id,
                   month: ageMNow,
                   height_cm: Number.isFinite(eh) ? Number(eh) : null,
                   weight_kg: Number.isFinite(ew) ? Number(ew) : null,
                 };
-                promises.push(
-                  supabase
-                    .from('growth_measurements')
-                    .upsert([payload], { onConflict: 'child_id,month' })
-                );
+                if (payload.child_id && Number.isInteger(payload.month)) {
+                  console.log('Sending growth_measurements:', payload);
+                  promises.push(
+                    supabase
+                      .from('growth_measurements')
+                      .upsert([payload], { onConflict: 'child_id,month' })
+                  );
+                } else {
+                  console.warn('Skip growth_measurements, invalid payload:', payload);
+                }
               }
               if (Number.isFinite(et)) promises.push(
                 supabase.from('growth_teeth').insert([{ user_id: uid, child_id: id, month: ageMNow, count: et }])
