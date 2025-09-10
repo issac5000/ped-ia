@@ -38,8 +38,16 @@ body{
 .header-inner{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; padding:6px 0; height:52px}
 .brand, .auth-actions, .nav-toggle{flex-shrink:0}
 .main-nav{min-width:0; white-space:nowrap; flex-wrap:nowrap; justify-content:center; justify-self:center}
-.nav-toggle{display:none; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; border:1px solid transparent; background:linear-gradient(92deg, var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 6px 16px rgba(78,124,216,.32), 0 3px 10px rgba(255,170,110,.30); cursor:pointer}
+.nav-toggle{display:none; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; border:1px solid transparent; background:linear-gradient(92deg, var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 6px 16px rgba(78,124,216,.32), 0 3px 10px rgba(255,170,110,.30); cursor:pointer; position:relative}
 .nav-toggle:hover{filter:brightness(1.05); box-shadow:0 10px 22px rgba(78,124,216,.42), 0 6px 14px rgba(255,170,110,.34)}
+.nav-toggle .burger{position:relative; width:18px; height:2px; background:currentColor; border-radius:2px; transition:background .2s ease}
+.nav-toggle .burger::before,
+.nav-toggle .burger::after{content:""; position:absolute; left:0; width:18px; height:2px; background:currentColor; border-radius:2px; transition:transform .2s ease}
+.nav-toggle .burger::before{top:-6px}
+.nav-toggle .burger::after{top:6px}
+.nav-toggle.open .burger{background:transparent}
+.nav-toggle.open .burger::before{transform:translateY(6px) rotate(45deg)}
+.nav-toggle.open .burger::after{transform:translateY(-6px) rotate(-45deg)}
 .brand{display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--text)}
 .brand-logo{display:inline-block; height:clamp(24px, 3.6vw, 34px); width:auto}
 .brand-text-logo {
