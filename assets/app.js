@@ -5,6 +5,14 @@ console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  // Ensure handlers are attached once but remain active for subsequent actions
+  const bindOnce = (el, ev, handler) => {
+    if (!el) return;
+    const key = `__handler_${ev}`;
+    if (el[key]) el.removeEventListener(ev, el[key]);
+    el.addEventListener(ev, handler);
+    el[key] = handler;
+  };
 
   const store = {
     get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
@@ -593,7 +601,7 @@ try {
     const form = $('#form-contact');
     const status = $('#contact-status');
     if (!form) return;
-    form.addEventListener('submit', (e) => {
+    bindOnce(form, 'submit', (e) => {
       e.preventDefault();
       const fd = new FormData(form);
       const entry = {
@@ -607,7 +615,7 @@ try {
       store.set(K.messages, msgs);
       form.reset();
       if (status) status.textContent = 'Merci ! Votre message a été enregistré (démo locale).';
-    }, { once: true });
+    });
   }
 
   // --- AI page handlers ---
@@ -874,7 +882,7 @@ try {
     });
 
     const form = $('#form-child');
-    form?.addEventListener('submit', async (e) => {
+    if (form) bindOnce(form, 'submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
       const file = fd.get('photo');
@@ -1000,7 +1008,7 @@ try {
       store.set(K.user, user);
       alert('Profil enfant créé (local).');
       location.hash = '#/dashboard';
-    }, { once: true });
+    });
   }
 
   function fileToDataUrl(file) {
@@ -1477,7 +1485,7 @@ try {
         renderCommunity();
       }));
       // Delete topic buttons
-      list.addEventListener('click', async (e)=>{
+      bindOnce(list, 'click', async (e) => {
         const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
         const id = btn.getAttribute('data-del-topic');
         if (!confirm('Supprimer ce sujet ?')) return;
@@ -1495,7 +1503,7 @@ try {
         forum.topics = forum.topics.filter(t=>t.id!==id);
         store.set(K.forum, forum);
         renderCommunity();
-      }, { once: true });
+      });
     };
     if (useRemote()) {
       (async () => {
@@ -1865,7 +1873,7 @@ try {
         `;
         // Bind submit
         const f = document.getElementById('form-child-edit');
-        f?.addEventListener('submit', async (e) => {
+        if (f) bindOnce(f, 'submit', async (e) => {
           e.preventDefault();
           const fd = new FormData(f);
           const id = fd.get('id').toString();
@@ -1995,7 +2003,7 @@ try {
           alert('Profil enfant mis à jour.');
           renderSettings();
           renderDashboard();
-        }, { once: true });
+        });
         document.getElementById('btn-cancel-edit')?.addEventListener('click', ()=>{
           editBox.removeAttribute('data-edit-id');
           renderSettings();
