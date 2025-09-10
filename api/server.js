@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { readFile, stat } from 'fs/promises';
 import { extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { gzipSync } from 'zlib';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -25,6 +26,9 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.ico': 'image/x-icon',
 };
+
+// Simple in-memory cache for static assets
+const STATIC_CACHE = new Map();
 
 function send(res, status, body, headers = {}) {
   const connectSrc = ["'self'", SUPABASE_ORIGIN, SUPABASE_WS, 'https://cdn.jsdelivr.net'].filter(Boolean).join(' ');
@@ -58,13 +62,29 @@ async function handleStatic(req, res) {
   // prevent directory traversal
   const filePath = resolve(ROOT, `.${pathname}`);
   if (!filePath.startsWith(ROOT)) return send(res, 403, 'Forbidden');
+
   try {
-    const st = await stat(filePath);
-    if (st.isDirectory()) return send(res, 404, 'Not Found');
-    const ext = extname(filePath);
-    const data = await readFile(filePath);
-    const cc = ext === '.html' ? 'no-store' : 'public, max-age=604800';
-    send(res, 200, data, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cc });
+    let cached = STATIC_CACHE.get(filePath);
+    if (!cached) {
+      const st = await stat(filePath);
+      if (st.isDirectory()) return send(res, 404, 'Not Found');
+      const ext = extname(filePath);
+      const data = await readFile(filePath);
+      const cc = ext === '.html' ? 'no-store' : 'public, max-age=604800';
+      const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cc };
+      cached = { data, headers };
+      const type = headers['Content-Type'] || '';
+      if (/^(text\/|application\/javascript|application\/json)/.test(type)) {
+        try { cached.gz = gzipSync(data); } catch {}
+      }
+      STATIC_CACHE.set(filePath, cached);
+    }
+
+    const accept = req.headers['accept-encoding'] || '';
+    if (cached.gz && accept.includes('gzip')) {
+      return send(res, 200, cached.gz, { ...cached.headers, 'Content-Encoding': 'gzip' });
+    }
+    return send(res, 200, cached.data, cached.headers);
   } catch {
     send(res, 404, 'Not Found');
   }
