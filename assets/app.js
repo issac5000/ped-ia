@@ -1,4 +1,6 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
+import { DEV_QUESTIONS } from './questions-dev.js';
+console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 (async () => {
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -850,18 +852,6 @@ try {
   }
 
   // Onboarding
-  const DEV_QUESTIONS = [
-    'Sourit socialement',
-    'Tient sa tête',
-    'Se retourne',
-    'S’assoit sans aide',
-    'Rampe',
-    'Marche quelques pas',
-    'Dit quelques mots',
-    'Fait des phrases simples',
-    'Propreté en journée',
-    'Brosse les dents avec aide'
-  ];
 
   function renderOnboarding() {
     const grid = $('#dev-questions');
@@ -872,9 +862,9 @@ try {
       const div = document.createElement('div');
       div.className = 'qitem';
       div.innerHTML = `
-        <div class="qtitle">${q}</div>
+        <div class="qtitle">${q.label}</div>
         <label class="switch">
-          <input type="checkbox" name="dev_${i}">
+          <input type="checkbox" name="dev_${q.key}">
           <span>Oui</span>
         </label>`;
       grid.appendChild(div);
@@ -912,7 +902,7 @@ try {
             bedtime: fd.get('sleep_bedtime')?.toString() || '',
           },
         },
-        milestones: DEV_QUESTIONS.map((_, i) => !!fd.get(`dev_${i}`)),
+        milestones: DEV_QUESTIONS.map((q) => !!fd.get(`dev_${q.key}`)),
         growth: {
           measurements: [], // {month, height, weight}
           sleep: [], // {month, hours}
@@ -1074,7 +1064,7 @@ try {
             <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
           </div>
           <div class="hstack">
-            ${child.milestones.map((v,i)=> v?`<span class="badge">✅ ${DEV_QUESTIONS[i]}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
+            ${child.milestones.map((v,i)=> v?`<span class="badge">✅ ${DEV_QUESTIONS[i].label}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
           </div>
         </div>
       </div>
