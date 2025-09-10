@@ -993,6 +993,7 @@ try {
               const uid = authSession.user.id;
               // Insert child
               const payload = {
+                user_id: uid,
                 first_name: child.firstName,
                 sex: child.sex,
                 dob: child.dob,
