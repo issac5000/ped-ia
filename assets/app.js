@@ -671,7 +671,11 @@ try {
                 if (Number.isFinite(m.height_cm)) child.growth.measurements.push({ month: m.month, height: m.height_cm });
                 if (Number.isFinite(m.weight_kg)) child.growth.measurements.push({ month: m.month, weight: m.weight_kg });
               });
-              (gs||[]).forEach(s=> child.growth.sleep.push({ month: s.month, hours: s.hours }));
+              (gs||[]).forEach(s => {
+                const m = Number(s.month);
+                const h = Number(s.hours);
+                if (Number.isFinite(m) && Number.isFinite(h)) child.growth.sleep.push({ month: m, hours: h });
+              });
               (gt||[]).forEach(t=> child.growth.teeth.push({ month: t.month, count: t.count }));
             } catch {}
             return child;
@@ -709,7 +713,11 @@ try {
               if (Number.isFinite(m.height_cm)) ch.growth.measurements.push({ month: m.month, height: m.height_cm });
               if (Number.isFinite(m.weight_kg)) ch.growth.measurements.push({ month: m.month, weight: m.weight_kg });
             });
-            (gs||[]).forEach(s=> ch.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (gs||[]).forEach(s => {
+              const m = Number(s.month);
+              const h = Number(s.hours);
+              if (Number.isFinite(m) && Number.isFinite(h)) ch.growth.sleep.push({ month: m, hours: h });
+            });
             (gt||[]).forEach(t=> ch.growth.teeth.push({ month: t.month, count: t.count }));
           } catch {}
           return ch;
@@ -1396,7 +1404,11 @@ try {
             if (Number.isFinite(r.height_cm)) remoteChild.growth.measurements.push({ month: r.month, height: r.height_cm });
             if (Number.isFinite(r.weight_kg)) remoteChild.growth.measurements.push({ month: r.month, weight: r.weight_kg });
           });
-          (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
+          (gs||[]).forEach(r => {
+            const m = Number(r.month);
+            const h = Number(r.hours);
+            if (Number.isFinite(m) && Number.isFinite(h)) remoteChild.growth.sleep.push({ month: m, hours: h });
+          });
           (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
           if (seq === dashboardRenderSeq) renderForChild(remoteChild);
         } catch (e) {
