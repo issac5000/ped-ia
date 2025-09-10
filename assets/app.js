@@ -123,7 +123,7 @@ try {
   // Routing
   function setActiveRoute(hash) {
     const path = (hash.replace('#', '') || '/');
-    console.log('DEBUG: setActiveRoute path =', path);
+    console.log('DEBUG: entrée dans setActiveRoute avec path =', path);
     $$('.route').forEach(s => s.classList.remove('active'));
     const route = $(`section[data-route="${path}"]`);
     if (route) route.classList.add('active');
@@ -137,22 +137,32 @@ try {
     // Guard routes
     const authed = !!authSession?.user;
     const needAuth = ['/dashboard','/community','/settings','/onboarding'];
+    console.log('DEBUG: test guard needAuth', { path, authed, needAuth });
     if (needAuth.includes(path) && !authed) {
+      console.log('DEBUG: guard redirect -> /login (needAuth && !authed)');
       location.hash = '#/login';
       return;
     }
+    console.log('DEBUG: test guard login/signup redirect', { path, authed });
     if ((path === '/login' || path === '/signup') && authed) {
+      console.log('DEBUG: guard redirect -> /dashboard (already authed)');
       location.hash = '#/dashboard';
       return;
     }
     // Page hooks
-    if (path === '/onboarding') renderOnboarding();
-    if (path === '/dashboard') renderDashboard();
-    if (path === '/community') renderCommunity();
+    console.log('DEBUG: test route /onboarding');
+    if (path === '/onboarding') { console.log('DEBUG: appel de renderOnboarding()'); renderOnboarding(); }
+    console.log('DEBUG: test route /dashboard');
+    if (path === '/dashboard') { console.log('DEBUG: appel de renderDashboard()'); renderDashboard(); }
+    console.log('DEBUG: test route /community');
+    if (path === '/community') { console.log('DEBUG: appel de renderCommunity()'); renderCommunity(); }
     
-    if (path === '/settings') renderSettings();
-    if (path === '/ai') setupAIPage();
-    if (path === '/contact') setupContact();
+    console.log('DEBUG: test route /settings');
+    if (path === '/settings') { console.log('DEBUG: appel de renderSettings()'); renderSettings(); }
+    console.log('DEBUG: test route /ai');
+    if (path === '/ai') { console.log('DEBUG: appel de setupAIPage()'); setupAIPage(); }
+    console.log('DEBUG: test route /contact');
+    if (path === '/contact') { console.log('DEBUG: appel de setupContact()'); setupContact(); }
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
     // Hero particles: enable only on home
@@ -167,6 +177,7 @@ try {
       // Enable top logo particles for non-home routes
       startTopLogoParticles();
     }
+    console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
 
   window.addEventListener('hashchange', () => setActiveRoute(location.hash));
