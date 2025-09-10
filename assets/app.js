@@ -8,6 +8,8 @@
   // Load Supabase env and client
   let supabase = null; 
   let authSession = null;
+  // Reveal observer (initialized later in setupScrollAnimations)
+  let revealObserver = null;
 
   // ✅ Fix: useRemote défini dès le départ
   const useRemote = () => !!supabase && !!authSession?.user;
@@ -2202,7 +2204,6 @@ try {
   }
 
   // Reveal on scroll animations
-  let revealObserver;
   function setupScrollAnimations(){
     try { revealObserver?.disconnect(); } catch {}
     const root = document.querySelector('.route.active') || document;
