@@ -971,9 +971,13 @@ try {
           if (validMsArr.length) await supabase
             .from('growth_measurements')
             .upsert(validMsArr, { onConflict: 'child_id,month' });
-          if (child.growth.teeth.length) await supabase
-            .from('growth_teeth')
-            .insert(child.growth.teeth.map(ti=>({ user_id: uid, child_id: childId, month: ti.month, count: ti.count })));
+          if (child.growth.teeth.length) {
+            const teethPayloads = child.growth.teeth.map(ti => ({ child_id: childId, month: ti.month, count: ti.count }));
+            teethPayloads.forEach(p => console.log('Sending growth_teeth:', p));
+            await supabase
+              .from('growth_teeth')
+              .insert(teethPayloads);
+          }
           alert('Profil enfant créé.');
           location.hash = '#/dashboard';
           return;
@@ -1204,11 +1208,15 @@ try {
                 .from('growth_sleep')
                 .insert([{ user_id: uid, child_id: child.id, month, hours: sleep }])
             );
-            if (Number.isFinite(teeth)) promises.push(
-              supabase
-                .from('growth_teeth')
-                .insert([{ user_id: uid, child_id: child.id, month, count: teeth }])
-            );
+            if (Number.isFinite(teeth)) {
+              const payload = { child_id: child.id, month, count: teeth };
+              console.log('Sending growth_teeth:', payload);
+              promises.push(
+                supabase
+                  .from('growth_teeth')
+                  .insert([payload])
+              );
+            }
             await Promise.all(promises);
             renderDashboard();
             handled = true;
@@ -1871,9 +1879,13 @@ try {
                   console.warn('Skip growth_measurements, invalid payload:', payload);
                 }
               }
-              if (Number.isFinite(et)) promises.push(
-                supabase.from('growth_teeth').insert([{ user_id: uid, child_id: id, month: ageMNow, count: et }])
-              );
+              if (Number.isFinite(et)) {
+                const payload = { child_id: id, month: ageMNow, count: et };
+                console.log('Sending growth_teeth:', payload);
+                promises.push(
+                  supabase.from('growth_teeth').insert([payload])
+                );
+              }
               if (promises.length) await Promise.all(promises);
               alert('Profil enfant mis à jour.');
               renderSettings();
