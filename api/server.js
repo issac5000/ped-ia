@@ -165,6 +165,12 @@ const server = createServer(async (req, res) => {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/env') {
+    const urlEnv = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+    return send(res, 200, JSON.stringify({ url: urlEnv, anonKey }), { 'Content-Type': 'application/json; charset=utf-8' });
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/ai/advice') {
     try {
       const body = await parseJson(req);
