@@ -1641,6 +1641,8 @@ try {
 
     const list = $('#children-list');
     list.innerHTML = '';
+    const selector = $('#child-select');
+    if (selector) selector.innerHTML = '';
     let children = [];
     if (useRemote()) {
       try {
@@ -1654,6 +1656,25 @@ try {
     }
     // If another render started, abort appending to avoid duplicates
     if (rid !== renderSettings._rid) return;
+
+    const editBox = document.getElementById('child-edit');
+    let currentEditId = editBox?.getAttribute('data-edit-id') || selector?.value || null;
+    if (!currentEditId && children[0]) currentEditId = children[0].id;
+
+    if (selector) {
+      selector.innerHTML = children
+        .map(c => `<option value="${c.id}" ${c.id===currentEditId?'selected':''}>${escapeHtml(c.first_name||c.firstName||'—')}</option>`)
+        .join('');
+      if (!selector.dataset.bound) {
+        selector.addEventListener('change', () => {
+          const id = selector.value;
+          editBox?.setAttribute('data-edit-id', id);
+          renderSettings();
+        });
+        selector.dataset.bound = '1';
+      }
+    }
+
     children.forEach(c => {
       const firstName = c.first_name || c.firstName;
       const dob = c.dob;
@@ -1718,9 +1739,6 @@ try {
     }
 
     // Child edit form render
-    const editBox = document.getElementById('child-edit');
-    let currentEditId = editBox?.getAttribute('data-edit-id') || null;
-    if (!currentEditId && children[0]) currentEditId = children[0].id;
     let child = null;
     if (useRemote()) {
       const c = (children||[]).find(x=>x.id===currentEditId) || children[0];
