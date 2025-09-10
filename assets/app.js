@@ -1273,11 +1273,20 @@ try {
                 console.warn('Skip growth_measurements, invalid payload:', payload);
               }
             }
-            if (Number.isFinite(sleep)) promises.push(
-              supabase
-                .from('growth_sleep')
-                .insert([{ child_id: child.id, month, hours: sleep }])
-            );
+            if (Number.isFinite(sleep) && child?.id) {
+              try {
+                const { data, error } = await supabase
+                  .from('growth_sleep')
+                  .insert([{ child_id: child.id, month, hours: sleep }]);
+                if (error) {
+                  console.error('Erreur insert growth_sleep:', error);
+                } else {
+                  console.log('Insert growth_sleep OK:', data);
+                }
+              } catch (err) {
+                console.error('Exception insert growth_sleep:', err);
+              }
+            }
             if (Number.isFinite(teeth)) {
               const payload = { child_id: child.id, month, count: teeth };
               console.log('Sending growth_teeth:', payload);
