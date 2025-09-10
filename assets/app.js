@@ -4,10 +4,16 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
+
   // Load Supabase env and client
-  let supabase = null; let authSession = null;
+  let supabase = null; 
+  let authSession = null;
+
+  // ✅ Fix: useRemote défini dès le départ
+  const useRemote = () => !!supabase && !!authSession?.user;
+
   try {
-    const env = await fetch('/api/env').then(r=>r.json());
+    const env = await fetch('/api/env').then(r => r.json());
     if (DEBUG_AUTH) console.log('ENV', env);
     if (env?.url && env?.anonKey) {
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
@@ -15,6 +21,7 @@
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
       if (DEBUG_AUTH) console.log('Supabase client created');
+
 
 
     // Robust handling: if we return from Google with ?code in URL, exchange for a session
@@ -75,8 +82,7 @@ try {
     console.warn('Supabase init failed (env or import)', e);
   }
 
-  // (moved $ and $$ above)
-  const useRemote = () => !!supabase && !!authSession?.user;
+ 
 
   const routes = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
