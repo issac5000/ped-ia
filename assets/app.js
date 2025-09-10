@@ -15,18 +15,30 @@
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
       if (DEBUG_AUTH) console.log('Supabase client created');
-      // Robust handling: if we return from Google with ?code in URL, exchange for a session
-      try {
-        const urlNow = new URL(window.location.href);
-        if (urlNow.searchParams.get('code')) {
-          if (DEBUG_AUTH) console.log('Exchanging OAuth code for session…');
-          const { error: xErr } = await supabase.auth.exchangeCodeForSession(urlNow.toString());
-          if (xErr && DEBUG_AUTH) console.warn('exchangeCodeForSession error', xErr);
-          // Clean query params while preserving hash
-          urlNow.search = '';
-          history.replaceState({}, '', urlNow.toString());
-        }
-      } catch (e) { if (DEBUG_AUTH) console.warn('exchangeCodeForSession failed', e); }
+
+
+    // Robust handling: if we return from Google with ?code in URL, exchange for a session
+try {
+  const urlNow = new URL(window.location.href);
+  if (urlNow.searchParams.get('code')) {
+    if (DEBUG_AUTH) console.log('Exchanging OAuth code for session…');
+    // Supabase veut l’URL sans hash (#/dashboard), donc on nettoie
+    const cleanUrl = window.location.origin + urlNow.pathname + urlNow.search;
+    const { error: xErr } = await supabase.auth.exchangeCodeForSession(cleanUrl);
+    if (xErr) {
+      console.warn('exchangeCodeForSession error', xErr);
+    }
+    // On enlève juste le ?code de l’URL, mais on garde le hash
+    urlNow.search = '';
+    history.replaceState({}, '', urlNow.toString());
+  }
+} catch (e) {
+  console.warn('exchangeCodeForSession failed', e);
+}
+
+
+
+
   
       // Vérifier si un utilisateur est déjà connecté après redirection OAuth
       const { data: { user } } = await supabase.auth.getUser();
