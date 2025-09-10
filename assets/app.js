@@ -872,133 +872,149 @@ try {
     });
 
     const form = $('#form-child');
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const file = fd.get('photo');
-      let photoDataUrl = null;
-      if (file instanceof File && file.size > 0) {
-        photoDataUrl = await fileToDataUrl(file);
-      }
-      const dobStr = fd.get('dob').toString();
-      const ageMAtCreation = ageInMonths(dobStr);
-      const child = {
-        id: genId(),
-        firstName: fd.get('firstName').toString().trim(),
-        sex: fd.get('sex').toString(),
-        dob: dobStr,
-        photo: photoDataUrl,
-        context: {
-          allergies: fd.get('allergies').toString(),
-          history: fd.get('history').toString(),
-          care: fd.get('care').toString(),
-          languages: fd.get('languages').toString(),
-          feedingType: fd.get('feedingType')?.toString() || '',
-          eatingStyle: fd.get('eatingStyle')?.toString() || '',
-          sleep: {
-            falling: fd.get('sleep_falling')?.toString() || '',
-            sleepsThrough: fd.get('sleep_through')?.toString() === 'oui',
-            nightWakings: fd.get('sleep_wakings')?.toString() || '',
-            wakeDuration: fd.get('sleep_wake_duration')?.toString() || '',
-            bedtime: fd.get('sleep_bedtime')?.toString() || '',
-          },
-        },
-        milestones: DEV_QUESTIONS.map((q) => !!fd.get(`dev_${q.key}`)),
-        growth: {
-          measurements: [], // {month, height, weight}
-          sleep: [], // {month, hours}
-          teeth: [], // {month, count}
-        },
-        createdAt: Date.now(),
-      };
-      // Initial measures if provided
-      const h = parseFloat(fd.get('height'));
-      const w = parseFloat(fd.get('weight'));
-      const t = parseInt(fd.get('teeth'));
-      if (Number.isFinite(h)) child.growth.measurements.push({ month: ageMAtCreation, height: h });
-      if (Number.isFinite(w)) child.growth.measurements.push({ month: ageMAtCreation, weight: w });
-      if (Number.isFinite(t)) child.growth.teeth.push({ month: ageMAtCreation, count: t });
-
-      if (useRemote()) {
+    if (form && !form.dataset.bound) {
+      form.dataset.bound = '1';
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        // Anti double-clic + anti multi-bind
+        if (form.dataset.busy === '1') return;
+        form.dataset.busy = '1';
+        const submitEls = form.querySelectorAll('button[type="submit"],input[type="submit"]');
+        submitEls.forEach(b => { b.disabled = true; });
         try {
-          const uid = authSession.user.id;
-          // Insert child
-          const payload = {
-            user_id: uid,
-            first_name: child.firstName,
-            sex: child.sex,
-            dob: child.dob,
-            photo_url: child.photo,
-            context_allergies: child.context.allergies,
-            context_history: child.context.history,
-            context_care: child.context.care,
-            context_languages: child.context.languages,
-            feeding_type: child.context.feedingType,
-            eating_style: child.context.eatingStyle,
-            sleep_falling: child.context.sleep.falling,
-            sleep_sleeps_through: child.context.sleep.sleepsThrough,
-            sleep_night_wakings: child.context.sleep.nightWakings,
-            sleep_wake_duration: child.context.sleep.wakeDuration,
-            sleep_bedtime: child.context.sleep.bedtime,
-            milestones: child.milestones,
-            is_primary: true
-          };
-          const { data: insChild, error: errC } = await supabase
-            .from('children')
-            .insert([payload])
-            .select('id')
-            .single();
-          if (errC) throw errC;
-          const childId = insChild.id;
-          // Upsert initial measures (merge height/weight per month)
-          const byMonth = {};
-          child.growth.measurements.forEach(m => {
-            const monthKey = m.month;
-            if (!byMonth[monthKey]) byMonth[monthKey] = { child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
-            if (Number.isFinite(m.height)) byMonth[monthKey].height_cm = m.height;
-            if (Number.isFinite(m.weight)) byMonth[monthKey].weight_kg = m.weight;
-          });
-          const msArr = Object.values(byMonth);
-          // Validate and log payloads; skip invalid ones
-          const validMsArr = [];
-          msArr.forEach(p => {
-            if (p && p.child_id && Number.isInteger(p.month)) {
-              console.log('Sending growth_measurements:', p);
-              validMsArr.push(p);
-            } else {
-              console.warn('Skip growth_measurements, invalid payload:', p);
-            }
-          });
-          if (validMsArr.length) await supabase
-            .from('growth_measurements')
-            .upsert(validMsArr, { onConflict: 'child_id,month' });
-          if (child.growth.teeth.length) {
-            const teethPayloads = child.growth.teeth.map(ti => ({ child_id: childId, month: ti.month, count: ti.count }));
-            teethPayloads.forEach(p => console.log('Sending growth_teeth:', p));
-            await supabase
-              .from('growth_teeth')
-              .insert(teethPayloads);
+          const fd = new FormData(form);
+          const file = fd.get('photo');
+          let photoDataUrl = null;
+          if (file instanceof File && file.size > 0) {
+            photoDataUrl = await fileToDataUrl(file);
           }
-          alert('Profil enfant créé.');
-          location.hash = '#/dashboard';
-          return;
-        } catch (e) {
-          alert('Erreur Supabase — enregistrement local utilisé.');
-        }
-      }
+          const dobStr = fd.get('dob').toString();
+          const ageMAtCreation = ageInMonths(dobStr);
+          const child = {
+            id: genId(),
+            firstName: fd.get('firstName').toString().trim(),
+            sex: fd.get('sex').toString(),
+            dob: dobStr,
+            photo: photoDataUrl,
+            context: {
+              allergies: fd.get('allergies').toString(),
+              history: fd.get('history').toString(),
+              care: fd.get('care').toString(),
+              languages: fd.get('languages').toString(),
+              feedingType: fd.get('feedingType')?.toString() || '',
+              eatingStyle: fd.get('eatingStyle')?.toString() || '',
+              sleep: {
+                falling: fd.get('sleep_falling')?.toString() || '',
+                sleepsThrough: fd.get('sleep_through')?.toString() === 'oui',
+                nightWakings: fd.get('sleep_wakings')?.toString() || '',
+                wakeDuration: fd.get('sleep_wake_duration')?.toString() || '',
+                bedtime: fd.get('sleep_bedtime')?.toString() || '',
+              },
+            },
+            milestones: DEV_QUESTIONS.map((q) => !!fd.get(`dev_${q.key}`)),
+            growth: {
+              measurements: [], // {month, height, weight}
+              sleep: [], // {month, hours}
+              teeth: [], // {month, count}
+            },
+            createdAt: Date.now(),
+          };
+          // Initial measures if provided
+          const h = parseFloat(fd.get('height'));
+          const w = parseFloat(fd.get('weight'));
+          const t = parseInt(fd.get('teeth'));
+          if (Number.isFinite(h)) child.growth.measurements.push({ month: ageMAtCreation, height: h });
+          if (Number.isFinite(w)) child.growth.measurements.push({ month: ageMAtCreation, weight: w });
+          if (Number.isFinite(t)) child.growth.teeth.push({ month: ageMAtCreation, count: t });
 
-      // Fallback local
-      const children = store.get(K.children, []);
-      children.push(child);
-      store.set(K.children, children);
-      const user = store.get(K.user);
-      user.childIds = Array.isArray(user?.childIds) ? user.childIds : [];
-      user.childIds.push(child.id);
-      if (!user.primaryChildId) user.primaryChildId = child.id;
-      store.set(K.user, user);
-      alert('Profil enfant créé (local).');
-      location.hash = '#/dashboard';
-    }, { once: true });
+          if (useRemote()) {
+            try {
+              const uid = authSession.user.id;
+              // Insert child
+              const payload = {
+                user_id: uid,
+                first_name: child.firstName,
+                sex: child.sex,
+                dob: child.dob,
+                photo_url: child.photo,
+                context_allergies: child.context.allergies,
+                context_history: child.context.history,
+                context_care: child.context.care,
+                context_languages: child.context.languages,
+                feeding_type: child.context.feedingType,
+                eating_style: child.context.eatingStyle,
+                sleep_falling: child.context.sleep.falling,
+                sleep_sleeps_through: child.context.sleep.sleepsThrough,
+                sleep_night_wakings: child.context.sleep.nightWakings,
+                sleep_wake_duration: child.context.sleep.wakeDuration,
+                sleep_bedtime: child.context.sleep.bedtime,
+                milestones: child.milestones,
+                is_primary: true
+              };
+              const { data: insChild, error: errC } = await supabase
+                .from('children')
+                .insert([payload])
+                .select('id')
+                .single();
+              if (errC) throw errC;
+              const childId = insChild.id;
+              // Upsert initial measures (merge height/weight per month)
+              const byMonth = {};
+              child.growth.measurements.forEach(m => {
+                const monthKey = m.month;
+                if (!byMonth[monthKey]) byMonth[monthKey] = { child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
+                if (Number.isFinite(m.height)) byMonth[monthKey].height_cm = m.height;
+                if (Number.isFinite(m.weight)) byMonth[monthKey].weight_kg = m.weight;
+              });
+              const msArr = Object.values(byMonth);
+              // Validate and log payloads; skip invalid ones
+              const validMsArr = [];
+              msArr.forEach(p => {
+                if (p && p.child_id && Number.isInteger(p.month)) {
+                  console.log('Sending growth_measurements:', p);
+                  validMsArr.push(p);
+                } else {
+                  console.warn('Skip growth_measurements, invalid payload:', p);
+                }
+              });
+              if (validMsArr.length) await supabase
+                .from('growth_measurements')
+                .upsert(validMsArr, { onConflict: 'child_id,month' });
+              if (child.growth.teeth.length) {
+                const teethPayloads = child.growth.teeth.map(ti => ({ child_id: childId, month: ti.month, count: ti.count }));
+                teethPayloads.forEach(p => console.log('Sending growth_teeth:', p));
+                await supabase
+                  .from('growth_teeth')
+                  .insert(teethPayloads);
+              }
+              alert('Profil enfant créé.');
+              location.hash = '#/dashboard';
+              return;
+            } catch (e) {
+              alert('Erreur Supabase — enregistrement local utilisé.');
+            }
+          }
+
+          // Fallback local
+          const children = store.get(K.children, []);
+          children.push(child);
+          store.set(K.children, children);
+          const user = store.get(K.user);
+          user.childIds = Array.isArray(user?.childIds) ? user.childIds : [];
+          user.childIds.push(child.id);
+          if (!user.primaryChildId) user.primaryChildId = child.id;
+          store.set(K.user, user);
+          alert('Profil enfant créé (local).');
+          location.hash = '#/dashboard';
+        } finally {
+          // Re-enable only if still on the onboarding page (no redirect yet)
+          if ((location.hash || '').startsWith('#/onboarding')) {
+            submitEls.forEach(b => { b.disabled = false; });
+            form.dataset.busy = '0';
+          }
+        }
+      });
+    }
   }
 
   function fileToDataUrl(file) {
