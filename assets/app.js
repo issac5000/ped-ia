@@ -36,6 +36,8 @@ console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Load Supabase env and client
+  // Remove "js" marker if any runtime error bubbles up
+  window.addEventListener('error', () => document.documentElement.classList.remove('js'));
   let supabase = null;
   let authSession = null;
   // Reveal observer (initialized later in setupScrollAnimations)
@@ -2432,9 +2434,10 @@ try {
   }
 
   // Init
-  bootstrap();
-  if (!location.hash) location.hash = '#/';
-  setActiveRoute(location.hash);
+    bootstrap();
+    if (!location.hash) location.hash = '#/';
+    setActiveRoute(location.hash);
+    document.documentElement.classList.add('js');
   // Evaluate header fit on load
   evaluateHeaderFit();
   // Footer year (replaces inline script to satisfy CSP)
