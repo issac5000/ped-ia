@@ -940,6 +940,13 @@ try {
       if (useRemote()) {
         try {
           const uid = authSession.user.id;
+          // Determine if this should be the primary child (only if none exists yet)
+          const { count: existingCount, error: countErr } = await supabase
+            .from('children')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', uid);
+          if (countErr) throw countErr;
+
           // Insert child
           const payload = {
             user_id: uid,
@@ -959,7 +966,7 @@ try {
             sleep_wake_duration: child.context.sleep.wakeDuration,
             sleep_bedtime: child.context.sleep.bedtime,
             milestones: child.milestones,
-            is_primary: true
+            is_primary: existingCount === 0
           };
           const { data: insChild, error: errC } = await supabase
             .from('children')
