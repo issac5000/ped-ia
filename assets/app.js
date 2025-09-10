@@ -1023,6 +1023,7 @@ try {
   // Dashboard
   function renderDashboard() {
     const renderSeq = ++dashboardRenderSeq;
+    renderDashboard._retry = renderDashboard._retry || 0;
     let child = null; let all = [];
     if (useRemote()) {
       // Remote load — actual fetch happens later
@@ -1043,8 +1044,21 @@ try {
       return;
     }
     // Placeholder while fetching remote
+    let retryTimer = null;
     if (useRemote()) {
       dom.innerHTML = `<div class="card">Chargement du profil…</div>`;
+      retryTimer = setTimeout(() => {
+        if (renderSeq === dashboardRenderSeq) {
+          if (renderDashboard._retry < 1) {
+            renderDashboard._retry++;
+            renderDashboard();
+          } else {
+            dom.innerHTML = `<div class=\"card stack\"><p>Chargement trop long.</p><button id=\"dash-retry\" class=\"btn btn-secondary\">Réessayer</button></div>`;
+            const btn = $('#dash-retry', dom);
+            bindOnce(btn, 'click', () => { renderDashboard._retry = 0; renderDashboard(); });
+          }
+        }
+      }, 8000);
     }
     const renderForChild = (child) => {
       const ageM = ageInMonths(child.dob);
@@ -1313,6 +1327,7 @@ try {
     };
 
     if (!useRemote()) {
+      renderDashboard._retry = 0;
       renderForChild(child);
     } else {
       (async () => {
@@ -1387,6 +1402,11 @@ try {
         } catch (e) {
           if (seq === dashboardRenderSeq)
             dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
+        } finally {
+          if (seq === dashboardRenderSeq) {
+            try { clearTimeout(retryTimer); } catch {}
+            renderDashboard._retry = 0;
+          }
         }
       })();
     }
