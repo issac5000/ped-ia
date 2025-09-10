@@ -182,7 +182,10 @@ try {
     console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
 
-  window.addEventListener('hashchange', () => setActiveRoute(location.hash));
+  window.addEventListener('hashchange', () => {
+    console.log('DEBUG: hashchange détecté ->', location.hash);
+    setActiveRoute(location.hash || '#/ai');
+  });
   // Close mobile menu on route change
   window.addEventListener('hashchange', () => {
     const nav = document.getElementById('main-nav');
