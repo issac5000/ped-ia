@@ -48,7 +48,7 @@ console.log('DEBUG: app.js chargé');
       });
       if (DEBUG_AUTH) console.log('Supabase client created');
       console.log('DEBUG: appel explicite setActiveRoute(location.hash) au démarrage');
-      setActiveRoute(location.hash || '#/ai');
+      setActiveRoute(location.hash || '#/dashboard');
 
 
 
@@ -993,7 +993,6 @@ try {
               const uid = authSession.user.id;
               // Insert child
               const payload = {
-                user_id: uid,
                 first_name: child.firstName,
                 sex: child.sex,
                 dob: child.dob,
