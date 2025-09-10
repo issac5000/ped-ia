@@ -1,7 +1,9 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
+console.log('DEBUG: app.js chargé');
 (async () => {
+  console.log('DEBUG: entrée dans init()');
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -121,6 +123,7 @@ try {
   // Routing
   function setActiveRoute(hash) {
     const path = (hash.replace('#', '') || '/');
+    console.log('DEBUG: setActiveRoute path =', path);
     $$('.route').forEach(s => s.classList.remove('active'));
     const route = $(`section[data-route="${path}"]`);
     if (route) route.classList.add('active');
@@ -665,6 +668,7 @@ try {
     });
 
     const loadChild = async () => {
+      console.log('DEBUG: entrée dans loadChild()');
       if (useRemote()) {
         try {
           const uid = authSession?.user?.id;
@@ -679,11 +683,13 @@ try {
           if (r) {
             const child = mapRowToChild(r);
             try {
+              console.log('DEBUG: avant Promise.all (AI loadChild growth fetch)', { childId: r.id });
               const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
                 supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', r.id),
                 supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
                 supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
               ]);
+              console.log('DEBUG: après Promise.all (AI loadChild growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
               (gm||[]).forEach(m=>{
                 if (Number.isFinite(m.height_cm)) child.growth.measurements.push({ month: m.month, height: m.height_cm });
                 if (Number.isFinite(m.weight_kg)) child.growth.measurements.push({ month: m.month, weight: m.weight_kg });
@@ -704,6 +710,7 @@ try {
     };
 
     const loadChildById = async (id) => {
+      console.log('DEBUG: entrée dans loadChildById()', { id });
       if (!id) return null;
       if (useRemote()) {
         try {
@@ -717,11 +724,13 @@ try {
           if (!r) return null;
           const ch = mapRowToChild(r);
           try {
+            console.log('DEBUG: avant Promise.all (AI loadChildById growth fetch)', { childId: r.id });
             const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
               supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', r.id),
               supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
               supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
             ]);
+            console.log('DEBUG: après Promise.all (AI loadChildById growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
             (gm||[]).forEach(m=>{
               if (Number.isFinite(m.height_cm)) ch.growth.measurements.push({ month: m.month, height: m.height_cm });
               if (Number.isFinite(m.weight_kg)) ch.growth.measurements.push({ month: m.month, weight: m.weight_kg });
@@ -1066,6 +1075,7 @@ try {
   function renderDashboard() {
     let child = null; let all = [];
     try { console.log('Step UI: entering renderDashboard', document.querySelector('#app')); } catch {}
+    console.log('DEBUG: entrée dans renderDashboard()');
     if (useRemote()) {
       // Remote load
       const uid = authSession.user.id;
@@ -1080,6 +1090,7 @@ try {
     }
     const dom = $('#dashboard-content');
     try { console.log('Step UI: dashboard content container', dom); } catch {}
+    try { console.log('DEBUG: juste avant rendu central — container #app =', document.querySelector('#app')); } catch {}
     if (!dom) {
       const appEl = document.querySelector('#app');
       if (appEl) {
@@ -1105,6 +1116,7 @@ try {
     const renderForChild = (child) => {
       const ageM = ageInMonths(child.dob);
       const ageTxt = formatAge(child.dob);
+      try { console.log('DEBUG: juste avant rendu central — renderForChild', { childId: child?.id, firstName: child?.firstName }); } catch {}
     // Compute latest health snapshot values
     const msAll = normalizeMeasures(child.growth.measurements);
     const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
@@ -1289,6 +1301,7 @@ try {
               console.log('Step 2: pushing growth_sleep insert promise');
               promises.push((async () => {
                 try {
+                  console.log('DEBUG: tentative insert growth_sleep', { childId: child?.id, sleep, month });
                   const { data, error } = await supabase
                     .from('growth_sleep')
                     .insert([{ child_id: child.id, month, hours: sleep }]);
@@ -1313,7 +1326,9 @@ try {
               );
             }
             console.log('Step 4: before Promise.all on measures', { count: promises.length });
-            await Promise.allSettled(promises);
+            console.log('DEBUG: avant Promise.allSettled', promises);
+            const results = await Promise.allSettled(promises);
+            console.log('DEBUG: après Promise.allSettled', results);
             console.log('Step 5: Promise.all resolved for measures');
             console.log('Step UI: before renderDashboard', document.querySelector('#app'));
             renderDashboard();
@@ -1440,11 +1455,13 @@ try {
             growth: { measurements: [], sleep: [], teeth: [] }
           };
           // Load growth
+          console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
           const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
             supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', primary.id),
             supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
             supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
           ]);
+          console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
           (gm||[]).forEach(r=>{
             if (Number.isFinite(r.height_cm)) remoteChild.growth.measurements.push({ month: r.month, height: r.height_cm });
             if (Number.isFinite(r.weight_kg)) remoteChild.growth.measurements.push({ month: r.month, weight: r.weight_kg });
@@ -2040,7 +2057,11 @@ try {
                   supabase.from('growth_teeth').insert([payload])
                 );
               }
-              if (promises.length) await Promise.all(promises);
+              if (promises.length) {
+                console.log('DEBUG: avant Promise.all (settings optional measures)', promises);
+                const results = await Promise.all(promises);
+                console.log('DEBUG: après Promise.all (settings optional measures)', results);
+              }
               // Log update history locally (even in remote mode)
               logChildUpdate(id, prevSnap, nextSnap);
               alert('Profil enfant mis à jour.');
