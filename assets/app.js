@@ -1670,8 +1670,8 @@ try {
     })();
     if (!list.dataset.bound) {
       list.addEventListener('click', async (e)=>{
-        const target = e.target;
-        if (!(target instanceof HTMLElement)) return;
+        const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
+        if (!target) return;
         const idE = target.getAttribute('data-edit');
         const idP = target.getAttribute('data-primary');
         const idD = target.getAttribute('data-del');
