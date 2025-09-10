@@ -9,6 +9,19 @@
     set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
     del(k) { localStorage.removeItem(k); },
   };
+  const routes = [
+    "/", "/signup", "/login", "/onboarding", "/dashboard",
+    "/community", "/settings", "/about", "/ai", "/contact", "/legal"
+  ];
+  // Data model keys
+  const K = {
+    user: 'pedia_user',
+    children: 'pedia_children',
+    forum: 'pedia_forum',
+    privacy: 'pedia_privacy',
+    session: 'pedia_session',
+    messages: 'pedia_messages'
+  };
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Load Supabase env and client
@@ -92,22 +105,7 @@ try {
 
  
 
-  const routes = [
-    "/", "/signup", "/login", "/onboarding", "/dashboard",
-    "/community", "/settings", "/about", "/ai", "/contact", "/legal"
-  ];
-
   
-
-  // Data model keys
-  const K = {
-    user: 'pedia_user',
-    children: 'pedia_children',
-    forum: 'pedia_forum',
-    privacy: 'pedia_privacy',
-    session: 'pedia_session',
-    messages: 'pedia_messages'
-  };
 
   // Bootstrap defaults
   function bootstrap() {
