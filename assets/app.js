@@ -1205,9 +1205,9 @@ try {
               const payload = {
                 child_id: child.id,
                 month,
-                height_cm: Number.isFinite(height) ? Number(height) : null,
-                weight_kg: Number.isFinite(weight) ? Number(weight) : null,
               };
+              if (Number.isFinite(height)) payload.height_cm = Number(height);
+              if (Number.isFinite(weight)) payload.weight_kg = Number(weight);
               if (payload.child_id && Number.isInteger(payload.month)) {
                 console.log('Sending growth_measurements:', payload);
                 promises.push(
@@ -1911,9 +1911,9 @@ try {
                 const payload = {
                   child_id: id,
                   month: ageMNow,
-                  height_cm: Number.isFinite(eh) ? Number(eh) : null,
-                  weight_kg: Number.isFinite(ew) ? Number(ew) : null,
                 };
+                if (Number.isFinite(eh)) payload.height_cm = Number(eh);
+                if (Number.isFinite(ew)) payload.weight_kg = Number(ew);
                 if (payload.child_id && Number.isInteger(payload.month)) {
                   console.log('Sending growth_measurements:', payload);
                   promises.push(
