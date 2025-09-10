@@ -637,7 +637,13 @@ try {
     const loadChild = async () => {
       if (useRemote()) {
         try {
-          const uid = authSession.user.id;
+          const uid = authSession?.user?.id;
+          if (!uid) {
+            console.warn("Aucun user_id disponible pour la requête children (loadChild) — fallback local");
+            const user = store.get(K.user);
+            const children = store.get(K.children, []);
+            return children.find(c => c.id === user?.primaryChildId) || children[0] || null;
+          }
           const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
           const r = (rows||[]).find(x=>x.is_primary) || (rows||[])[0];
           if (r) {
@@ -671,6 +677,12 @@ try {
       if (!id) return null;
       if (useRemote()) {
         try {
+          const uid = authSession?.user?.id;
+          if (!uid) {
+            console.warn("Aucun user_id disponible pour la requête children (loadChildById) — fallback local");
+            const children = store.get(K.children, []);
+            return children.find(c=>c.id===id) || null;
+          }
           const { data: r } = await supabase.from('children').select('*').eq('id', id).maybeSingle();
           if (!r) return null;
           const ch = mapRowToChild(r);
@@ -940,14 +952,18 @@ try {
             milestones: child.milestones,
             is_primary: true
           };
-          const { data: insChild, error: errC } = await supabase.from('children').insert(payload).select('id').single();
+          const { data: insChild, error: errC } = await supabase
+            .from('children')
+            .insert([payload])
+            .select('id')
+            .single();
           if (errC) throw errC;
           const childId = insChild.id;
           // Upsert initial measures (merge height/weight per month)
           const byMonth = {};
           child.growth.measurements.forEach(m => {
             const monthKey = m.month;
-            if (!byMonth[monthKey]) byMonth[monthKey] = { child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
+            if (!byMonth[monthKey]) byMonth[monthKey] = { user_id: uid, child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
             if (Number.isFinite(m.height)) byMonth[monthKey].height_cm = m.height;
             if (Number.isFinite(m.weight)) byMonth[monthKey].weight_kg = m.weight;
           });
@@ -955,7 +971,9 @@ try {
           if (msArr.length) await supabase
             .from('growth_measurements')
             .upsert(msArr, { onConflict: 'child_id,month' });
-          if (child.growth.teeth.length) await supabase.from('growth_teeth').insert(child.growth.teeth.map(ti=>({child_id: childId, month: ti.month, count: ti.count})));
+          if (child.growth.teeth.length) await supabase
+            .from('growth_teeth')
+            .insert(child.growth.teeth.map(ti=>({ user_id: uid, child_id: childId, month: ti.month, count: ti.count })));
           alert('Profil enfant créé.');
           location.hash = '#/dashboard';
           return;
@@ -1157,9 +1175,15 @@ try {
         let handled = false;
         if (useRemote()) {
           try {
+            const uid = authSession?.user?.id;
+            if (!uid) {
+              console.warn('Aucun user_id disponible pour growth_measurements/growth_sleep/growth_teeth (form-measure)');
+              throw new Error('Pas de user_id');
+            }
             const promises = [];
             if (Number.isFinite(height) || Number.isFinite(weight)) {
               const payload = {
+                user_id: uid,
                 child_id: child.id,
                 month,
                 height_cm: Number.isFinite(height) ? Number(height) : null,
@@ -1168,11 +1192,19 @@ try {
               promises.push(
                 supabase
                   .from('growth_measurements')
-                  .upsert(payload, { onConflict: 'child_id,month' })
+                  .upsert([payload], { onConflict: 'child_id,month' })
               );
             }
-            if (Number.isFinite(sleep)) promises.push(supabase.from('growth_sleep').insert({ child_id: child.id, month, hours: sleep }));
-            if (Number.isFinite(teeth)) promises.push(supabase.from('growth_teeth').insert({ child_id: child.id, month, count: teeth }));
+            if (Number.isFinite(sleep)) promises.push(
+              supabase
+                .from('growth_sleep')
+                .insert([{ user_id: uid, child_id: child.id, month, hours: sleep }])
+            );
+            if (Number.isFinite(teeth)) promises.push(
+              supabase
+                .from('growth_teeth')
+                .insert([{ user_id: uid, child_id: child.id, month, count: teeth }])
+            );
             await Promise.all(promises);
             renderDashboard();
             handled = true;
@@ -1247,9 +1279,27 @@ try {
     } else {
       (async () => {
         try {
-          const uid = authSession.user.id;
+          const uid = authSession?.user?.id;
+          if (!uid) {
+            console.warn('Aucun user_id disponible pour la requête children (renderDashboard) — fallback local');
+            const u = store.get(K.user) || {};
+            const all = store.get(K.children, []);
+            if (!all.length) {
+              dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+              return;
+            }
+            const slimLocal = all.map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
+            const selId = (slimLocal.find(s=>s.isPrimary) || slimLocal[0]).id;
+            renderChildSwitcher(dom.parentElement || dom, slimLocal, selId, () => renderDashboard());
+            const child = all.find(c => c.id === selId) || all[0];
+            renderForChild(child);
+            return;
+          }
           const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
-          if (!rows || !rows.length) { dom.innerHTML = `<div class="card">Aucun profil. Créez‑en un.</div>`; return; }
+          if (!rows || !rows.length) {
+            dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+            return;
+          }
           // Render switcher from remote children
           const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
           const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
@@ -1373,7 +1423,9 @@ try {
         if (!content) return;
         if (useRemote()) {
           try {
-            await supabase.from('forum_replies').insert({ topic_id: id, user_id: authSession.user.id, content });
+            const uid = authSession?.user?.id;
+            if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
+            await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
             renderCommunity();
             return;
           } catch {}
@@ -1395,7 +1447,13 @@ try {
         const id = btn.getAttribute('data-del-topic');
         if (!confirm('Supprimer ce sujet ?')) return;
         if (useRemote()) {
-          try { await supabase.from('forum_topics').delete().eq('id', id); renderCommunity(); return; } catch {}
+          try {
+            const uid = authSession?.user?.id;
+            if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
+            await supabase.from('forum_topics').delete().eq('id', id);
+            renderCommunity();
+            return;
+          } catch {}
         }
         // Local fallback
         const forum = store.get(K.forum);
@@ -1407,6 +1465,16 @@ try {
     if (useRemote()) {
       (async () => {
         try {
+          const uid = authSession?.user?.id;
+          if (!uid) {
+            console.warn('Aucun user_id disponible pour forum_topics/forum_replies/profiles (fetch)');
+            const forum = store.get(K.forum, { topics: [] });
+            const repliesMap = new Map();
+            forum.topics.forEach(t=> repliesMap.set(t.id, t.replies||[]));
+            const authors = new Map();
+            renderTopics(forum.topics.slice().reverse(), repliesMap, authors);
+            return;
+          }
           const { data: topics } = await supabase.from('forum_topics').select('id,user_id,title,content,created_at').order('created_at',{ascending:false});
           const ids = (topics||[]).map(t=>t.id);
           const { data: reps } = ids.length? await supabase.from('forum_replies').select('id,topic_id,user_id,content,created_at').in('topic_id', ids) : { data: [] };
@@ -1458,16 +1526,18 @@ try {
           if (category && category !== 'Divers' && !/^\[.*\]/.test(title)) title = `[${category}] ${title}`;
           if (useRemote()) {
             try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (new topic)'); throw new Error('Pas de user_id'); }
               const payload = {
                 id: crypto.randomUUID(),
-                user_id: authSession.user.id,
+                user_id: uid,
                 title,
                 content,
                 created_at: new Date().toISOString()
               };
               const { error } = await supabase
                 .from('forum_topics')
-                .upsert(payload, { onConflict: 'id' });
+                .upsert([payload], { onConflict: 'id' });
               if (error) throw error;
               dlg.close();
               renderCommunity();
@@ -1503,7 +1573,8 @@ try {
     (async () => {
       if (useRemote()) {
         try {
-          const uid = authSession.user.id;
+          const uid = authSession?.user?.id;
+          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (fetch)'); throw new Error('Pas de user_id'); }
           const { data: p } = await supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle();
           form.showStats.checked = !!p?.show_stats;
           form.allowMessages.checked = !!p?.allow_messages;
@@ -1522,8 +1593,9 @@ try {
       const allowMessages = !!fd.get('allowMessages');
       if (useRemote()) {
         try {
-          const uid = authSession.user.id;
-          await supabase.from('privacy_settings').upsert({ user_id: uid, show_stats: showStats, allow_messages: allowMessages });
+          const uid = authSession?.user?.id;
+          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (upsert)'); throw new Error('Pas de user_id'); }
+          await supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]);
           store.set(K.user, { ...user, role });
           alert('Paramètres enregistrés');
           return;
@@ -1540,7 +1612,8 @@ try {
     (async () => {
       if (useRemote()) {
         try {
-          const uid = authSession.user.id;
+          const uid = authSession?.user?.id;
+          if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
           const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
           children = rows || [];
         } catch { children = []; }
@@ -1576,7 +1649,8 @@ try {
       if (idP) {
         if (useRemote()) {
           try {
-            const uid = authSession.user.id;
+            const uid = authSession?.user?.id;
+            if (!uid) { console.warn('Aucun user_id disponible pour children (set primary)'); throw new Error('Pas de user_id'); }
             await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
             await supabase.from('children').update({ is_primary: true }).eq('id', idP);
             renderSettings();
@@ -1590,6 +1664,8 @@ try {
         if (!confirm('Supprimer ce profil enfant ?')) return;
         if (useRemote()) {
           try {
+            const uid = authSession?.user?.id;
+            if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
             await supabase.from('children').delete().eq('id', idD);
             renderSettings();
             return;
@@ -1765,6 +1841,8 @@ try {
           };
           if (useRemote()) {
             try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour children (update)'); throw new Error('Pas de user_id'); }
               await supabase.from('children').update(payload).eq('id', id);
               // Optional new measures
               const eh = parseFloat(fd.get('height'));
@@ -1773,6 +1851,7 @@ try {
               const promises = [];
               if (Number.isFinite(eh) || Number.isFinite(ew)) {
                 const payload = {
+                  user_id: uid,
                   child_id: id,
                   month: ageMNow,
                   height_cm: Number.isFinite(eh) ? Number(eh) : null,
@@ -1781,10 +1860,12 @@ try {
                 promises.push(
                   supabase
                     .from('growth_measurements')
-                    .upsert(payload, { onConflict: 'child_id,month' })
+                    .upsert([payload], { onConflict: 'child_id,month' })
                 );
               }
-              if (Number.isFinite(et)) promises.push(supabase.from('growth_teeth').insert({ child_id: id, month: ageMNow, count: et }));
+              if (Number.isFinite(et)) promises.push(
+                supabase.from('growth_teeth').insert([{ user_id: uid, child_id: id, month: ageMNow, count: et }])
+              );
               if (promises.length) await Promise.all(promises);
               alert('Profil enfant mis à jour.');
               renderSettings();
@@ -1928,14 +2009,18 @@ try {
   async function listChildrenSlim() {
     if (useRemote()) {
       try {
-        const uid = authSession.user.id;
+        const uid = authSession?.user?.id;
+        if (!uid) {
+          console.warn('Aucun user_id disponible pour children (listChildrenSlim)');
+          throw new Error('Pas de user_id');
+        }
         const { data: rows } = await supabase
           .from('children')
           .select('id,first_name,dob,is_primary')
           .eq('user_id', uid)
           .order('created_at', { ascending: true });
         return (rows || []).map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
-      } catch { return []; }
+      } catch { /* fallback local below */ }
     }
     const children = store.get(K.children, []);
     const user = store.get(K.user) || {};
@@ -1946,7 +2031,8 @@ try {
     if (!id) return;
     if (useRemote()) {
       try {
-        const uid = authSession.user.id;
+        const uid = authSession?.user?.id;
+        if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
         await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
         await supabase.from('children').update({ is_primary: true }).eq('id', id);
       } catch {}
