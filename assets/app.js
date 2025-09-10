@@ -22,7 +22,8 @@ console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
     forum: 'pedia_forum',
     privacy: 'pedia_privacy',
     session: 'pedia_session',
-    messages: 'pedia_messages'
+    messages: 'pedia_messages',
+    childUpdates: 'pedia_child_updates'
   };
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
@@ -1160,6 +1161,23 @@ try {
       </div>`;
     dom.appendChild(healthBlock);
 
+    // Append updates history block
+    try {
+      const updates = getChildUpdates(child.id).slice().reverse(); // latest first
+      const hist = document.createElement('div');
+      hist.className = 'card stack';
+      hist.innerHTML = `<h3>Historique des mises à jour</h3>` + (
+        updates.length ?
+        `<div class="stack">${updates.map(u => {
+            const when = new Date(u.at).toLocaleString();
+            const sum = summarizeUpdate(u.prev||{}, u.next||{});
+            return `<div><div class=\"muted\">${when}</div><div>${sum || '—'}</div></div>`;
+          }).join('')}</div>`
+        : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
+      );
+      dom.appendChild(hist);
+    } catch {}
+
     // Handle measure form (removed UI; guard if present)
     const formMeasure = $('#form-measure');
     if (formMeasure) formMeasure.addEventListener('submit', async (e) => {
@@ -1578,6 +1596,8 @@ try {
 
   // Settings
   function renderSettings() {
+    // Render instance guard to avoid async races that duplicate rows
+    const rid = (renderSettings._rid = (renderSettings._rid || 0) + 1);
     const user = store.get(K.user);
     const form = $('#form-settings');
     form.role.value = user?.role || 'maman';
@@ -1632,6 +1652,8 @@ try {
       } else {
         children = store.get(K.children, []);
       }
+      // If another render started, abort appending to avoid duplicates
+      if (rid !== renderSettings._rid) return;
       children.forEach(c => {
         const firstName = c.first_name || c.firstName;
         const dob = c.dob;
@@ -1639,59 +1661,62 @@ try {
         row.className = 'hstack';
         row.innerHTML = `
           <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
-          <button class="btn btn-secondary" data-edit="${c.id}">Modifier</button>
+          <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
           <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
           <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
         `;
         list.appendChild(row);
       });
     })();
-    list.addEventListener('click', async (e)=>{
-      const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
-      const idE = target.getAttribute('data-edit');
-      const idP = target.getAttribute('data-primary');
-      const idD = target.getAttribute('data-del');
-      if (idE) {
-        const editBox = document.getElementById('child-edit');
-        editBox?.setAttribute('data-edit-id', idE);
-        renderSettings();
-        return;
-      }
-      if (idP) {
-        if (useRemote()) {
-          try {
-            const uid = authSession?.user?.id;
-            if (!uid) { console.warn('Aucun user_id disponible pour children (set primary)'); throw new Error('Pas de user_id'); }
-            await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
-            await supabase.from('children').update({ is_primary: true }).eq('id', idP);
-            renderSettings();
-            return;
-          } catch {}
+    if (!list.dataset.bound) {
+      list.addEventListener('click', async (e)=>{
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const idE = target.getAttribute('data-edit');
+        const idP = target.getAttribute('data-primary');
+        const idD = target.getAttribute('data-del');
+        if (idE) {
+          const editBox = document.getElementById('child-edit');
+          editBox?.setAttribute('data-edit-id', idE);
+          renderSettings();
+          return;
         }
-        store.set(K.user, { ...user, primaryChildId: idP });
-        renderSettings();
-      }
-      if (idD) {
-        if (!confirm('Supprimer ce profil enfant ?')) return;
-        if (useRemote()) {
-          try {
-            const uid = authSession?.user?.id;
-            if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
-            await supabase.from('children').delete().eq('id', idD);
-            renderSettings();
-            return;
-          } catch {}
+        if (idP) {
+          if (useRemote()) {
+            try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour children (set primary)'); throw new Error('Pas de user_id'); }
+              await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
+              await supabase.from('children').update({ is_primary: true }).eq('id', idP);
+              renderSettings();
+              return;
+            } catch {}
+          }
+          store.set(K.user, { ...user, primaryChildId: idP });
+          renderSettings();
         }
-        let children = store.get(K.children, []);
-        children = children.filter(c=>c.id!==idD);
-        store.set(K.children, children);
-        const u = { ...user, childIds: (user.childIds||[]).filter(x=>x!==idD) };
-        if (u.primaryChildId===idD) u.primaryChildId = u.childIds[0] ?? null;
-        store.set(K.user, u);
-        renderSettings();
-      }
-    });
+        if (idD) {
+          if (!confirm('Supprimer ce profil enfant ?')) return;
+          if (useRemote()) {
+            try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
+              await supabase.from('children').delete().eq('id', idD);
+              renderSettings();
+              return;
+            } catch {}
+          }
+          let children = store.get(K.children, []);
+          children = children.filter(c=>c.id!==idD);
+          store.set(K.children, children);
+          const u = { ...user, childIds: (user.childIds||[]).filter(x=>x!==idD) };
+          if (u.primaryChildId===idD) u.primaryChildId = u.childIds[0] ?? null;
+          store.set(K.user, u);
+          renderSettings();
+        }
+      });
+      list.dataset.bound = '1';
+    }
 
     // Child edit form render
     const editBox = document.getElementById('child-edit');
@@ -1734,7 +1759,7 @@ try {
         editBox.innerHTML = '<div class="muted">Sélectionnez un enfant pour modifier son profil.</div>';
       } else {
         editBox.innerHTML = `
-          <h3>Modifier le profil enfant</h3>
+          <h3>Mettre à jour le profil enfant</h3>
           <form id="form-child-edit" class="form-grid" autocomplete="on">
             <input type="hidden" name="id" value="${child.id}" />
             <label>Prénom<input type="text" name="firstName" value="${escapeHtml(child.firstName)}" required /></label>
@@ -1814,7 +1839,7 @@ try {
               <input type="time" name="sleep_bedtime" value="${child.context.sleep?.bedtime||''}" />
             </label>
             <div class="hstack">
-              <button class="btn btn-primary" type="submit">Enregistrer</button>
+              <button class="btn btn-primary" type="submit">Mettre à jour</button>
               <button class="btn btn-secondary" type="button" id="btn-cancel-edit">Annuler</button>
             </div>
           </form>
@@ -1834,6 +1859,8 @@ try {
           const sex = fd.get('sex').toString();
           const newDob = fd.get('dob').toString();
           const ageMNow = ageInMonths(newDob);
+          // Prepare update history snapshots
+          const prevSnap = makeUpdateSnapshot(child);
           const payload = {
             first_name: firstName,
             sex,
@@ -1851,6 +1878,26 @@ try {
             sleep_wake_duration: fd.get('sleep_wake_duration')?.toString() || '',
             sleep_bedtime: fd.get('sleep_bedtime')?.toString() || '',
           };
+          const nextSnap = makeUpdateSnapshot({
+            id,
+            firstName,
+            dob: newDob,
+            context: {
+              allergies: payload.context_allergies,
+              history: payload.context_history,
+              care: payload.context_care,
+              languages: payload.context_languages,
+              feedingType: payload.feeding_type,
+              eatingStyle: payload.eating_style,
+              sleep: {
+                falling: payload.sleep_falling,
+                sleepsThrough: payload.sleep_sleeps_through,
+                nightWakings: payload.sleep_night_wakings,
+                wakeDuration: payload.sleep_wake_duration,
+                bedtime: payload.sleep_bedtime,
+              }
+            }
+          });
           if (useRemote()) {
             try {
               const uid = authSession?.user?.id;
@@ -1887,6 +1934,8 @@ try {
                 );
               }
               if (promises.length) await Promise.all(promises);
+              // Log update history locally (even in remote mode)
+              logChildUpdate(id, prevSnap, nextSnap);
               alert('Profil enfant mis à jour.');
               renderSettings();
               return;
@@ -1922,6 +1971,7 @@ try {
           if (Number.isFinite(ew2)) c.growth.measurements.push({ month: ageMNow, weight: ew2 });
           if (Number.isFinite(et2)) c.growth.teeth.push({ month: ageMNow, count: et2 });
           store.set(K.children, childrenAll);
+          logChildUpdate(id, prevSnap, nextSnap);
           alert('Profil enfant mis à jour.');
           renderSettings();
         }, { once: true });
@@ -2024,6 +2074,68 @@ try {
     return parts.join(' • ') || '—';
   }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+  // --- Update history helpers ---
+  function makeUpdateSnapshot(childLike) {
+    if (!childLike) return {};
+    return {
+      firstName: childLike.firstName || '',
+      dob: childLike.dob || '',
+      context: {
+        allergies: childLike.context?.allergies || '',
+        history: childLike.context?.history || '',
+        care: childLike.context?.care || '',
+        languages: childLike.context?.languages || '',
+        feedingType: childLike.context?.feedingType || '',
+        eatingStyle: childLike.context?.eatingStyle || '',
+        sleep: {
+          falling: childLike.context?.sleep?.falling || '',
+          sleepsThrough: typeof childLike.context?.sleep?.sleepsThrough === 'boolean' ? childLike.context.sleep.sleepsThrough : null,
+          nightWakings: childLike.context?.sleep?.nightWakings || '',
+          wakeDuration: childLike.context?.sleep?.wakeDuration || '',
+          bedtime: childLike.context?.sleep?.bedtime || ''
+        }
+      }
+    };
+  }
+
+  function logChildUpdate(childId, prev, next) {
+    if (!childId) return;
+    const map = store.get(K.childUpdates, {});
+    const list = Array.isArray(map[childId]) ? map[childId] : [];
+    list.push({ at: Date.now(), prev, next });
+    map[childId] = list.slice(-50); // keep last 50 updates
+    store.set(K.childUpdates, map);
+  }
+
+  function getChildUpdates(childId) {
+    const map = store.get(K.childUpdates, {});
+    return Array.isArray(map[childId]) ? map[childId] : [];
+  }
+
+  function summarizeUpdate(prev, next) {
+    try {
+      const parts = [];
+      if ((prev.firstName||'') !== (next.firstName||'')) parts.push(`Prénom: ${escapeHtml(prev.firstName||'—')} → ${escapeHtml(next.firstName||'—')}`);
+      if ((prev.dob||'') !== (next.dob||'')) parts.push(`Naissance: ${prev.dob||'—'} → ${next.dob||'—'}`);
+      if ((prev.context?.allergies||'') !== (next.context?.allergies||'')) parts.push(`Allergies: ${escapeHtml(prev.context?.allergies||'—')} → ${escapeHtml(next.context?.allergies||'—')}`);
+      if ((prev.context?.feedingType||'') !== (next.context?.feedingType||'')) parts.push(`Alimentation: ${labelFeedingType(prev.context?.feedingType||'')} → ${labelFeedingType(next.context?.feedingType||'')}`);
+      if ((prev.context?.eatingStyle||'') !== (next.context?.eatingStyle||'')) parts.push(`Appétit: ${labelEatingStyle(prev.context?.eatingStyle||'')} → ${labelEatingStyle(next.context?.eatingStyle||'')}`);
+      const pS = prev.context?.sleep || {}; const nS = next.context?.sleep || {};
+      const sleepChanges = [];
+      if ((pS.falling||'') !== (nS.falling||'')) sleepChanges.push(`endormissement ${pS.falling||'—'} → ${nS.falling||'—'}`);
+      if (typeof pS.sleepsThrough === 'boolean' || typeof nS.sleepsThrough === 'boolean') {
+        const a = typeof pS.sleepsThrough==='boolean' ? (pS.sleepsThrough?'oui':'non') : '—';
+        const b = typeof nS.sleepsThrough==='boolean' ? (nS.sleepsThrough?'oui':'non') : '—';
+        if (a !== b) sleepChanges.push(`nuits complètes ${a} → ${b}`);
+      }
+      if ((pS.nightWakings||'') !== (nS.nightWakings||'')) sleepChanges.push(`réveils ${pS.nightWakings||'—'} → ${nS.nightWakings||'—'}`);
+      if ((pS.wakeDuration||'') !== (nS.wakeDuration||'')) sleepChanges.push(`éveils ${pS.wakeDuration||'—'} → ${nS.wakeDuration||'—'}`);
+      if ((pS.bedtime||'') !== (nS.bedtime||'')) sleepChanges.push(`coucher ${pS.bedtime||'—'} → ${nS.bedtime||'—'}`);
+      if (sleepChanges.length) parts.push(`Sommeil: ${sleepChanges.join(' • ')}`);
+      return parts.join(' ; ');
+    } catch { return ''; }
+  }
 
   // --- Shared child selection helpers (sync across pages) ---
   async function listChildrenSlim() {
