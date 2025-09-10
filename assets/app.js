@@ -1276,7 +1276,7 @@ try {
             if (Number.isFinite(sleep)) promises.push(
               supabase
                 .from('growth_sleep')
-                .insert([{ user_id: uid, child_id: child.id, month, hours: sleep }])
+                .insert([{ child_id: child.id, month, hours: sleep }])
             );
             if (Number.isFinite(teeth)) {
               const payload = { child_id: child.id, month, count: teeth };
