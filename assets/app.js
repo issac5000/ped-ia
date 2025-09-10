@@ -3,6 +3,12 @@
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  const store = {
+    get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+    set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
+    del(k) { localStorage.removeItem(k); },
+  };
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Load Supabase env and client
@@ -91,11 +97,7 @@ try {
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
 
-  const store = {
-    get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
-    set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
-    del(k) { localStorage.removeItem(k); },
-  };
+  
 
   // Data model keys
   const K = {
