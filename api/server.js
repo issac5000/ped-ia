@@ -10,6 +10,9 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const API_KEY = process.env.OPENAI_API_KEY || '';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const SUPABASE_ORIGIN = SUPABASE_URL ? new URL(SUPABASE_URL).origin : '';
+const SUPABASE_WS = SUPABASE_ORIGIN ? SUPABASE_ORIGIN.replace('https://', 'wss://') : '';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -23,14 +26,26 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
-function send(res, status, body, headers={}) {
+function send(res, status, body, headers = {}) {
+  const connectSrc = ["'self'", SUPABASE_ORIGIN, SUPABASE_WS, 'https://cdn.jsdelivr.net'].filter(Boolean).join(' ');
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob:",
+    `connect-src ${connectSrc}`,
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'"
+  ].join('; ');
   const security = {
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=()',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    'Content-Security-Policy': csp,
   };
   const h = { 'Access-Control-Allow-Origin': '*', ...security, ...headers };
   res.writeHead(status, h);
@@ -163,6 +178,12 @@ const server = createServer(async (req, res) => {
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization'
     });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/env') {
+    const urlEnv = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+    return send(res, 200, JSON.stringify({ url: urlEnv, anonKey }), { 'Content-Type': 'application/json; charset=utf-8' });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/ai/advice') {
