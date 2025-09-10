@@ -1598,28 +1598,26 @@ try {
   // (Comparateur retiré — les courbes sont dans le Dashboard)
 
   // Settings
-  function renderSettings() {
+  async function renderSettings() {
     // Render instance guard to avoid async races that duplicate rows
     const rid = (renderSettings._rid = (renderSettings._rid || 0) + 1);
     const user = store.get(K.user);
     const form = $('#form-settings');
     form.role.value = user?.role || 'maman';
     // Privacy load
-    (async () => {
-      if (useRemote()) {
-        try {
-          const uid = authSession?.user?.id;
-          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (fetch)'); throw new Error('Pas de user_id'); }
-          const { data: p } = await supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle();
-          form.showStats.checked = !!p?.show_stats;
-          form.allowMessages.checked = !!p?.allow_messages;
-        } catch { form.showStats.checked = true; form.allowMessages.checked = true; }
-      } else {
-        const privacy = store.get(K.privacy);
-        form.showStats.checked = !!privacy.showStats;
-        form.allowMessages.checked = !!privacy.allowMessages;
-      }
-    })();
+    if (useRemote()) {
+      try {
+        const uid = authSession?.user?.id;
+        if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (fetch)'); throw new Error('Pas de user_id'); }
+        const { data: p } = await supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle();
+        form.showStats.checked = !!p?.show_stats;
+        form.allowMessages.checked = !!p?.allow_messages;
+      } catch { form.showStats.checked = true; form.allowMessages.checked = true; }
+    } else {
+      const privacy = store.get(K.privacy);
+      form.showStats.checked = !!privacy.showStats;
+      form.allowMessages.checked = !!privacy.allowMessages;
+    }
     form.onsubmit = async (e)=>{
       e.preventDefault();
       const fd = new FormData(form);
@@ -1644,33 +1642,31 @@ try {
     const list = $('#children-list');
     list.innerHTML = '';
     let children = [];
-    (async () => {
-      if (useRemote()) {
-        try {
-          const uid = authSession?.user?.id;
-          if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
-          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
-          children = rows || [];
-        } catch { children = []; }
-      } else {
-        children = store.get(K.children, []);
-      }
-      // If another render started, abort appending to avoid duplicates
-      if (rid !== renderSettings._rid) return;
-      children.forEach(c => {
-        const firstName = c.first_name || c.firstName;
-        const dob = c.dob;
-        const row = document.createElement('div');
-        row.className = 'hstack';
-        row.innerHTML = `
+    if (useRemote()) {
+      try {
+        const uid = authSession?.user?.id;
+        if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
+        const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+        children = rows || [];
+      } catch { children = []; }
+    } else {
+      children = store.get(K.children, []);
+    }
+    // If another render started, abort appending to avoid duplicates
+    if (rid !== renderSettings._rid) return;
+    children.forEach(c => {
+      const firstName = c.first_name || c.firstName;
+      const dob = c.dob;
+      const row = document.createElement('div');
+      row.className = 'hstack';
+      row.innerHTML = `
           <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
           <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
           <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
           <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
         `;
-        list.appendChild(row);
-      });
-    })();
+      list.appendChild(row);
+    });
     if (!list.dataset.bound) {
       list.addEventListener('click', async (e)=>{
         const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
@@ -1941,6 +1937,7 @@ try {
               logChildUpdate(id, prevSnap, nextSnap);
               alert('Profil enfant mis à jour.');
               renderSettings();
+              renderDashboard();
               return;
             } catch (err) {
               alert('Erreur Supabase — modifications enregistrées localement');
@@ -1977,6 +1974,7 @@ try {
           logChildUpdate(id, prevSnap, nextSnap);
           alert('Profil enfant mis à jour.');
           renderSettings();
+          renderDashboard();
         }, { once: true });
         document.getElementById('btn-cancel-edit')?.addEventListener('click', ()=>{
           editBox.removeAttribute('data-edit-id');
