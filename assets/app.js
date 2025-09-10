@@ -190,27 +190,10 @@ try {
     bd?.classList.remove('open');
   });
 
-  // Detect header overflow and toggle forced mobile header if needed
+  // Detect viewport width to decide if mobile header is needed
   function evaluateHeaderFit(){
     try {
-      const header = document.querySelector('.header-inner');
-      const brand = header?.querySelector('.brand');
-      const nav = header?.querySelector('#main-nav');
-      const auth = header?.querySelector('.auth-actions');
-      if (!header || !brand || !nav || !auth) return;
-      const padding = 40; // spacing/gap buffer
-      const cs = getComputedStyle(header);
-      const areas = (cs.gridTemplateAreas || '').toString();
-      const twoRowLayout = areas.includes('nav'); // matches the medium breakpoint layout with nav on its own row
-      let needMobile = false;
-      if (twoRowLayout) {
-        // In two-row layout, only switch to mobile if nav itself overflows container width
-        needMobile = nav.scrollWidth > header.clientWidth;
-      } else {
-        // Single-row layout: compute true overflow
-        const total = brand.offsetWidth + nav.scrollWidth + auth.offsetWidth + padding;
-        needMobile = total > header.clientWidth;
-      }
+      const needMobile = window.innerWidth <= 900;
       document.body.classList.toggle('force-mobile', needMobile);
     } catch {}
   }
