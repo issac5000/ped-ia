@@ -537,13 +537,27 @@ try {
       await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
     } catch (e) { alert('Connexion Google indisponible'); }
   }
-  $('#btn-login').addEventListener('click', async (e) => { e.preventDefault(); await signInGoogle(); });
+  $('#btn-login').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    try { await signInGoogle(); } finally { /* redirect expected; keep disabled */ }
+  });
   // Buttons on /login and /signup pages (event delegation for robustness)
   document.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target.closest('.btn-google-login') : null;
-    if (t) { e.preventDefault(); signInGoogle(); }
+    if (t) {
+      e.preventDefault();
+      if (t.dataset.busy === '1') return;
+      t.dataset.busy = '1';
+      t.setAttribute('aria-disabled','true');
+      signInGoogle();
+    }
   });
-  $('#btn-logout').addEventListener('click', async () => {
+  $('#btn-logout').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; if (btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled = true;
     try { await supabase?.auth.signOut(); } catch {}
     alert('Déconnecté.');
     updateHeaderAuth();
@@ -582,7 +596,13 @@ try {
     location.hash = '#/login';
   });
 
-  $('#form-login')?.addEventListener('submit', async (e) => { e.preventDefault(); await signInGoogle(); });
+  $('#form-login')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    if (f.dataset.busy==='1') return; f.dataset.busy='1';
+    const btn = f.querySelector('button[type="submit"],input[type="submit"]'); if (btn) btn.disabled = true;
+    try { await signInGoogle(); } finally { /* redirect expected; keep disabled */ }
+  });
 
   function logout() { /* replaced by supabase signOut above */ }
 
@@ -591,21 +611,28 @@ try {
     const form = $('#form-contact');
     const status = $('#contact-status');
     if (!form) return;
-    form.addEventListener('submit', (e) => {
+    if (!form.dataset.bound) form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const fd = new FormData(form);
-      const entry = {
-        email: fd.get('email').toString(),
-        subject: fd.get('subject').toString(),
-        message: fd.get('message').toString(),
-        createdAt: Date.now()
-      };
-      const msgs = store.get(K.messages, []);
-      msgs.push(entry);
-      store.set(K.messages, msgs);
-      form.reset();
-      if (status) status.textContent = 'Merci ! Votre message a été enregistré (démo locale).';
-    }, { once: true });
+      if (form.dataset.busy === '1') return;
+      form.dataset.busy = '1';
+      const btn = form.querySelector('button[type="submit"],input[type="submit"]'); if (btn) btn.disabled = true;
+      try {
+        const fd = new FormData(form);
+        const entry = {
+          email: fd.get('email').toString(),
+          subject: fd.get('subject').toString(),
+          message: fd.get('message').toString(),
+          createdAt: Date.now()
+        };
+        const msgs = store.get(K.messages, []);
+        msgs.push(entry);
+        store.set(K.messages, msgs);
+        form.reset();
+        if (status) status.textContent = 'Merci ! Votre message a été enregistré (démo locale).';
+      } finally {
+        form.dataset.busy = '0'; if (btn) btn.disabled = false;
+      }
+    }); form && (form.dataset.bound='1');
   }
 
   // --- AI page handlers ---
@@ -726,6 +753,9 @@ try {
     const outRecipes = document.getElementById('ai-recipes-result');
     if (fRecipes && !fRecipes.dataset.bound) fRecipes.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (fRecipes.dataset.busy === '1') return;
+      fRecipes.dataset.busy = '1';
+      const submitBtn = fRecipes.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
       if (!currentChild) { outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>'; return; }
       const prefs = new FormData(fRecipes).get('prefs')?.toString() || '';
       sRecipes.textContent = 'Génération en cours…'; outRecipes.innerHTML='';
@@ -734,7 +764,7 @@ try {
         outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
       } catch (err){
         outRecipes.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
-      } finally { sRecipes.textContent=''; }
+      } finally { sRecipes.textContent=''; fRecipes.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fRecipes && (fRecipes.dataset.bound='1');
 
     // Story
@@ -743,6 +773,9 @@ try {
     const outStory = document.getElementById('ai-story-result');
     if (fStory && !fStory.dataset.bound) fStory.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (fStory.dataset.busy === '1') return;
+      fStory.dataset.busy = '1';
+      const submitBtn = fStory.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
       if (!currentChild) { outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>'; return; }
       const fd = new FormData(fStory);
       const theme = fd.get('theme')?.toString() || '';
@@ -754,7 +787,7 @@ try {
         outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
       } catch (err){
         outStory.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
-      } finally { sStory.textContent=''; }
+      } finally { sStory.textContent=''; fStory.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fStory && (fStory.dataset.bound='1');
 
     // Chat
@@ -774,6 +807,9 @@ try {
     }
     if (fChat && !fChat.dataset.bound) fChat.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (fChat.dataset.busy === '1') return;
+      fChat.dataset.busy = '1';
+      const submitBtn = fChat.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
       const q = new FormData(fChat).get('q')?.toString().trim();
       if (!q) return;
       sChat.textContent = 'Réflexion en cours…';
@@ -797,7 +833,7 @@ try {
         newH.push({ role:'assistant', content:`[Erreur IA] ${msg}` });
         saveChat(currentChild, newH);
         renderChat(newH);
-      } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); }
+      } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); fChat.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fChat && (fChat.dataset.bound='1');
 
     // Load child asynchronously for IA personalization
@@ -1461,52 +1497,66 @@ try {
         `;
         list.appendChild(el);
       });
-      $$('.form-reply').forEach(f => f.addEventListener('submit', async (e)=>{
-        e.preventDefault();
-        const id = e.currentTarget.getAttribute('data-id');
-        const fd = new FormData(e.currentTarget);
-        const content = fd.get('content').toString().trim();
-        if (!content) return;
-        if (useRemote()) {
+      $$('.form-reply').forEach(f => {
+        if (f.dataset.bound) return;
+        f.dataset.bound = '1';
+        f.addEventListener('submit', async (e)=>{
+          e.preventDefault();
+          const form = e.currentTarget;
+          if (form.dataset.busy === '1') return;
+          form.dataset.busy = '1';
+          const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
           try {
-            const uid = authSession?.user?.id;
-            if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
-            await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
+            const id = form.getAttribute('data-id');
+            const fd = new FormData(form);
+            const content = fd.get('content').toString().trim();
+            if (!content) return;
+            if (useRemote()) {
+              try {
+                const uid = authSession?.user?.id;
+                if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
+                await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
+                renderCommunity();
+                return;
+              } catch {}
+            }
+            // fallback local
+            const forum = store.get(K.forum);
+            const topic = forum.topics.find(x=>x.id===id);
+            const user = store.get(K.user);
+            const children = store.get(K.children, []);
+            const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
+            const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
+            topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
+            store.set(K.forum, forum);
             renderCommunity();
-            return;
-          } catch {}
-        }
-        // fallback local
-        const forum = store.get(K.forum);
-        const topic = forum.topics.find(x=>x.id===id);
-        const user = store.get(K.user);
-        const children = store.get(K.children, []);
-        const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-        const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
-        topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
-        store.set(K.forum, forum);
-        renderCommunity();
-      }));
-      // Delete topic buttons
-      list.addEventListener('click', async (e)=>{
-        const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
-        const id = btn.getAttribute('data-del-topic');
-        if (!confirm('Supprimer ce sujet ?')) return;
-        if (useRemote()) {
-          try {
-            const uid = authSession?.user?.id;
-            if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
-            await supabase.from('forum_topics').delete().eq('id', id);
-            renderCommunity();
-            return;
-          } catch {}
-        }
-        // Local fallback
-        const forum = store.get(K.forum);
-        forum.topics = forum.topics.filter(t=>t.id!==id);
-        store.set(K.forum, forum);
-        renderCommunity();
-      }, { once: true });
+          } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
+        });
+      });
+      // Delete topic buttons (delegate once; guard busy)
+      if (!list.dataset.delBound) {
+        list.addEventListener('click', async (e)=>{
+          const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
+          if (btn.dataset.busy === '1') return; btn.dataset.busy='1'; btn.disabled = true;
+          const id = btn.getAttribute('data-del-topic');
+          if (!confirm('Supprimer ce sujet ?')) { btn.dataset.busy='0'; btn.disabled=false; return; }
+          if (useRemote()) {
+            try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
+              await supabase.from('forum_topics').delete().eq('id', id);
+              renderCommunity();
+              return;
+            } catch {}
+          }
+          // Local fallback
+          const forum = store.get(K.forum);
+          forum.topics = forum.topics.filter(t=>t.id!==id);
+          store.set(K.forum, forum);
+          renderCommunity();
+        });
+        list.dataset.delBound = '1';
+      }
     };
     if (useRemote()) {
       (async () => {
@@ -1635,23 +1685,27 @@ try {
     })();
     form.onsubmit = async (e)=>{
       e.preventDefault();
-      const fd = new FormData(form);
-      const role = fd.get('role').toString();
-      const showStats = !!fd.get('showStats');
-      const allowMessages = !!fd.get('allowMessages');
-      if (useRemote()) {
-        try {
-          const uid = authSession?.user?.id;
-          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (upsert)'); throw new Error('Pas de user_id'); }
-          await supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]);
-          store.set(K.user, { ...user, role });
-          alert('Paramètres enregistrés');
-          return;
-        } catch {}
-      }
-      store.set(K.user, { ...user, role });
-      store.set(K.privacy, { showStats, allowMessages });
-      alert('Paramètres enregistrés (local)');
+      if (form.dataset.busy==='1') return; form.dataset.busy='1';
+      const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
+      try {
+        const fd = new FormData(form);
+        const role = fd.get('role').toString();
+        const showStats = !!fd.get('showStats');
+        const allowMessages = !!fd.get('allowMessages');
+        if (useRemote()) {
+          try {
+            const uid = authSession?.user?.id;
+            if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (upsert)'); throw new Error('Pas de user_id'); }
+            await supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]);
+            store.set(K.user, { ...user, role });
+            alert('Paramètres enregistrés');
+            return;
+          } catch {}
+        }
+        store.set(K.user, { ...user, role });
+        store.set(K.privacy, { showStats, allowMessages });
+        alert('Paramètres enregistrés (local)');
+      } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     };
 
     const list = $('#children-list');
@@ -1688,6 +1742,9 @@ try {
       list.addEventListener('click', async (e)=>{
         const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
         if (!target) return;
+        if (list.dataset.busy === '1') return; // prevent concurrent actions
+        list.dataset.busy = '1';
+        target.disabled = true;
         const idE = target.getAttribute('data-edit');
         const idP = target.getAttribute('data-primary');
         const idD = target.getAttribute('data-del');
@@ -1695,6 +1752,7 @@ try {
           const editBox = document.getElementById('child-edit');
           editBox?.setAttribute('data-edit-id', idE);
           renderSettings();
+          list.dataset.busy = '0';
           return;
         }
         if (idP) {
@@ -1730,6 +1788,7 @@ try {
           store.set(K.user, u);
           renderSettings();
         }
+        list.dataset.busy = '0';
       });
       list.dataset.bound = '1';
     }
@@ -1862,8 +1921,12 @@ try {
         `;
         // Bind submit
         const f = document.getElementById('form-child-edit');
-        f?.addEventListener('submit', async (e) => {
+        if (f && !f.dataset.bound) f.addEventListener('submit', async (e) => {
           e.preventDefault();
+          if (f.dataset.busy === '1') return;
+          f.dataset.busy = '1';
+          const submitBtn = f.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
+          try {
           const fd = new FormData(f);
           const id = fd.get('id').toString();
           let photoDataUrl = child?.photo || null;
@@ -1990,8 +2053,13 @@ try {
           logChildUpdate(id, prevSnap, nextSnap);
           alert('Profil enfant mis à jour.');
           renderSettings();
-        }, { once: true });
-        document.getElementById('btn-cancel-edit')?.addEventListener('click', ()=>{
+        } finally {
+          f.dataset.busy = '0';
+          if (submitBtn) submitBtn.disabled = false;
+        }
+        }); f && (f.dataset.bound='1');
+
+        document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
           editBox.removeAttribute('data-edit-id');
           renderSettings();
         });
@@ -2013,17 +2081,21 @@ try {
       setTimeout(()=>URL.revokeObjectURL(url), 1000);
     };
     const btnDelete = $('#btn-delete-account');
-    if (btnDelete) btnDelete.onclick = () => {
-      if (!confirm('Supprimer le compte et toutes les données locales ?')) return;
-      localStorage.removeItem(K.user);
-      localStorage.removeItem(K.children);
-      localStorage.removeItem(K.forum);
-      localStorage.removeItem(K.privacy);
-      localStorage.removeItem(K.session);
-      bootstrap();
-      alert('Compte supprimé (localement).');
-      location.hash = '#/';
-    };
+    if (btnDelete && !btnDelete.dataset.bound) {
+      btnDelete.dataset.bound='1';
+      btnDelete.onclick = () => {
+        if (btnDelete.dataset.busy==='1') return; btnDelete.dataset.busy='1'; btnDelete.disabled=true;
+        if (!confirm('Supprimer le compte et toutes les données locales ?')) { btnDelete.dataset.busy='0'; btnDelete.disabled=false; return; }
+        localStorage.removeItem(K.user);
+        localStorage.removeItem(K.children);
+        localStorage.removeItem(K.forum);
+        localStorage.removeItem(K.privacy);
+        localStorage.removeItem(K.session);
+        bootstrap();
+        alert('Compte supprimé (localement).');
+        location.hash = '#/';
+      };
+    }
     const inputImport = $('#input-import');
     const btnImport = $('#btn-import');
     if (btnImport && inputImport) {
