@@ -182,7 +182,10 @@ try {
     const nav = document.getElementById('main-nav');
     const btn = document.getElementById('nav-toggle');
     if (nav) nav.classList.remove('open');
-    if (btn) btn.setAttribute('aria-expanded','false');
+    if (btn) {
+      btn.setAttribute('aria-expanded','false');
+      btn.classList.remove('open');
+    }
     const bd = document.getElementById('nav-backdrop');
     bd?.classList.remove('open');
   });
@@ -567,6 +570,7 @@ try {
   navBtn?.addEventListener('click', () => {
     const isOpen = mainNav?.classList.toggle('open');
     navBtn.setAttribute('aria-expanded', String(!!isOpen));
+    navBtn.classList.toggle('open', !!isOpen);
     if (isOpen) navBackdrop?.classList.add('open'); else navBackdrop?.classList.remove('open');
   });
   // Close menu when clicking a link (mobile)
@@ -574,6 +578,7 @@ try {
     if (mainNav?.classList.contains('open')) {
       mainNav.classList.remove('open');
       navBtn?.setAttribute('aria-expanded','false');
+      navBtn?.classList.remove('open');
       navBackdrop?.classList.remove('open');
     }
   }));
@@ -582,6 +587,7 @@ try {
   navBackdrop?.addEventListener('click', () => {
     mainNav?.classList.remove('open');
     navBtn?.setAttribute('aria-expanded','false');
+    navBtn?.classList.remove('open');
     navBackdrop?.classList.remove('open');
   });
 
