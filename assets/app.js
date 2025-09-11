@@ -9,9 +9,10 @@ console.log('DEBUG: app.js chargé');
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-  // Use the ESM build of Chart.js to ensure compatibility across browsers
-  // Safari/iOS requires proper ES module syntax, which the UMD bundle lacks
-  const { default: Chart } = await import('https://cdn.jsdelivr.net/npm/chart.js@4.4.0/+esm');
+  // Les courbes OMS utilisaient auparavant Chart.js chargé via CDN.
+  // Pour éviter les erreurs de chargement (réseau ou CSP),
+  // on n'utilise plus de dépendance externe ici.
+  // Les graphiques sont désormais rendus en SVG via une fonction locale.
   const { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } = await import('../src/data/who-curves.js').catch(e => {
     console.error('Curves import failed', e);
     return {};
@@ -1299,19 +1300,19 @@ try {
           <div class="chart-header">
             <h3>Taille (cm)</h3>
           </div>
-          <canvas class="chart" id="chart-height"></canvas>
+          <svg class="chart" id="chart-height"></svg>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
             <h3>Poids (kg)</h3>
           </div>
-          <canvas class="chart" id="chart-weight"></canvas>
+          <svg class="chart" id="chart-weight"></svg>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
             <h3>IMC</h3>
           </div>
-          <canvas class="chart" id="chart-bmi"></canvas>
+          <svg class="chart" id="chart-bmi"></svg>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
@@ -2575,50 +2576,34 @@ try {
     const arr=[]; for(let m=0;m<=84;m+=3){const r=sleepRecommendation(m);arr.push({x:m,y:(r.min+r.max)/2});} return arr;
   }
 
-  // Chart.js WHO curves renderer
+  // Rendu des courbes OMS en SVG (sans dépendance externe)
   function renderWhoChart(id, childData, curve = {}, unit){
-    const canvas = document.getElementById(id);
-    if (!canvas) return;
-    const labels = Array.from({ length: 61 }, (_, i) => i);
-    const childSeries = labels.map(m => {
-      const found = childData.find(p => p.month === m);
-      return found ? Number(found.value.toFixed(2)) : null;
+    const svg = document.getElementById(id);
+    if (!svg) return;
+    const buildCurve = (key, color) => ({
+      color,
+      data: Array.from({length:61}, (_,m)=>({x:m, y: curve?.[m]?.[key]}))
+                .filter(p=>Number.isFinite(p.y))
     });
-    const datasets = [
-      { label: 'Enfant', data: childSeries, borderColor: '#ff7597', backgroundColor: '#ff7597', showLine: false, type: 'scatter', pointRadius: 4, pointHoverRadius: 5 },
-      { label: 'P3', data: labels.map(m => curve?.[m]?.P3 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P15', data: labels.map(m => curve?.[m]?.P15 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P50', data: labels.map(m => curve?.[m]?.P50 ?? null), borderColor: '#0000cd', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P85', data: labels.map(m => curve?.[m]?.P85 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P97', data: labels.map(m => curve?.[m]?.P97 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 }
+    const childSeries = {
+      color: 'var(--rose)',
+      data: childData.map(p=>({x:p.month, y:p.value}))
+    };
+    const series = [
+      childSeries,
+      buildCurve('P3', '#d3d3d3'),
+      buildCurve('P15', '#87ceeb'),
+      buildCurve('P50', '#0000cd'),
+      buildCurve('P85', '#87ceeb'),
+      buildCurve('P97', '#d3d3d3')
     ];
-    new Chart(canvas.getContext('2d'), {
-      type: 'line',
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'nearest', intersect: false },
-        scales: {
-          x: { type: 'linear', ticks: { stepSize: 12, callback: v => v / 12 + 'a' } },
-          y: { type: 'linear' }
-        },
-        plugins: {
-          tooltip: {
-            callbacks: {
-              title: items => `Âge : ${items[0].label} mois`,
-              label: item => `${item.dataset.label}: ${item.parsed.y?.toFixed(1)}${unit ? ` ${unit}` : ''}`
-            }
-          }
-        }
-      }
-    });
+    drawMulti(svg, series);
     const latest = childData[childData.length - 1];
     const note = document.createElement('div'); note.className = 'chart-note';
     const val = latest ? latest.value.toFixed(1) : '—';
     const unitTxt = unit ? ` ${unit}` : '';
     note.textContent = `Courbes OMS (P3 à P97). La zone entre P3 et P97 correspond à la normale. Dernière valeur enregistrée : ${val}${unitTxt}.`;
-    canvas.parentElement.appendChild(note);
+    svg.parentElement.appendChild(note);
   }
 
   // SVG Chart utils (lightweight)
