@@ -383,18 +383,25 @@ try {
     } catch {}
   }
 
-    // Full-page particles for non-home routes
+    // Full-page particles for routes (dashboard uses full-viewport fixed canvas)
     let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
     function startRouteParticles(){
       try {
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
         const route = document.querySelector('.route.active');
         if (!route) return;
+        const isDashboard = route.getAttribute('data-route') === '/dashboard';
         const cvs = document.createElement('canvas');
-        cvs.className = 'route-canvas';
-        route.prepend(cvs);
-        const width = route.clientWidth;
-        const height = route.scrollHeight;
+        // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page
+        if (isDashboard) {
+          cvs.className = 'route-canvas route-canvas-fixed';
+          document.body.prepend(cvs);
+        } else {
+          cvs.className = 'route-canvas';
+          route.prepend(cvs);
+        }
+        const width = isDashboard ? window.innerWidth : route.clientWidth;
+        const height = isDashboard ? window.innerHeight : route.scrollHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         cvs.width = Math.floor(width * dpr);
         cvs.height = Math.floor(height * dpr);
@@ -431,7 +438,8 @@ try {
           const now = t || performance.now();
           const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
           routeParticles.lastT = now;
-          const W = route.clientWidth, H = route.scrollHeight;
+          const W = isDashboard ? window.innerWidth : route.clientWidth;
+          const H = isDashboard ? window.innerHeight : route.scrollHeight;
           const dpr = routeParticles.dpr;
           ctx.setTransform(dpr,0,0,dpr,0,0);
           ctx.clearRect(0,0,W,H);
@@ -449,8 +457,8 @@ try {
         };
         routeParticles.raf = requestAnimationFrame(step);
         const onR = ()=>{
-          const width = route.clientWidth;
-          const height = route.scrollHeight;
+          const width = isDashboard ? window.innerWidth : route.clientWidth;
+          const height = isDashboard ? window.innerHeight : route.scrollHeight;
           const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
           cvs.width = Math.floor(width * dpr);
           cvs.height = Math.floor(height * dpr);
@@ -459,7 +467,7 @@ try {
         };
         window.addEventListener('resize', onR);
         routeParticles.resize = onR;
-        if (window.ResizeObserver) {
+        if (!isDashboard && window.ResizeObserver) {
           const ro = new ResizeObserver(onR);
           ro.observe(route);
           routeParticles.observer = ro;

@@ -436,8 +436,19 @@ input[type="checkbox"]{width:auto}
 .chart-note{padding:0 16px 12px; font-size:12px; color:var(--muted); border-top:1px solid var(--border)}
 
 /* Dashboard: center first profile card and its contents */
-section[data-route="/dashboard"] .grid-2 > .card.stack:first-child{ margin-inline:auto; text-align:center }
-section[data-route="/dashboard"] .grid-2 > .card.stack:first-child .hstack{ justify-content:center }
+/* Dashboard: center profile card and single-card rows */
+section[data-route="/dashboard"] .grid-2 > .card.stack:first-child{
+  grid-column: 1 / -1;
+  margin-inline: auto;
+  text-align: center;
+}
+section[data-route="/dashboard"] .grid-2 > .card.stack:first-child .hstack{ justify-content: center }
+section[data-route="/dashboard"] .grid-2 > .card.stack:only-child{
+  grid-column: 1 / -1;
+  margin-inline: auto;
+  text-align: center;
+}
+section[data-route="/dashboard"] .grid-2 > .card.stack:only-child .hstack{ justify-content: center }
 
 /* Dashboard: remove frames/rounding from chart blocks */
 section[data-route="/dashboard"] .chart-card{
@@ -468,6 +479,11 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 .section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6}
 .route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6}
 .logo-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6}
+/* Dashboard full-viewport canvas (fixed, no stretch) */
+.route-canvas-fixed{position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:0; opacity:.6}
+/* Ensure main content and footer sit above the fixed canvas */
+#app{position:relative; z-index:1}
+.site-footer{position:relative; z-index:1}
 .section.alt{background:transparent; border-top:none; border-bottom:none}
 .section-title{margin:0 0 8px; font-size:clamp(24px, 3.4vw, 32px); text-align:center; font-weight:800}
 .section-subtitle{margin:0 0 24px; color:var(--muted); text-align:center}
@@ -731,6 +747,16 @@ section[data-route="/settings"] .btn-danger{
   color: #ffffff !important;
 }
 section[data-route="/settings"] .btn-danger:hover{
+  background: linear-gradient(180deg, rgba(158,47,75,.48), rgba(217,58,98,.48)) !important;
+}
+
+/* Community page: apply same burgundy style to "Supprimer le sujet" */
+section[data-route="/community"] .btn-danger{
+  background: linear-gradient(180deg, rgba(158,47,75,.34), rgba(217,58,98,.34)) !important;
+  border: 1px solid rgba(217,58,98,.42) !important;
+  color: #ffffff !important;
+}
+section[data-route="/community"] .btn-danger:hover{
   background: linear-gradient(180deg, rgba(158,47,75,.48), rgba(217,58,98,.48)) !important;
 }
 
