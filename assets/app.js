@@ -1,6 +1,6 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
-import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
+// import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 console.log('DEBUG: app.js chargé');
 (async () => {
@@ -10,6 +10,18 @@ console.log('DEBUG: app.js chargé');
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const { default: Chart } = await import('https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js');
+  const { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } = await import('../src/data/who-curves.js').catch(e => {
+    console.error('Curves import failed', e);
+    return {};
+  });
+  console.log('OMS LENGTH loaded?', !!LENGTH_FOR_AGE);
+  if (!LENGTH_FOR_AGE) console.error('Curves import failed');
+  const fallbackCurves = { 0: { P3: null, P15: null, P50: null, P85: null, P97: null } };
+  const curves = {
+    LENGTH_FOR_AGE: LENGTH_FOR_AGE || fallbackCurves,
+    WEIGHT_FOR_AGE: WEIGHT_FOR_AGE || fallbackCurves,
+    BMI_FOR_AGE: BMI_FOR_AGE || fallbackCurves,
+  };
 
   const store = {
     get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
@@ -1505,9 +1517,9 @@ try {
         }
       }
     };
-    safeRender('chart-height', heightData, LENGTH_FOR_AGE, 'cm');
-    safeRender('chart-weight', weightData, WEIGHT_FOR_AGE, 'kg');
-    safeRender('chart-bmi', bmiData, BMI_FOR_AGE, 'IMC');
+    safeRender('chart-height', heightData, curves.LENGTH_FOR_AGE, 'cm');
+    safeRender('chart-weight', weightData, curves.WEIGHT_FOR_AGE, 'kg');
+    safeRender('chart-bmi', bmiData, curves.BMI_FOR_AGE, 'IMC');
     drawChart($('#chart-sleep'), buildSeries(child.growth.sleep.map(s=>({x:s.month,y:s.hours}))), buildSeries(sleepRecommendedSeries()));
     drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
 
