@@ -4,6 +4,7 @@ console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 console.log('DEBUG: app.js chargé');
 (async () => {
   console.log('DEBUG: entrée dans init()');
+  document.body.classList.remove('no-js');
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
