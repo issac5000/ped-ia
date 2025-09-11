@@ -173,11 +173,14 @@ try {
         startHeroParticles();
         stopSectionParticles();
         stopRouteParticles();
+        stopLogoParticles();
       } else {
         stopHeroParticles();
         stopSectionParticles();
         stopRouteParticles();
+        stopLogoParticles();
         startRouteParticles();
+        startLogoParticles();
       }
     console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
@@ -433,6 +436,94 @@ try {
         routeParticles.resize = null;
         routeParticles.cvs?.remove();
         routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null };
+      } catch {}
+    }
+
+    // Particles for the top page logo (shown on non-home routes)
+    let logoParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, el: null, dpr: 1 };
+    function startLogoParticles(){
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const wrap = document.querySelector('#page-logo .container');
+        if (!wrap || wrap.offsetParent === null) return;
+        const cvs = document.createElement('canvas');
+        cvs.className = 'logo-canvas';
+        wrap.prepend(cvs);
+        const width = wrap.clientWidth;
+        const height = wrap.clientHeight;
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        cvs.width = Math.floor(width * dpr);
+        cvs.height = Math.floor(height * dpr);
+        const ctx = cvs.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+        const cs = getComputedStyle(document.documentElement);
+        const palette = [
+          cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+          cs.getPropertyValue('--orange').trim()||'#ffcba4',
+          cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+          '#ffd9e6'
+        ];
+        const W = width, H = height;
+        const area = Math.max(1, W*H);
+        const N = Math.max(6, Math.min(16, Math.round(area/20000)));
+        const parts = [];
+        for (let i=0;i<N;i++){
+          const u = Math.random();
+          const r = u < .5 ? (3 + Math.random()*5) : (u < .85 ? (8 + Math.random()*8) : (16 + Math.random()*12));
+          parts.push({
+            x: Math.random()*W,
+            y: Math.random()*H,
+            r,
+            vx:(Math.random()*.25 - .125),
+            vy:(Math.random()*.25 - .125),
+            hue: palette[Math.floor(Math.random()*palette.length)],
+            alpha:.2 + Math.random()*.35,
+            drift: Math.random()*Math.PI*2,
+            spin:.001 + Math.random()*.003
+          });
+        }
+        logoParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, el: wrap, dpr };
+        const step = (t)=>{
+          const now = t || performance.now();
+          const dt = logoParticles.lastT ? Math.min(40, now - logoParticles.lastT) : 16;
+          logoParticles.lastT = now;
+          const W = wrap.clientWidth, H = wrap.clientHeight;
+          const dpr = logoParticles.dpr;
+          ctx.setTransform(dpr,0,0,dpr,0,0);
+          ctx.clearRect(0,0,W,H);
+          for (const p of logoParticles.parts){
+            p.drift += p.spin*dt;
+            p.x += p.vx + Math.cos(p.drift)*.04;
+            p.y += p.vy + Math.sin(p.drift)*.04;
+            if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
+            if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.hue;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+          }
+          logoParticles.raf = requestAnimationFrame(step);
+        };
+        logoParticles.raf = requestAnimationFrame(step);
+        const onR = ()=>{
+          const width = wrap.clientWidth;
+          const height = wrap.clientHeight;
+          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          cvs.width = Math.floor(width * dpr);
+          cvs.height = Math.floor(height * dpr);
+          logoParticles.dpr = dpr;
+          logoParticles.ctx?.setTransform(dpr,0,0,dpr,0,0);
+        };
+        window.addEventListener('resize', onR);
+        logoParticles.resize = onR;
+      } catch {}
+    }
+    function stopLogoParticles(){
+      try {
+        cancelAnimationFrame(logoParticles.raf);
+        logoParticles.raf = 0;
+        if (logoParticles.resize) window.removeEventListener('resize', logoParticles.resize);
+        logoParticles.resize = null;
+        logoParticles.cvs?.remove();
+        logoParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, el: null, dpr: 1 };
       } catch {}
     }
 
