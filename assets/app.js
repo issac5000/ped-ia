@@ -9,7 +9,9 @@ console.log('DEBUG: app.js chargé');
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-  const { default: Chart } = await import('https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js');
+  // Use the ESM build of Chart.js to ensure compatibility across browsers
+  // Safari/iOS requires proper ES module syntax, which the UMD bundle lacks
+  const { default: Chart } = await import('https://cdn.jsdelivr.net/npm/chart.js@4.4.0/+esm');
   const { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } = await import('../src/data/who-curves.js').catch(e => {
     console.error('Curves import failed', e);
     return {};
