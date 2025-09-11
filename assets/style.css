@@ -247,15 +247,17 @@ section[data-route="/settings"] #form-settings textarea{
 /* Dashboard child switcher and Add button alignment */
 #child-switcher-box{
   /* center the selector + button row and add breathing space */
+  display:flex;
   justify-content:center;
-  align-items:center;
-  justify-items:center; /* center children when stacked (grid) */
+  align-items:flex-end;
   gap:12px;
   margin:8px 0 16px;
+  flex-wrap:wrap;
 }
 #child-switcher-box label{
   /* keep compact label so control aligns nicely with the button */
-  display:grid;
+  display:flex;
+  flex-direction:column;
   gap:6px;
   margin:0;
 }
@@ -266,10 +268,9 @@ section[data-route="/settings"] #form-settings textarea{
 }
 #child-switcher-box .btn{
   height:44px;
-  padding:10px 12px;
-  border-radius:12px;
-  display:inline-flex;
+  display:flex;
   align-items:center;
+  /* inherit padding and border-radius from .btn for consistent styling */
 }
 .hero-actions{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
 .hero-stats{display:flex; gap:12px; margin-top:12px; flex-wrap:wrap}
