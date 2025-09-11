@@ -1275,7 +1275,7 @@ try {
         <div class="card stack">
           <div class="hstack">
             ${child.photo ? `<img src="${child.photo}" alt="${child.firstName}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid #2a3161;"/>` :
-            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid #2a3161;display:grid;place-items:center;background:#111845">👶</div>`}
+            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid #2a3161;display:grid;place-items:center;background:#111845;font-weight:600;font-size:24px;color:#fff;">${(child.firstName||'?').slice(0,1).toUpperCase()}</div>`}
             <div>
               <h2 style="margin:0">${child.firstName}</h2>
               <div class="muted">${child.sex} • ${ageTxt}</div>
@@ -1290,7 +1290,7 @@ try {
             <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
           </div>
           <div class="hstack">
-            ${child.milestones.map((v,i)=> v?`<span class="badge">✅ ${DEV_QUESTIONS[i].label}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
+            ${child.milestones.map((v,i)=> v?`<span class="badge done">${DEV_QUESTIONS[i].label}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
           </div>
         </div>
       </div>
