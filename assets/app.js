@@ -271,8 +271,12 @@ try {
         '#ffd9e6'
       ];
       const W = rect.width, H = rect.height;
-      // Fewer, larger bubbles to increase visual variety
-      const N = Math.max(20, Math.min(48, Math.round(W*H/45000)));
+      // Adjust particle count on low-power or small screens
+      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      const lowPower = !!(conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || ''))) || Math.min(W, H) < 520;
+      const N = lowPower
+        ? Math.max(8, Math.min(24, Math.round(W*H/80000)))
+        : Math.max(20, Math.min(48, Math.round(W*H/45000)));
       for (let i=0;i<N;i++) {
         // Size buckets: small (50%), medium (35%), large (15%) with clearly different radii
         const u = Math.random();
@@ -295,6 +299,8 @@ try {
         const ctx = heroParticlesState.ctx; if (!ctx) return;
         const now = t || performance.now();
         const dt = heroParticlesState.lastT? Math.min(40, now - heroParticlesState.lastT) : 16;
+        // Skip drawing when tab is hidden to save battery/CPU
+        if (document.hidden) { heroParticlesState.lastT = now; heroParticlesState.raf = requestAnimationFrame(step); return; }
         heroParticlesState.lastT = now;
         const W = sec.clientWidth, H = sec.clientHeight;
         // Clear
@@ -367,7 +373,11 @@ try {
         '#ffd9e6'
       ];
       const W = cont.clientWidth, H = cont.clientHeight;
-      const N = Math.max(16, Math.min(36, Math.round((W*H)/55000)));
+      const conn2 = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      const lowPower2 = !!(conn2 && (conn2.saveData || /(^|-)2g$/.test(conn2.effectiveType || ''))) || Math.min(W, H) < 520;
+      const N = lowPower2
+        ? Math.max(6, Math.min(18, Math.round((W*H)/90000)))
+        : Math.max(16, Math.min(36, Math.round((W*H)/55000)));
       for (let i=0;i<N;i++){
         const u = Math.random();
         const r = u < .6 ? (4 + Math.random()*7) : (u < .9 ? (10 + Math.random()*10) : (18 + Math.random()*16));
@@ -387,6 +397,7 @@ try {
         const ctx = topParticles.ctx; if (!ctx) return;
         const now = t || performance.now();
         const dt = topParticles.lastT ? Math.min(40, now - topParticles.lastT) : 16;
+        if (document.hidden) { topParticles.lastT = now; topParticles.raf = requestAnimationFrame(step); return; }
         topParticles.lastT = now;
         const W = cont.clientWidth, H = cont.clientHeight;
         ctx.setTransform(1,0,0,1,0,0);

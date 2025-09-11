@@ -2,12 +2,16 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Synap'Kids — Suivi & évolution 0–7 ans</title>
     <meta name="description" content="Synap'Kids: Suivi du développement 0–7 ans, conseils IA et communauté pour parents." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+    <!-- Self‑hosted fonts: remove Google Fonts connections -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <!-- Preload local Inter fonts (matching weights used) -->
+    <link rel="preload" href="/assets/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/assets/fonts/inter-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/assets/fonts/inter-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <!-- Google Fonts removed; using self-hosted Inter -->
     <link rel="preload" href="/logotexte.png" as="image" fetchpriority="high" />
     <link rel="stylesheet" href="assets/style.css?v=4" />
   </head>
@@ -37,7 +41,7 @@
     <div id="page-logo" class="page-logo" hidden>
       <div class="container">
         <canvas id="page-top-canvas" class="page-top-canvas" aria-hidden="true"></canvas>
-        <img src="/logo.png" alt="Logo" class="page-logo-img" />
+        <img src="/logo.png" alt="Logo" class="page-logo-img" loading="lazy" decoding="async" />
       </div>
     </div>
 
@@ -58,7 +62,7 @@
               </div>
             </div>
             <div class="hero-visual" aria-hidden="true">
-              <img src="/logo.png" alt="Logo" class="hero-image" loading="eager" />
+              <img src="/logo.png" alt="Logo" class="hero-image" loading="eager" decoding="async" fetchpriority="high" />
             </div>
           </div>
         </div>

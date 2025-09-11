@@ -22,6 +22,28 @@
   --shadow:0 4px 12px rgba(30,50,100,.08);
   --section-alt:#f3f6ff; /* fond section alternée (légèrement plus foncé) */
 }
+/* Self-hosted Inter font (Latin subset) */
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/fonts/inter-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/fonts/inter-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/fonts/inter-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 *{box-sizing:border-box}
 html,body{height:100%; overflow-x:hidden}
 body{
@@ -33,6 +55,8 @@ body{
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
 }
+/* Ensure images never overflow containers on small screens */
+img{max-width:100%; height:auto}
 .container{width:min(1100px,92%); margin-inline:auto}
 .site-header{position:sticky; top:0; background:rgba(255,255,255,.4); backdrop-filter:saturate(160%) blur(12px); border-bottom:1px solid var(--border); z-index:100; box-shadow:0 8px 18px rgba(30,50,100,.12)}
 .header-inner{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; padding:6px 0; height:52px}
@@ -285,6 +309,12 @@ section[data-route="/settings"] #form-settings textarea{
   50%     { transform: rotateY(180deg); }
   56%     { transform: rotateY(360deg); }
   100%    { transform: rotateY(360deg); }
+}
+
+/* Respect user preference to reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-image{ animation: none !important; }
+  .child-point-latest{ animation: none !important; }
 }
 
 .pillars{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:20px}
