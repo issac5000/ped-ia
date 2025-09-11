@@ -1316,7 +1316,10 @@ try {
             <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
           </div>
           <div class="hstack">
-            ${child.milestones.map((v,i)=> v?`<span class="badge done">${DEV_QUESTIONS[i].label}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
+            <button class="btn btn-primary" type="button" id="btn-toggle-milestones">Afficher les jalons</button>
+          </div>
+          <div class="hstack" id="milestones-list" hidden>
+            ${child.milestones.map((v,i)=> v?`<span class="badge done">${DEV_QUESTIONS[i]?.label||''}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
           </div>
         </div>
       </div>
@@ -1552,6 +1555,20 @@ try {
         delete form.dataset.busy;
       }
     });
+
+    // Bind milestones toggle
+    try {
+      const btn = document.getElementById('btn-toggle-milestones');
+      const list = document.getElementById('milestones-list');
+      if (btn && list && !btn.dataset.bound) {
+        btn.addEventListener('click', () => {
+          const willShow = list.hidden;
+          list.hidden = !willShow;
+          btn.textContent = willShow ? 'Masquer les jalons' : 'Afficher les jalons';
+        });
+        btn.dataset.bound = '1';
+      }
+    } catch {}
 
     // Charts
     const ms = normalizeMeasures(child.growth.measurements);
