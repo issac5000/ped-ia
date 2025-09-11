@@ -69,6 +69,12 @@ body{
 .login-status{display:flex; align-items:center; gap:4px; color:var(--ok); font-weight:600; text-transform:capitalize}
 .login-status[hidden]{display:none}
 
+/* Fallback mobile header before JS loads */
+@media(max-width:900px){
+  body.no-js .nav-toggle{display:inline-flex}
+  body.no-js .main-nav{display:none}
+}
+
 .site-footer{border-top:1px solid var(--border); margin-top:56px; background:#ffffff}
 .site-footer .container{padding:24px 0}
 /* New simple footer (no patch-styled links) */
