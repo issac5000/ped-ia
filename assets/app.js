@@ -1,6 +1,6 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
-import { WHO_CURVES } from './who-curves.js';
+import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '../src/data/who-curves.js';
 console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 console.log('DEBUG: app.js chargé');
 (async () => {
@@ -1469,13 +1469,13 @@ try {
 
     // Charts
     const ms = normalizeMeasures(child.growth.measurements);
-    const heightData = ms.filter(m=>Number.isFinite(m.height)).map(m=>({x:m.month,y:m.height}));
-    const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({x:m.month,y:m.weight}));
+    const heightData = ms.filter(m=>Number.isFinite(m.height)).map(m=>({month:m.month,value:m.height}));
+    const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({month:m.month,value:m.weight}));
     const bmiData = ms.filter(m=>Number.isFinite(m.height) && Number.isFinite(m.weight))
-                      .map(m=>({x:m.month, y: m.weight / ((m.height/100)**2)}));
-    renderWhoChart('chart-height', heightData, WHO_CURVES.height, 'cm');
-    renderWhoChart('chart-weight', weightData, WHO_CURVES.weight, 'kg');
-    renderWhoChart('chart-bmi', bmiData, WHO_CURVES.bmi, 'IMC');
+                      .map(m=>({month:m.month, value: m.weight / ((m.height/100)**2)}));
+    renderWhoChart('chart-height', heightData, LENGTH_FOR_AGE, 'cm');
+    renderWhoChart('chart-weight', weightData, WEIGHT_FOR_AGE, 'kg');
+    renderWhoChart('chart-bmi', bmiData, BMI_FOR_AGE, 'IMC');
     drawChart($('#chart-sleep'), buildSeries(child.growth.sleep.map(s=>({x:s.month,y:s.hours}))), buildSeries(sleepRecommendedSeries()));
     drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
 
@@ -1555,19 +1555,36 @@ try {
           };
           // Load growth
           console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
-          const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
-            supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', primary.id),
+          const [{ data: gm, error: gmErr }, { data: gs }, { data: gt }] = await Promise.all([
+            supabase
+              .from('child_measures')
+              .select('height, weight, bmi, measured_at')
+              .eq('child_id', primary.id)
+              .order('measured_at', { ascending: true }),
             supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
             supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
           ]);
-          console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
+          console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
           (gm||[]).forEach(r=>{
-            if (Number.isFinite(r.height_cm)) remoteChild.growth.measurements.push({ month: r.month, height: r.height_cm });
-            if (Number.isFinite(r.weight_kg)) remoteChild.growth.measurements.push({ month: r.month, weight: r.weight_kg });
+            const month = Math.round((new Date(r.measured_at) - new Date(primary.dob)) / (1000 * 60 * 60 * 24 * 30.4375));
+            if (Number.isFinite(r.height)) remoteChild.growth.measurements.push({ month, height: r.height });
+            if (Number.isFinite(r.weight)) remoteChild.growth.measurements.push({ month, weight: r.weight });
+            if (Number.isFinite(r.bmi)) remoteChild.growth.measurements.push({ month, bmi: r.bmi });
           });
           (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
           (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
           renderForChild(remoteChild);
+          if (gmErr) {
+            ['chart-height', 'chart-weight', 'chart-bmi'].forEach(id => {
+              const host = document.getElementById(id)?.parentElement;
+              if (host) {
+                const note = document.createElement('div');
+                note.className = 'chart-note';
+                note.textContent = 'Impossible de récupérer les mesures';
+                host.appendChild(note);
+              }
+            });
+          }
         } catch (e) {
           dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
         }
@@ -2475,60 +2492,48 @@ try {
   }
 
   // Chart.js WHO curves renderer
-  function buildWhoDatasets(curve){
-    const colors = { p3:'#d0d0d0', p15:'#9ec5fe', p50:'#143e6f', p85:'#9ec5fe', p97:'#d0d0d0' };
-    return Object.keys(colors).map(k=>({
-      label: k.toUpperCase(),
-      data: curve.map(p=>({x:p.m, y:p[k]})),
-      borderColor: colors[k],
-      backgroundColor: colors[k],
-      tension:0.4,
-      pointRadius:0,
-      borderWidth:2
-    }));
-  }
   function renderWhoChart(id, childData, curve, unit){
     const canvas = document.getElementById(id);
     if (!canvas) return;
-    const childColor = getComputedStyle(document.documentElement).getPropertyValue('--turquoise').trim() || '#ffc2d6';
-    const datasets = buildWhoDatasets(curve);
-    datasets.push({
-      label: 'Enfant',
-      data: childData,
-      borderColor: childColor,
-      backgroundColor: childColor,
-      showLine: false,
-      type: 'scatter',
-      pointRadius:4,
-      pointHoverRadius:5
+    const labels = Array.from({ length: 61 }, (_, i) => i);
+    const childSeries = labels.map(m => {
+      const found = childData.find(p => p.month === m);
+      return found ? Number(found.value.toFixed(2)) : null;
     });
+    const datasets = [
+      { label: 'Enfant', data: childSeries, borderColor: '#ff7597', backgroundColor: '#ff7597', showLine: false, type: 'scatter', pointRadius: 4, pointHoverRadius: 5 },
+      { label: 'P3', data: labels.map(m => curve[m]?.P3 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P15', data: labels.map(m => curve[m]?.P15 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P50', data: labels.map(m => curve[m]?.P50 ?? null), borderColor: '#0000cd', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P85', data: labels.map(m => curve[m]?.P85 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P97', data: labels.map(m => curve[m]?.P97 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 }
+    ];
     new Chart(canvas.getContext('2d'), {
       type: 'line',
-      data: { datasets },
+      data: { labels, datasets },
       options: {
-        parsing: false,
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'nearest', intersect: false },
         scales: {
-          x: { type: 'linear', ticks: { stepSize: 12, callback: v => v/12 + 'a' } },
+          x: { type: 'linear', ticks: { stepSize: 12, callback: v => v / 12 + 'a' } },
           y: { type: 'linear' }
         },
         plugins: {
           tooltip: {
             callbacks: {
-              title: items => `Âge : ${items[0].parsed.x} mois`,
-              label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(1)}${unit?` ${unit}`:''}`
+              title: items => `Âge : ${items[0].label} mois`,
+              label: item => `${item.dataset.label}: ${item.parsed.y?.toFixed(1)}${unit ? ` ${unit}` : ''}`
             }
           }
         }
       }
     });
-    const latest = childData[childData.length-1];
-    const note = document.createElement('div'); note.className='chart-note';
-    const val = latest ? latest.y.toFixed(1) : '—';
+    const latest = childData[childData.length - 1];
+    const note = document.createElement('div'); note.className = 'chart-note';
+    const val = latest ? latest.value.toFixed(1) : '—';
     const unitTxt = unit ? ` ${unit}` : '';
-    note.textContent = `Courbes de croissance selon l’OMS (P3 à P97). La zone entre P3 et P97 correspond à la normale. Dernière valeur enregistrée : ${val}${unitTxt}.`;
+    note.textContent = `Courbes OMS (P3 à P97). La zone entre P3 et P97 correspond à la normale. Dernière valeur enregistrée : ${val}${unitTxt}.`;
     canvas.parentElement.appendChild(note);
   }
 
