@@ -325,7 +325,7 @@ try {
           vx: (Math.random()*.35 - .175),
           vy: (Math.random()*.35 - .175),
           hue: palette[Math.floor(Math.random()*palette.length)],
-          alpha: .22 + Math.random()*.35,
+          alpha: .10 + Math.random()*.20,
           drift: Math.random()*Math.PI*2,
           spin: .0015 + Math.random()*.0035
         });
@@ -421,7 +421,7 @@ try {
             vx:(Math.random()*.28 - .14),
             vy:(Math.random()*.28 - .14),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha:.2 + Math.random()*.35,
+            alpha:.10 + Math.random()*.20,
             drift: Math.random()*Math.PI*2,
             spin:.001 + Math.random()*.003
           });
@@ -516,7 +516,7 @@ try {
             vx:(Math.random()*.25 - .125),
             vy:(Math.random()*.25 - .125),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha:.2 + Math.random()*.35,
+            alpha:.10 + Math.random()*.20,
             drift: Math.random()*Math.PI*2,
             spin:.001 + Math.random()*.003
           });
@@ -609,7 +609,7 @@ try {
             vx: (Math.random()*.28 - .14),
             vy: (Math.random()*.28 - .14),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha: .2 + Math.random()*.35,
+            alpha: .10 + Math.random()*.20,
             drift: Math.random()*Math.PI*2,
             spin: .001 + Math.random()*.003
           });

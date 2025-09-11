@@ -465,9 +465,9 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 }
 
 /* Canvas for section particles */
-.section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9}
-.route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9}
-.logo-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9}
+.section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6}
+.route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6}
+.logo-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6}
 .section.alt{background:transparent; border-top:none; border-bottom:none}
 .section-title{margin:0 0 8px; font-size:clamp(24px, 3.4vw, 32px); text-align:center; font-weight:800}
 .section-subtitle{margin:0 0 24px; color:var(--muted); text-align:center}
@@ -723,6 +723,16 @@ input::placeholder, textarea::placeholder{ color:rgba(255,255,255,.55) }
 /* Footer links white */
 .fs-link{ color:#ffffff }
 .fs-year{ color:var(--muted) }
+
+/* Settings page: make delete buttons burgundy translucent */
+section[data-route="/settings"] .btn-danger{
+  background: linear-gradient(180deg, rgba(158,47,75,.34), rgba(217,58,98,.34)) !important;
+  border: 1px solid rgba(217,58,98,.42) !important;
+  color: #ffffff !important;
+}
+section[data-route="/settings"] .btn-danger:hover{
+  background: linear-gradient(180deg, rgba(158,47,75,.48), rgba(217,58,98,.48)) !important;
+}
 
 /* Footer links (À propos, Contact, Mentions légales, Confidentialité) in orange */
 .site-footer .fs-right .fs-link{ color: var(--orange-strong) !important; }
