@@ -418,6 +418,9 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 .page-header h2{margin:0; font-size:clamp(26px, 3.6vw, 34px); font-weight:800}
 .page-subtitle{margin:0; color:var(--muted)}
 .page-actions{margin-top:12px; display:grid; gap:14px}
+@media(max-width:900px){
+  #forum-cats{justify-content:center}
+}
 .features{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:16px}
 .feature{background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:24px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease; text-align:center; display:grid; gap:8px}
 .feature:hover{transform:translateY(-3px); box-shadow:0 14px 34px rgba(30,50,100,.16); border-color:#d8e0f2; background:#ffffff}
