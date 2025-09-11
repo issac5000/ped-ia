@@ -154,6 +154,14 @@ try {
     $$('.route').forEach(s => s.classList.remove('active'));
     const route = $(`section[data-route="${path}"]`);
     if (route) route.classList.add('active');
+    // Highlight active nav link
+    try {
+      const links = $$('#main-nav .nav-link');
+      links.forEach(a => {
+        const href = a.getAttribute('href') || '';
+        a.classList.toggle('active', href === '#' + path);
+      });
+    } catch {}
     // Toggle page logo visibility (show on all except home)
     try {
       const pl = document.getElementById('page-logo');
@@ -192,11 +200,12 @@ try {
     if (path === '/contact') { console.log('DEBUG: appel de setupContact()'); setupContact(); }
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
-    // Hero particles: enable only on home
+    // Particles: apply bubbles across full home page (route-level canvas)
       if (path === '/') {
-        startHeroParticles();
+        stopHeroParticles();
         stopSectionParticles();
-        stopRouteParticles();
+        // Keep a single route-wide canvas for home too
+        startRouteParticles();
         stopLogoParticles();
       } else {
         stopHeroParticles();
