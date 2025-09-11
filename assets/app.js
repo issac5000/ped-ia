@@ -1712,6 +1712,8 @@ try {
 
   // Community
   function renderCommunity() {
+    // Render instance guard to avoid async races duplicating the empty state
+    const rid = (renderCommunity._rid = (renderCommunity._rid || 0) + 1);
     const list = $('#forum-list');
     list.innerHTML = '';
     // Category filter handlers
@@ -1728,12 +1730,14 @@ try {
     }
     const activeCat = cats?.getAttribute('data-active') || 'all';
     const showEmpty = () => {
+      if (renderCommunity._rid !== rid) return;
       const empty = document.createElement('div');
       empty.className = 'card';
       empty.textContent = 'Aucun sujet pour le moment. Lancez la discussion !';
       list.appendChild(empty);
     };
     const renderTopics = (topics, replies, authorsMap) => {
+      if (renderCommunity._rid !== rid) return;
       if (!topics.length) return showEmpty();
       topics.slice().forEach(t => {
         // Extract category from title prefix like [Sommeil] Titre
@@ -1845,8 +1849,9 @@ try {
           const authorsMap = new Map((profiles.data||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
           const repliesMap = new Map();
           (reps||[]).forEach(r=>{ const arr = repliesMap.get(r.topic_id)||[]; arr.push(r); repliesMap.set(r.topic_id, arr); });
+          if (renderCommunity._rid !== rid) return;
           renderTopics(topics||[], repliesMap, authorsMap);
-        } catch (e) { showEmpty(); }
+        } catch (e) { if (renderCommunity._rid === rid) showEmpty(); }
       })();
     } else {
       const forum = store.get(K.forum, { topics: [] });
