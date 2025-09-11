@@ -81,7 +81,10 @@ try {
         await ensureProfile(user);
         if (DEBUG_AUTH) console.log("Utilisateur connecté après retour Google:", user.email);
         updateHeaderAuth();
-        if (!location.hash || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup') {
+        // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
+        // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
+        // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
+        if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
           location.hash = '#/dashboard';
         } else {
           setActiveRoute(location.hash);
@@ -91,14 +94,14 @@ try {
       // Récupérer la session en cours (utile si pas d'user direct)
       const { data: { session } } = await supabase.auth.getSession();
       authSession = session || authSession;
-      if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup')) {
+      if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       }
       supabase.auth.onAuthStateChange(async (_event, session) => {
         authSession = session || null;
         if (session?.user) await ensureProfile(session.user);
         updateHeaderAuth();
-        if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/' || location.hash === '#/login' || location.hash === '#/signup')) {
+        if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
           location.hash = '#/dashboard';
         } else {
           setActiveRoute(location.hash);
