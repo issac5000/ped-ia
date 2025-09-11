@@ -497,6 +497,19 @@ section[data-route="/ai"] #ai-profile-indicator{
 section[data-route="/ai"] #ai-profile-indicator a[href*="/onboarding"]{
   color: var(--orange-strong) !important;
 }
+/* AI page: thin separators between consecutive feature sections */
+section[data-route="/ai"] > .stack > .card + .card{ position: relative; }
+section[data-route="/ai"] > .stack > .card + .card::before{
+  content:""; position:absolute; top:-12px; left:0; right:0; height:1px;
+  background: rgba(255,255,255,.16);
+}
+/* AI page: make section titles as large as the page title and centered */
+section[data-route="/ai"] .card-header{ text-align:center; align-items:center; }
+section[data-route="/ai"] .card-header h3{
+  font-size: clamp(26px, 3.6vw, 34px);
+  font-weight: 800;
+}
+section[data-route="/ai"] .card-header p{ text-align:center; }
 .testimonials{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:16px}
 .testimonial{position:relative; overflow:hidden; background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:18px 18px 14px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease}
 .testimonial::before{content:"\201C"; position:absolute; top:-6px; left:12px; font-size:64px; line-height:1; background:linear-gradient(92deg, var(--orange-strong), var(--blue-strong)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; opacity:.18; pointer-events:none}
