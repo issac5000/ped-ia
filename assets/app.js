@@ -813,15 +813,20 @@ try {
             try {
               console.log('DEBUG: avant Promise.all (AI loadChild growth fetch)', { childId: r.id });
               const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
-                supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', r.id),
+                supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
                 supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
                 supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
               ]);
               console.log('DEBUG: après Promise.all (AI loadChild growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
-              (gm||[]).forEach(m=>{
-                if (Number.isFinite(m.height_cm)) child.growth.measurements.push({ month: m.month, height: m.height_cm });
-                if (Number.isFinite(m.weight_kg)) child.growth.measurements.push({ month: m.month, weight: m.weight_kg });
-              });
+              (gm||[])
+                .map(m => ({
+                  month: m.month,
+                  height: m.height_cm,
+                  weight: m.weight_kg,
+                  bmi: m.weight_kg && m.height_cm ? m.weight_kg / Math.pow(m.height_cm / 100, 2) : null,
+                  measured_at: m.created_at
+                }))
+                .forEach(m => child.growth.measurements.push(m));
               (gs||[]).forEach(s=> child.growth.sleep.push({ month: s.month, hours: s.hours }));
               (gt||[]).forEach(t=> child.growth.teeth.push({ month: t.month, count: t.count }));
             } catch {}
@@ -852,17 +857,22 @@ try {
           if (!r) return null;
           const ch = mapRowToChild(r);
           try {
-            console.log('DEBUG: avant Promise.all (AI loadChildById growth fetch)', { childId: r.id });
-            const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
-              supabase.from('growth_measurements').select('month,height_cm,weight_kg').eq('child_id', r.id),
-              supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
-              supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
-            ]);
-            console.log('DEBUG: après Promise.all (AI loadChildById growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
-            (gm||[]).forEach(m=>{
-              if (Number.isFinite(m.height_cm)) ch.growth.measurements.push({ month: m.month, height: m.height_cm });
-              if (Number.isFinite(m.weight_kg)) ch.growth.measurements.push({ month: m.month, weight: m.weight_kg });
-            });
+              console.log('DEBUG: avant Promise.all (AI loadChildById growth fetch)', { childId: r.id });
+              const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
+                supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
+                supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
+                supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
+              ]);
+              console.log('DEBUG: après Promise.all (AI loadChildById growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
+              (gm||[])
+                .map(m => ({
+                  month: m.month,
+                  height: m.height_cm,
+                  weight: m.weight_kg,
+                  bmi: m.weight_kg && m.height_cm ? m.weight_kg / Math.pow(m.height_cm / 100, 2) : null,
+                  measured_at: m.created_at
+                }))
+                .forEach(m => ch.growth.measurements.push(m));
             (gs||[]).forEach(s=> ch.growth.sleep.push({ month: s.month, hours: s.hours }));
             (gt||[]).forEach(t=> ch.growth.teeth.push({ month: t.month, count: t.count }));
           } catch {}
@@ -1454,8 +1464,16 @@ try {
           // Fallback local
           const children = store.get(K.children, []);
           const c = children.find(x => x.id === child.id);
-          if (Number.isFinite(height)) c.growth.measurements.push({ month, height });
-          if (Number.isFinite(weight)) c.growth.measurements.push({ month, weight });
+          if (Number.isFinite(height) || Number.isFinite(weight)) {
+            const m = { month };
+            if (Number.isFinite(height)) m.height = height;
+            if (Number.isFinite(weight)) m.weight = weight;
+            if (Number.isFinite(height) && Number.isFinite(weight)) {
+              m.bmi = weight / Math.pow(height / 100, 2);
+            }
+            m.measured_at = new Date().toISOString();
+            c.growth.measurements.push(m);
+          }
           if (Number.isFinite(sleep)) c.growth.sleep.push({ month, hours: sleep });
           if (Number.isFinite(teeth)) c.growth.teeth.push({ month, count: teeth });
           store.set(K.children, children);
@@ -1471,8 +1489,8 @@ try {
     const ms = normalizeMeasures(child.growth.measurements);
     const heightData = ms.filter(m=>Number.isFinite(m.height)).map(m=>({month:m.month,value:m.height}));
     const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({month:m.month,value:m.weight}));
-    const bmiData = ms.filter(m=>Number.isFinite(m.height) && Number.isFinite(m.weight))
-                      .map(m=>({month:m.month, value: m.weight / ((m.height/100)**2)}));
+    const bmiData = ms.filter(m=>Number.isFinite(m.bmi))
+                      .map(m=>({month:m.month, value: m.bmi}));
     const safeRender = (id, data, curve, unit) => {
       try {
         renderWhoChart(id, data, curve, unit);
@@ -1518,6 +1536,7 @@ try {
       (async () => {
         let remoteChild = null;
         let gmErr = null;
+        let gmCount = 0;
         try {
           const uid = authSession?.user?.id;
           if (!uid) {
@@ -1574,21 +1593,24 @@ try {
           console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
           const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await Promise.all([
             supabase
-              .from('child_measures')
-              .select('height, weight, bmi, measured_at')
+              .from('growth_measurements')
+              .select('month, height_cm, weight_kg, created_at')
               .eq('child_id', primary.id)
-              .order('measured_at', { ascending: true }),
+              .order('month', { ascending: true }),
             supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
             supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
           ]);
           gmErr = gmErrLocal;
           console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
-          (gm||[]).forEach(r=>{
-            const month = Math.round((new Date(r.measured_at) - new Date(primary.dob)) / (1000 * 60 * 60 * 24 * 30.4375));
-            if (Number.isFinite(r.height)) remoteChild.growth.measurements.push({ month, height: r.height });
-            if (Number.isFinite(r.weight)) remoteChild.growth.measurements.push({ month, weight: r.weight });
-            if (Number.isFinite(r.bmi)) remoteChild.growth.measurements.push({ month, bmi: r.bmi });
-          });
+          const measurements = (gm || []).map(m => ({
+            month: m.month,
+            height: m.height_cm,
+            weight: m.weight_kg,
+            bmi: m.weight_kg && m.height_cm ? m.weight_kg / Math.pow(m.height_cm / 100, 2) : null,
+            measured_at: m.created_at
+          }));
+          gmCount = measurements.length;
+          measurements.forEach(m => remoteChild.growth.measurements.push(m));
           (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
           (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
         } catch (e) {
@@ -1606,6 +1628,16 @@ try {
               host.appendChild(note);
             }
           });
+        } else if (gmCount === 0) {
+          ['chart-height', 'chart-weight', 'chart-bmi'].forEach(id => {
+            const host = document.getElementById(id)?.parentElement;
+            if (host) {
+              const note = document.createElement('div');
+              note.className = 'chart-note';
+              note.textContent = 'Aucune mesure enregistrée';
+              host.appendChild(note);
+            }
+          });
         }
       })();
     }
@@ -1619,7 +1651,14 @@ try {
       const obj = byMonth.get(m) || { month: m };
       if (typeof e.height === 'number') obj.height = e.height;
       if (typeof e.weight === 'number') obj.weight = e.weight;
+      if (typeof e.bmi === 'number') obj.bmi = e.bmi;
+      if (e.measured_at && !obj.measured_at) obj.measured_at = e.measured_at;
       byMonth.set(m, obj);
+    }
+    for (const obj of byMonth.values()) {
+      if (typeof obj.bmi !== 'number' && Number.isFinite(obj.height) && Number.isFinite(obj.weight)) {
+        obj.bmi = obj.weight / Math.pow(obj.height / 100, 2);
+      }
     }
     return Array.from(byMonth.values()).sort((a,b)=>a.month-b.month);
   }
