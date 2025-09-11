@@ -2598,22 +2598,26 @@ try {
   function renderWhoChart(id, childData, curve = {}, unit){
     const svg = document.getElementById(id);
     if (!svg) return;
-    const buildCurve = (key, color) => ({
+    const buildCurve = (key, color, dash='', width=2) => ({
       color,
+      dash,
+      width,
       data: Array.from({length:61}, (_,m)=>({x:m, y: curve?.[m]?.[key]}))
                 .filter(p=>Number.isFinite(p.y))
     });
     const childSeries = {
       color: 'var(--turquoise)',
-      data: childData.map(p=>({x:p.month, y:p.value}))
+      data: childData.map(p=>({x:p.month, y:p.value})),
+      isChild: true,
+      width: 3
     };
     const series = [
-      childSeries,
-      buildCurve('P3', 'var(--border)'),
-      buildCurve('P15', 'var(--violet)'),
-      buildCurve('P50', 'var(--violet-strong)'),
-      buildCurve('P85', 'var(--violet)'),
-      buildCurve('P97', 'var(--border)')
+      buildCurve('P3', 'var(--border)', '4 2', 1.5),
+      buildCurve('P15', 'var(--violet)', '', 1.5),
+      buildCurve('P50', 'var(--violet-strong)', '', 2),
+      buildCurve('P85', 'var(--violet)', '', 1.5),
+      buildCurve('P97', 'var(--border)', '4 2', 1.5),
+      childSeries
     ];
     drawMulti(svg, series);
     const latest = childData[childData.length - 1];
@@ -2673,22 +2677,25 @@ try {
     svg.appendChild(line(left, top+innerH, left+innerW, top+innerH, '#2a3161'));
 
     // Series paths
-    series.forEach((s, idx) => {
+    series.forEach((s) => {
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
       const pts = s.data.sort((a,b)=>a.x-b.x);
       if (!pts.length) return;
       const d = pts.map((p,i)=>`${i?'L':'M'}${xScale(p.x)},${yScale(p.y)}`).join(' ');
       path.setAttribute('d', d);
       path.setAttribute('fill','none');
-      path.setAttribute('stroke', getComputedStyle(document.documentElement).getPropertyValue(s.color?.match(/^var/)? s.color.slice(4,-1):'') || s.color || '#0ff');
-      path.setAttribute('stroke-width','2.5');
+      const strokeColor = getComputedStyle(document.documentElement).getPropertyValue(s.color?.match(/^var/)? s.color.slice(4,-1):'') || s.color || '#0ff';
+      path.setAttribute('stroke', strokeColor);
+      path.setAttribute('stroke-width', s.width || (s.isChild ? '3' : '2'));
+      if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
+      if (!s.isChild) path.setAttribute('opacity','0.8');
       path.setAttribute('stroke-linecap','round');
       path.setAttribute('stroke-linejoin','round');
       svg.appendChild(path);
       // Points
       pts.forEach((p,i)=>{
         const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        const isChild = idx === 0;
+        const isChild = !!s.isChild;
         const isLatest = isChild && i === pts.length - 1;
         c.setAttribute('cx', xScale(p.x));
         c.setAttribute('cy', yScale(p.y));
