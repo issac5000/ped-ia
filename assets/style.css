@@ -75,7 +75,7 @@ section{opacity:.8}
 .logo{font-size:22px}
 .brand-text{font-weight:800; letter-spacing:.3px}
 .brand-synap{color:var(--orange-strong)}
-.brand-kids{color:var(--ok)}
+.brand-kids{color:var(--violet-strong)}
 .brand .logo{display:none}
 @media(max-width:900px){
   .brand .logo{display:inline}
