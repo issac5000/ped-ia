@@ -351,7 +351,7 @@ try {
   }
 
     // Full-page particles for non-home routes
-    let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1 };
+    let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
     function startRouteParticles(){
       try {
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -393,7 +393,7 @@ try {
             spin:.001 + Math.random()*.003
           });
         }
-        routeParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, route, dpr };
+        routeParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, route, dpr, observer: null };
         const step = (t)=>{
           const now = t || performance.now();
           const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
@@ -426,6 +426,11 @@ try {
         };
         window.addEventListener('resize', onR);
         routeParticles.resize = onR;
+        if (window.ResizeObserver) {
+          const ro = new ResizeObserver(onR);
+          ro.observe(route);
+          routeParticles.observer = ro;
+        }
       } catch {}
     }
     function stopRouteParticles(){
@@ -434,8 +439,10 @@ try {
         routeParticles.raf = 0;
         if (routeParticles.resize) window.removeEventListener('resize', routeParticles.resize);
         routeParticles.resize = null;
+        routeParticles.observer?.disconnect();
+        routeParticles.observer = null;
         routeParticles.cvs?.remove();
-        routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null };
+        routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
       } catch {}
     }
 
