@@ -831,13 +831,17 @@ try {
               ]);
               console.log('DEBUG: après Promise.all (AI loadChild growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
               (gm||[])
-                .map(m => ({
-                  month: m.month,
-                  height: m.height_cm,
-                  weight: m.weight_kg,
-                  bmi: m.weight_kg && m.height_cm ? m.weight_kg / Math.pow(m.height_cm / 100, 2) : null,
-                  measured_at: m.created_at
-                }))
+                .map(m => {
+                  const h = m.height_cm == null ? null : Number(m.height_cm);
+                  const w = m.weight_kg == null ? null : Number(m.weight_kg);
+                  return {
+                    month: m.month,
+                    height: h,
+                    weight: w,
+                    bmi: w && h ? w / Math.pow(h / 100, 2) : null,
+                    measured_at: m.created_at
+                  };
+                })
                 .forEach(m => child.growth.measurements.push(m));
               (gs||[]).forEach(s=> child.growth.sleep.push({ month: s.month, hours: s.hours }));
               (gt||[]).forEach(t=> child.growth.teeth.push({ month: t.month, count: t.count }));
@@ -877,13 +881,17 @@ try {
               ]);
               console.log('DEBUG: après Promise.all (AI loadChildById growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
               (gm||[])
-                .map(m => ({
-                  month: m.month,
-                  height: m.height_cm,
-                  weight: m.weight_kg,
-                  bmi: m.weight_kg && m.height_cm ? m.weight_kg / Math.pow(m.height_cm / 100, 2) : null,
-                  measured_at: m.created_at
-                }))
+                .map(m => {
+                  const h = m.height_cm == null ? null : Number(m.height_cm);
+                  const w = m.weight_kg == null ? null : Number(m.weight_kg);
+                  return {
+                    month: m.month,
+                    height: h,
+                    weight: w,
+                    bmi: w && h ? w / Math.pow(h / 100, 2) : null,
+                    measured_at: m.created_at
+                  };
+                })
                 .forEach(m => ch.growth.measurements.push(m));
             (gs||[]).forEach(s=> ch.growth.sleep.push({ month: s.month, hours: s.hours }));
             (gt||[]).forEach(t=> ch.growth.teeth.push({ month: t.month, count: t.count }));
@@ -1614,13 +1622,17 @@ try {
           ]);
           gmErr = gmErrLocal;
           console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
-          const measurements = (gm || []).map(m => ({
-            month: m.month,
-            height: m.height_cm,
-            weight: m.weight_kg,
-            bmi: m.weight_kg && m.height_cm ? m.weight_kg / Math.pow(m.height_cm / 100, 2) : null,
-            measured_at: m.created_at
-          }));
+          const measurements = (gm || []).map(m => {
+            const h = m.height_cm == null ? null : Number(m.height_cm);
+            const w = m.weight_kg == null ? null : Number(m.weight_kg);
+            return {
+              month: m.month,
+              height: h,
+              weight: w,
+              bmi: w && h ? w / Math.pow(h / 100, 2) : null,
+              measured_at: m.created_at
+            };
+          });
           gmCount = measurements.length;
           measurements.forEach(m => remoteChild.growth.measurements.push(m));
           (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
