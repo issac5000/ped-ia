@@ -1,6 +1,6 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
-import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '../src/data/who-curves.js';
+import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 console.log('DEBUG: app.js chargé');
 (async () => {
@@ -1473,9 +1473,23 @@ try {
     const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({month:m.month,value:m.weight}));
     const bmiData = ms.filter(m=>Number.isFinite(m.height) && Number.isFinite(m.weight))
                       .map(m=>({month:m.month, value: m.weight / ((m.height/100)**2)}));
-    renderWhoChart('chart-height', heightData, LENGTH_FOR_AGE, 'cm');
-    renderWhoChart('chart-weight', weightData, WEIGHT_FOR_AGE, 'kg');
-    renderWhoChart('chart-bmi', bmiData, BMI_FOR_AGE, 'IMC');
+    const safeRender = (id, data, curve, unit) => {
+      try {
+        renderWhoChart(id, data, curve, unit);
+      } catch (e) {
+        console.error(e);
+        const host = document.getElementById(id)?.parentElement;
+        if (host) {
+          const note = document.createElement('div');
+          note.className = 'chart-note';
+          note.textContent = 'Impossible de charger les courbes OMS';
+          host.appendChild(note);
+        }
+      }
+    };
+    safeRender('chart-height', heightData, LENGTH_FOR_AGE, 'cm');
+    safeRender('chart-weight', weightData, WEIGHT_FOR_AGE, 'kg');
+    safeRender('chart-bmi', bmiData, BMI_FOR_AGE, 'IMC');
     drawChart($('#chart-sleep'), buildSeries(child.growth.sleep.map(s=>({x:s.month,y:s.hours}))), buildSeries(sleepRecommendedSeries()));
     drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
 
@@ -1502,6 +1516,8 @@ try {
       renderForChild(child);
     } else {
       (async () => {
+        let remoteChild = null;
+        let gmErr = null;
         try {
           const uid = authSession?.user?.id;
           if (!uid) {
@@ -1519,7 +1535,8 @@ try {
             renderForChild(child);
             return;
           }
-          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+          const { data: rows, error: rowsErr } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+          if (rowsErr) throw rowsErr;
           if (!rows || !rows.length) {
             dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
             return;
@@ -1529,7 +1546,7 @@ try {
           const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
           renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
           const primary = rows.find(r=>r.is_primary) || rows[0];
-          const remoteChild = {
+          remoteChild = {
             id: primary.id,
             firstName: primary.first_name,
             sex: primary.sex,
@@ -1555,7 +1572,7 @@ try {
           };
           // Load growth
           console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
-          const [{ data: gm, error: gmErr }, { data: gs }, { data: gt }] = await Promise.all([
+          const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await Promise.all([
             supabase
               .from('child_measures')
               .select('height, weight, bmi, measured_at')
@@ -1564,6 +1581,7 @@ try {
             supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
             supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
           ]);
+          gmErr = gmErrLocal;
           console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
           (gm||[]).forEach(r=>{
             const month = Math.round((new Date(r.measured_at) - new Date(primary.dob)) / (1000 * 60 * 60 * 24 * 30.4375));
@@ -1573,20 +1591,21 @@ try {
           });
           (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
           (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
-          renderForChild(remoteChild);
-          if (gmErr) {
-            ['chart-height', 'chart-weight', 'chart-bmi'].forEach(id => {
-              const host = document.getElementById(id)?.parentElement;
-              if (host) {
-                const note = document.createElement('div');
-                note.className = 'chart-note';
-                note.textContent = 'Impossible de récupérer les mesures';
-                host.appendChild(note);
-              }
-            });
-          }
         } catch (e) {
           dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
+          return;
+        }
+        renderForChild(remoteChild);
+        if (gmErr) {
+          ['chart-height', 'chart-weight', 'chart-bmi'].forEach(id => {
+            const host = document.getElementById(id)?.parentElement;
+            if (host) {
+              const note = document.createElement('div');
+              note.className = 'chart-note';
+              note.textContent = 'Impossible de récupérer les mesures';
+              host.appendChild(note);
+            }
+          });
         }
       })();
     }
@@ -2492,7 +2511,7 @@ try {
   }
 
   // Chart.js WHO curves renderer
-  function renderWhoChart(id, childData, curve, unit){
+  function renderWhoChart(id, childData, curve = {}, unit){
     const canvas = document.getElementById(id);
     if (!canvas) return;
     const labels = Array.from({ length: 61 }, (_, i) => i);
@@ -2502,11 +2521,11 @@ try {
     });
     const datasets = [
       { label: 'Enfant', data: childSeries, borderColor: '#ff7597', backgroundColor: '#ff7597', showLine: false, type: 'scatter', pointRadius: 4, pointHoverRadius: 5 },
-      { label: 'P3', data: labels.map(m => curve[m]?.P3 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P15', data: labels.map(m => curve[m]?.P15 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P50', data: labels.map(m => curve[m]?.P50 ?? null), borderColor: '#0000cd', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P85', data: labels.map(m => curve[m]?.P85 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
-      { label: 'P97', data: labels.map(m => curve[m]?.P97 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 }
+      { label: 'P3', data: labels.map(m => curve?.[m]?.P3 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P15', data: labels.map(m => curve?.[m]?.P15 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P50', data: labels.map(m => curve?.[m]?.P50 ?? null), borderColor: '#0000cd', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P85', data: labels.map(m => curve?.[m]?.P85 ?? null), borderColor: '#87ceeb', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 },
+      { label: 'P97', data: labels.map(m => curve?.[m]?.P97 ?? null), borderColor: '#d3d3d3', backgroundColor: 'transparent', tension: 0.4, pointRadius: 0 }
     ];
     new Chart(canvas.getContext('2d'), {
       type: 'line',
