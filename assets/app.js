@@ -1396,45 +1396,12 @@ try {
           <h3>Conseils IA (indicatifs)</h3>
           ${renderAdvice(ageM)}
         </div>
-        <div class="card stack">
-          <h3>Actions rapides</h3>
-          <div class="hstack">
-            <a class="btn btn-primary" href="#/ai">Fonctionnalité IA</a>
-            <a class="btn btn-primary" href="#/community">Communauté</a>
-          </div>
-        </div>
       </div>
 
       
     `;
 
-    // Inject Profil santé card after main content
-    const healthBlock = document.createElement('div');
-    healthBlock.className = 'grid-2';
-    healthBlock.style.marginTop = '12px';
-    healthBlock.innerHTML = `
-      <div class="card stack">
-        <h3>Profil santé</h3>
-        <div class="hstack">
-          <span class="chip">Taille: ${Number.isFinite(latestH)? `${latestH} cm` : '—'}</span>
-          <span class="chip">Poids: ${Number.isFinite(latestW)? `${latestW} kg` : '—'}</span>
-          <span class="chip">Dents: ${Number.isFinite(lastTeeth)? `${lastTeeth}` : '—'}</span>
-          <span class="chip">Sommeil (dernier): ${Number.isFinite(lastSleepHours)? `${lastSleepHours} h/24h` : '—'}</span>
-        </div>
-        <div class="hstack">
-          <span class="chip">Endormissement: ${child.context.sleep?.falling || '—'}</span>
-          <span class="chip">Nuits complètes: ${typeof child.context.sleep?.sleepsThrough==='boolean' ? (child.context.sleep.sleepsThrough?'Oui':'Non') : '—'}</span>
-          <span class="chip">Réveils: ${child.context.sleep?.nightWakings || '—'}</span>
-          <span class="chip">Éveils: ${child.context.sleep?.wakeDuration || '—'}</span>
-          <span class="chip">Coucher: ${child.context.sleep?.bedtime || '—'}</span>
-        </div>
-        <div class="hstack">
-          <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
-          <span class="chip">Appétit: ${labelEatingStyle(child.context.eatingStyle)}</span>
-          <span class="chip">Allergies: ${child.context.allergies || '—'}</span>
-        </div>
-      </div>`;
-    dom.appendChild(healthBlock);
+    // Profil santé section removed per request
 
     // Append updates history block
     try {
@@ -2644,7 +2611,7 @@ try {
     return {min:9,max:12};
   }
   function sleepRecommendedSeries(){
-    const arr=[]; for(let m=0;m<=84;m+=3){const r=sleepRecommendation(m);arr.push({x:m,y:(r.min+r.max)/2});} return arr;
+    const arr=[]; for(let m=0;m<=60;m+=3){const r=sleepRecommendation(m);arr.push({x:m,y:(r.min+r.max)/2});} return arr;
   }
 
   // Rendu des courbes OMS en SVG (sans dépendance externe)
@@ -2694,7 +2661,7 @@ try {
     const allPoints = series.flatMap(s=>s.data);
     const xs = allPoints.map(p=>p.x);
     const ys = allPoints.map(p=>p.y);
-    const minX = Math.min(0, ...xs, 0), maxX = Math.max(84, ...xs, 84);
+    const minX = Math.min(0, ...xs, 0), maxX = Math.max(60, ...xs, 60);
     const minY = Math.min(...ys, 0), maxY = Math.max(...ys, 10);
     const pad = 28; const left=36, right=12, top=12, bottom=24;
     const innerW = W-left-right, innerH = H-top-bottom;
@@ -2764,7 +2731,7 @@ try {
     });
 
     // Minor ticks on X (every 12 months)
-    for (let m=12;m<=84;m+=12){
+    for (let m=12;m<=60;m+=12){
       const x = xScale(m);
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x', x);
