@@ -2598,7 +2598,7 @@ try {
   function renderWhoChart(id, childData, curve = {}, unit){
     const svg = document.getElementById(id);
     if (!svg) return;
-    const buildCurve = (key, color, dash='', width=2) => ({
+    const buildCurve = (key, color, dash='', width=1) => ({
       color,
       dash,
       width,
@@ -2609,14 +2609,14 @@ try {
       color: 'var(--turquoise)',
       data: childData.map(p=>({x:p.month, y:p.value})),
       isChild: true,
-      width: 3
+      width: 2
     };
     const series = [
-      buildCurve('P3', 'var(--border)', '4 2', 1.5),
-      buildCurve('P15', 'var(--violet)', '', 1.5),
-      buildCurve('P50', 'var(--violet-strong)', '', 2),
-      buildCurve('P85', 'var(--violet)', '', 1.5),
-      buildCurve('P97', 'var(--border)', '4 2', 1.5),
+      buildCurve('P3', 'var(--border)', '4 2', 1),
+      buildCurve('P15', 'var(--violet)', '', 1),
+      buildCurve('P50', 'var(--violet-strong)', '', 1.5),
+      buildCurve('P85', 'var(--violet)', '', 1),
+      buildCurve('P97', 'var(--border)', '4 2', 1),
       childSeries
     ];
     drawMulti(svg, series);
@@ -2686,29 +2686,28 @@ try {
       path.setAttribute('fill','none');
       const strokeColor = getComputedStyle(document.documentElement).getPropertyValue(s.color?.match(/^var/)? s.color.slice(4,-1):'') || s.color || '#0ff';
       path.setAttribute('stroke', strokeColor);
-      path.setAttribute('stroke-width', s.width || (s.isChild ? '3' : '2'));
+      path.setAttribute('stroke-width', s.width || (s.isChild ? '2' : '1'));
       if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
       if (!s.isChild) path.setAttribute('opacity','0.8');
       path.setAttribute('stroke-linecap','round');
       path.setAttribute('stroke-linejoin','round');
       svg.appendChild(path);
-      // Points
-      pts.forEach((p,i)=>{
-        const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        const isChild = !!s.isChild;
-        const isLatest = isChild && i === pts.length - 1;
-        c.setAttribute('cx', xScale(p.x));
-        c.setAttribute('cy', yScale(p.y));
-        c.setAttribute('r', isChild ? (isLatest ? '6' : '4') : '2.5');
-        c.setAttribute('fill', s.color || 'cyan');
-        if (isChild) {
+      // Points uniquement pour la série enfant
+      if (s.isChild) {
+        pts.forEach((p,i)=>{
+          const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+          const isLatest = i === pts.length - 1;
+          c.setAttribute('cx', xScale(p.x));
+          c.setAttribute('cy', yScale(p.y));
+          c.setAttribute('r', isLatest ? '5' : '3');
+          c.setAttribute('fill', s.color || 'cyan');
           c.setAttribute('stroke', '#fff');
-          c.setAttribute('stroke-width', '1.5');
+          c.setAttribute('stroke-width', '1');
           c.classList.add('child-point');
           if (isLatest) c.classList.add('child-point-latest');
-        }
-        svg.appendChild(c);
-      });
+          svg.appendChild(c);
+        });
+      }
     });
 
     // Minor ticks on X (every 12 months)
