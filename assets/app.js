@@ -1303,8 +1303,8 @@ try {
         <div class="card stack">
           <h3>Actions rapides</h3>
           <div class="hstack">
-            <a class="btn btn-secondary" href="#/ai">Fonctionnalité IA</a>
-            <a class="btn btn-secondary" href="#/community">Communauté</a>
+            <a class="btn btn-primary" href="#/ai">Fonctionnalité IA</a>
+            <a class="btn btn-primary" href="#/community">Communauté</a>
           </div>
         </div>
       </div>
@@ -2438,7 +2438,7 @@ try {
       <label>Enfant
         <select id="child-switcher">${options}</select>
       </label>
-      <a class="btn btn-secondary" href="#/onboarding">Ajouter</a>
+      <a class="btn btn-primary" href="#/onboarding">Ajouter</a>
     `;
     const sel = box.querySelector('#child-switcher');
     if (sel && !sel.dataset.bound) {
