@@ -1258,7 +1258,8 @@ try {
     }
     // Placeholder while fetching remote
     if (useRemote()) {
-      dom.innerHTML = `<div class="card">Chargement du profil…</div>`;
+      dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Actualiser</button></div>`;
+      $('#btn-refresh-profile')?.addEventListener('click', () => location.reload());
     }
     const renderForChild = (child) => {
       const ageM = ageInMonths(child.dob);
