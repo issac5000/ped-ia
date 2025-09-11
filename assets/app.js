@@ -48,8 +48,6 @@ console.log('DEBUG: app.js chargé');
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
       if (DEBUG_AUTH) console.log('Supabase client created');
-      console.log('DEBUG: appel explicite setActiveRoute(location.hash) au démarrage');
-      setActiveRoute(location.hash || '#/dashboard');
 
 
 
@@ -106,6 +104,12 @@ try {
           setActiveRoute(location.hash);
         }
       });
+      // Initial routing once auth state is resolved
+      if (location.hash) {
+        setActiveRoute(location.hash);
+      } else {
+        location.hash = authSession?.user ? '#/dashboard' : '#/';
+      }
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
