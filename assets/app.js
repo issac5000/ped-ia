@@ -1,5 +1,6 @@
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
+import { WHO_CURVES } from './who-curves.js';
 console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
 console.log('DEBUG: app.js chargé');
 (async () => {
@@ -8,6 +9,7 @@ console.log('DEBUG: app.js chargé');
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const { default: Chart } = await import('https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js');
 
   const store = {
     get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
@@ -1264,22 +1266,20 @@ try {
         <div class="card chart-card">
           <div class="chart-header">
             <h3>Taille (cm)</h3>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>Enfant</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>OMS (médiane)</span>
-            </div>
           </div>
-          <svg class="chart" id="chart-height"></svg>
+          <canvas class="chart" id="chart-height"></canvas>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
             <h3>Poids (kg)</h3>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>Enfant</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>OMS (médiane)</span>
-            </div>
           </div>
-          <svg class="chart" id="chart-weight"></svg>
+          <canvas class="chart" id="chart-weight"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="chart-header">
+            <h3>IMC</h3>
+          </div>
+          <canvas class="chart" id="chart-bmi"></canvas>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
@@ -1469,31 +1469,18 @@ try {
 
     // Charts
     const ms = normalizeMeasures(child.growth.measurements);
-    drawChart($('#chart-height'), buildSeries(ms.map(m=>({x:m.month,y:m.height}))), buildSeries(whoSeries('height')));
-    drawChart($('#chart-weight'), buildSeries(ms.map(m=>({x:m.month,y:m.weight}))), buildSeries(whoSeries('weight')));
+    const heightData = ms.filter(m=>Number.isFinite(m.height)).map(m=>({x:m.month,y:m.height}));
+    const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({x:m.month,y:m.weight}));
+    const bmiData = ms.filter(m=>Number.isFinite(m.height) && Number.isFinite(m.weight))
+                      .map(m=>({x:m.month, y: m.weight / ((m.height/100)**2)}));
+    renderWhoChart('chart-height', heightData, WHO_CURVES.height, 'cm');
+    renderWhoChart('chart-weight', weightData, WHO_CURVES.weight, 'kg');
+    renderWhoChart('chart-bmi', bmiData, WHO_CURVES.bmi, 'IMC');
     drawChart($('#chart-sleep'), buildSeries(child.growth.sleep.map(s=>({x:s.month,y:s.hours}))), buildSeries(sleepRecommendedSeries()));
     drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
 
     // Plain-language chart notes for parents
     try {
-      const latestHPoint = [...ms].reverse().find(m=>Number.isFinite(m.height));
-      const hMed = latestHPoint? medianAt('height', latestHPoint.month) : undefined;
-      const noteH = document.createElement('div'); noteH.className='chart-note';
-      if (latestHPoint && Number.isFinite(hMed)) {
-        const diff = latestHPoint.height - hMed; const pos = diff>1? 'au‑dessus' : diff<-1? 'en‑dessous' : 'autour';
-        noteH.textContent = `Dernière taille: ${latestHPoint.height} cm (${pos} de la médiane OMS ~ ${hMed.toFixed(1)} cm).`;
-      } else { noteH.textContent = 'Ajoutez une taille pour voir la comparaison à la médiane OMS.'; }
-      document.getElementById('chart-height')?.parentElement?.appendChild(noteH);
-
-      const latestWPoint = [...ms].reverse().find(m=>Number.isFinite(m.weight));
-      const wMed = latestWPoint? medianAt('weight', latestWPoint.month) : undefined;
-      const noteW = document.createElement('div'); noteW.className='chart-note';
-      if (latestWPoint && Number.isFinite(wMed)) {
-        const diff = latestWPoint.weight - wMed; const pos = diff>0.2? 'au‑dessus' : diff<-0.2? 'en‑dessous' : 'autour';
-        noteW.textContent = `Dernier poids: ${latestWPoint.weight} kg (${pos} de la médiane OMS ~ ${wMed.toFixed(2)} kg).`;
-      } else { noteW.textContent = 'Ajoutez un poids pour voir la comparaison à la médiane OMS.'; }
-      document.getElementById('chart-weight')?.parentElement?.appendChild(noteW);
-
       const latestS = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
       const rec = sleepRecommendation(ageM);
       const noteS = document.createElement('div'); noteS.className='chart-note';
@@ -2487,45 +2474,67 @@ try {
     const arr=[]; for(let m=0;m<=84;m+=3){const r=sleepRecommendation(m);arr.push({x:m,y:(r.min+r.max)/2});} return arr;
   }
 
-  // WHO approximate series
-  const WHO_KEYS = {
-    height: [
-      [0,50],[6,67],[12,75],[24,87],[36,96],[48,103],[60,111],[72,118],[84,125]
-    ],
-    weight: [
-      [0,3.3],[6,7.6],[12,9.5],[24,12.2],[36,14.3],[48,16.0],[60,18.3],[72,20.5],[84,22.5]
-    ]
-  };
-  function interp(points, x){
-    for(let i=0;i<points.length-1;i++){
-      const [x1,y1]=points[i], [x2,y2]=points[i+1];
-      if (x>=x1 && x<=x2){
-        const t = (x-x1)/(x2-x1);
-        return y1 + t*(y2-y1);
-      }
-    }
-    if (x<points[0][0]) return points[0][1];
-    return points[points.length-1][1];
+  // Chart.js WHO curves renderer
+  function buildWhoDatasets(curve){
+    const colors = { p3:'#d0d0d0', p15:'#9ec5fe', p50:'#143e6f', p85:'#9ec5fe', p97:'#d0d0d0' };
+    return Object.keys(colors).map(k=>({
+      label: k.toUpperCase(),
+      data: curve.map(p=>({x:p.m, y:p[k]})),
+      borderColor: colors[k],
+      backgroundColor: colors[k],
+      tension:0.4,
+      pointRadius:0,
+      borderWidth:2
+    }));
   }
-  function whoSeries(kind){
-    const pts = WHO_KEYS[kind];
-    const arr=[]; for(let m=0;m<=84;m+=3){arr.push({x:m,y:interp(pts,m)});} return arr;
+  function renderWhoChart(id, childData, curve, unit){
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const childColor = getComputedStyle(document.documentElement).getPropertyValue('--turquoise').trim() || '#ffc2d6';
+    const datasets = buildWhoDatasets(curve);
+    datasets.push({
+      label: 'Enfant',
+      data: childData,
+      borderColor: childColor,
+      backgroundColor: childColor,
+      showLine: false,
+      type: 'scatter',
+      pointRadius:4,
+      pointHoverRadius:5
+    });
+    new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { datasets },
+      options: {
+        parsing: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false },
+        scales: {
+          x: { type: 'linear', ticks: { stepSize: 12, callback: v => v/12 + 'a' } },
+          y: { type: 'linear' }
+        },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              title: items => `Âge : ${items[0].parsed.x} mois`,
+              label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(1)}${unit?` ${unit}`:''}`
+            }
+          }
+        }
+      }
+    });
+    const latest = childData[childData.length-1];
+    const note = document.createElement('div'); note.className='chart-note';
+    const val = latest ? latest.y.toFixed(1) : '—';
+    const unitTxt = unit ? ` ${unit}` : '';
+    note.textContent = `Courbes de croissance selon l’OMS (P3 à P97). La zone entre P3 et P97 correspond à la normale. Dernière valeur enregistrée : ${val}${unitTxt}.`;
+    canvas.parentElement.appendChild(note);
   }
 
   // SVG Chart utils (lightweight)
   function buildSeries(list){ return [{color:'var(--turquoise)', data:list.filter(p=>Number.isFinite(p.y))}]; }
   function drawChart(svg, seriesA, seriesB){ drawMulti(svg, [...(seriesA||[]), ...(seriesB?[{color:'var(--violet)', data:seriesB[0].data}]:[])]); }
-  function medianAt(kind, m){
-    const arr = whoSeries(kind);
-    if (!arr || !arr.length) return undefined;
-    if (m <= arr[0].x) return arr[0].y;
-    if (m >= arr[arr.length-1].x) return arr[arr.length-1].y;
-    for (let i=1;i<arr.length;i++){
-      const a = arr[i-1], b = arr[i];
-      if (m>=a.x && m<=b.x){ const t = (m-a.x)/((b.x-a.x)||1); return a.y + t*(b.y-a.y); }
-    }
-    return arr[arr.length-1].y;
-  }
 
   function drawMulti(svg, series){
     if (!svg) return;
