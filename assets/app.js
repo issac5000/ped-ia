@@ -1061,20 +1061,39 @@ try {
   // Onboarding
 
   function renderOnboarding() {
-    const grid = $('#dev-questions');
-    if (!grid) return;
-    grid.innerHTML = '';
-    DEV_QUESTIONS.forEach((q, i) => {
-      const id = `q_${i}`;
-      const div = document.createElement('div');
-      div.className = 'qitem';
-      div.innerHTML = `
-        <div class="qtitle">${q.label}</div>
-        <label class="switch">
-          <input type="checkbox" name="dev_${q.key}">
-          <span>Oui</span>
-        </label>`;
-      grid.appendChild(div);
+    const container = $('#dev-questions');
+    if (!container) return;
+    container.innerHTML = '';
+
+    // Build 3 sections with titles and 10 checkboxes each
+    const groups = [
+      { title: '0 – 12 mois', start: 0, end: 9 },
+      { title: '12 – 24 mois', start: 10, end: 19 },
+      { title: '24 – 36 mois', start: 20, end: 29 },
+    ];
+
+    groups.forEach(g => {
+      const sec = document.createElement('section');
+      sec.className = 'dev-group';
+      const h = document.createElement('h4');
+      h.textContent = g.title;
+      const grid = document.createElement('div');
+      grid.className = 'qgrid';
+      for (let i = g.start; i <= g.end; i++) {
+        const q = DEV_QUESTIONS[i];
+        const id = `ms_${i}`;
+        const item = document.createElement('div');
+        item.className = 'qitem';
+        // Checkbox with name milestones[] so FormData groups them; we will read .checked to include false
+        item.innerHTML = `
+          <input type="checkbox" id="${id}" name="milestones[]" data-index="${i}" />
+          <label for="${id}">${q.label}</label>
+        `;
+        grid.appendChild(item);
+      }
+      sec.appendChild(h);
+      sec.appendChild(grid);
+      container.appendChild(sec);
     });
 
     const form = $('#form-child');
@@ -1158,6 +1177,12 @@ try {
           }
           const dobStr = fd.get('dob').toString();
           const ageMAtCreation = ageInMonths(dobStr);
+          const // read 30 booleans in displayed order (include false)
+            msInputs = Array.from(document.querySelectorAll('#dev-questions input[name="milestones[]"]')),
+            milestones = msInputs
+              .sort((a,b)=> (Number(a.dataset.index||0) - Number(b.dataset.index||0)))
+              .map(inp => !!inp.checked);
+
           const child = {
             id: genId(),
             firstName: fd.get('firstName').toString().trim(),
@@ -1179,7 +1204,7 @@ try {
                 bedtime: fd.get('sleep_bedtime')?.toString() || '',
               },
             },
-            milestones: DEV_QUESTIONS.map((q) => !!fd.get(`dev_${q.key}`)),
+            milestones,
             growth: {
               measurements: [], // {month, height, weight}
               sleep: [], // {month, hours}
