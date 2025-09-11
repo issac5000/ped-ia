@@ -1299,18 +1299,36 @@ try {
         <div class="card chart-card">
           <div class="chart-header">
             <h3>Taille (cm)</h3>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>Enfant</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--violet-strong)"></span>P50</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>P15/P85</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--border)"></span>P3/P97</span>
+            </div>
           </div>
           <svg class="chart" id="chart-height"></svg>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
             <h3>Poids (kg)</h3>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>Enfant</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--violet-strong)"></span>P50</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>P15/P85</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--border)"></span>P3/P97</span>
+            </div>
           </div>
           <svg class="chart" id="chart-weight"></svg>
         </div>
         <div class="card chart-card">
           <div class="chart-header">
             <h3>IMC</h3>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>Enfant</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--violet-strong)"></span>P50</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--violet)"></span>P15/P85</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--border)"></span>P3/P97</span>
+            </div>
           </div>
           <svg class="chart" id="chart-bmi"></svg>
         </div>
@@ -2586,16 +2604,16 @@ try {
                 .filter(p=>Number.isFinite(p.y))
     });
     const childSeries = {
-      color: 'var(--rose)',
+      color: 'var(--turquoise)',
       data: childData.map(p=>({x:p.month, y:p.value}))
     };
     const series = [
       childSeries,
-      buildCurve('P3', '#d3d3d3'),
-      buildCurve('P15', '#87ceeb'),
-      buildCurve('P50', '#0000cd'),
-      buildCurve('P85', '#87ceeb'),
-      buildCurve('P97', '#d3d3d3')
+      buildCurve('P3', 'var(--border)'),
+      buildCurve('P15', 'var(--violet)'),
+      buildCurve('P50', 'var(--violet-strong)'),
+      buildCurve('P85', 'var(--violet)'),
+      buildCurve('P97', 'var(--border)')
     ];
     drawMulti(svg, series);
     const latest = childData[childData.length - 1];
