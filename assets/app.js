@@ -169,17 +169,20 @@ try {
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
     // Hero particles: enable only on home
-    if (path === '/') {
-      startHeroParticles();
-      stopSectionParticles();
-      // Hide top logo particles on home
-      stopTopLogoParticles();
-    } else {
-      stopHeroParticles();
-      stopSectionParticles();
-      // Enable top logo particles for non-home routes
-      startTopLogoParticles();
-    }
+      if (path === '/') {
+        startHeroParticles();
+        stopSectionParticles();
+        stopRouteParticles();
+        // Hide top logo particles on home
+        stopTopLogoParticles();
+      } else {
+        stopHeroParticles();
+        stopSectionParticles();
+        stopRouteParticles();
+        startRouteParticles();
+        // Enable top logo particles for non-home routes
+        startTopLogoParticles();
+      }
     console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
 
@@ -428,23 +431,109 @@ try {
       topParticles.resize = onR;
     } catch {}
   }
-  function stopTopLogoParticles(){
-    try {
-      cancelAnimationFrame(topParticles.raf);
-      topParticles.raf = 0;
-      if (topParticles.resize) window.removeEventListener('resize', topParticles.resize);
-      topParticles.resize = null;
-      if (topParticles.ctx && topParticles.cvs){
-        const holder = document.getElementById('page-logo');
-        const cont = holder?.querySelector('.container');
-        if (cont) topParticles.ctx.clearRect(0,0,cont.clientWidth,cont.clientHeight);
-      }
-      topParticles.ctx = null; topParticles.parts = [];
-    } catch {}
-  }
+    function stopTopLogoParticles(){
+      try {
+        cancelAnimationFrame(topParticles.raf);
+        topParticles.raf = 0;
+        if (topParticles.resize) window.removeEventListener('resize', topParticles.resize);
+        topParticles.resize = null;
+        if (topParticles.ctx && topParticles.cvs){
+          const holder = document.getElementById('page-logo');
+          const cont = holder?.querySelector('.container');
+          if (cont) topParticles.ctx.clearRect(0,0,cont.clientWidth,cont.clientHeight);
+        }
+        topParticles.ctx = null; topParticles.parts = [];
+      } catch {}
+    }
 
-  // Particles for alternating light-background sections on home
-  let sectionParticlesStates = [];
+    // Full-page particles for non-home routes
+    let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null };
+    function startRouteParticles(){
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const route = document.querySelector('.route.active');
+        if (!route) return;
+        const cvs = document.createElement('canvas');
+        cvs.className = 'route-canvas';
+        route.prepend(cvs);
+        const rect = route.getBoundingClientRect();
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        cvs.width = Math.floor(rect.width * dpr);
+        cvs.height = Math.floor(rect.height * dpr);
+        const ctx = cvs.getContext('2d'); ctx.scale(dpr, dpr);
+        // palette from CSS variables
+        const cs = getComputedStyle(document.documentElement);
+        const palette = [
+          cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+          cs.getPropertyValue('--orange').trim()||'#ffcba4',
+          cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+          '#ffd9e6'
+        ];
+        const W = rect.width, H = rect.height;
+        const area = Math.max(1, W*H);
+        const N = Math.max(14, Math.min(40, Math.round(area/52000)));
+        const parts = [];
+        for (let i=0;i<N;i++){
+          const u = Math.random();
+          const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));
+          parts.push({
+            x: Math.random()*W,
+            y: Math.random()*H,
+            r,
+            vx:(Math.random()*.28 - .14),
+            vy:(Math.random()*.28 - .14),
+            hue: palette[Math.floor(Math.random()*palette.length)],
+            alpha:.2 + Math.random()*.35,
+            drift: Math.random()*Math.PI*2,
+            spin:.001 + Math.random()*.003
+          });
+        }
+        routeParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, route };
+        const step = (t)=>{
+          const now = t || performance.now();
+          const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
+          routeParticles.lastT = now;
+          const W = route.clientWidth, H = route.clientHeight;
+          ctx.setTransform(1,0,0,1,0,0);
+          ctx.clearRect(0,0,W,H);
+          for (const p of routeParticles.parts){
+            p.drift += p.spin*dt;
+            p.x += p.vx + Math.cos(p.drift)*.04;
+            p.y += p.vy + Math.sin(p.drift)*.04;
+            if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
+            if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.hue;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+          }
+          routeParticles.raf = requestAnimationFrame(step);
+        };
+        routeParticles.raf = requestAnimationFrame(step);
+        const onR = ()=>{
+          const rect = route.getBoundingClientRect();
+          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          cvs.width = Math.floor(rect.width * dpr);
+          cvs.height = Math.floor(rect.height * dpr);
+          routeParticles.ctx?.setTransform(1,0,0,1,0,0);
+          routeParticles.ctx?.scale(dpr, dpr);
+        };
+        window.addEventListener('resize', onR);
+        routeParticles.resize = onR;
+      } catch {}
+    }
+    function stopRouteParticles(){
+      try {
+        cancelAnimationFrame(routeParticles.raf);
+        routeParticles.raf = 0;
+        if (routeParticles.resize) window.removeEventListener('resize', routeParticles.resize);
+        routeParticles.resize = null;
+        routeParticles.cvs?.remove();
+        routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null };
+      } catch {}
+    }
+
+    // Particles for alternating light-background sections on home
+    let sectionParticlesStates = [];
   function startSectionParticles(){
     try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
