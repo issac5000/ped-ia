@@ -16,7 +16,7 @@
   --muted:rgba(255,255,255,.72); /* muted text: soft white */
   --text:#ffffff;  /* global text color white */
   --text-inverse:#ffffff;
-  --border:#e6eaf5;
+  --border:rgba(255,255,255,.18);
   --danger:#ef476f;
   --ok:#2dc07a;
   --shadow:0 4px 12px rgba(30,50,100,.08);
