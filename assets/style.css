@@ -781,6 +781,6 @@ section[data-route="/community"] .btn-danger:hover{
   background: linear-gradient(180deg, rgba(158,47,75,.48), rgba(217,58,98,.48)) !important;
 }
 
-/* Footer links (À propos, Contact, Mentions légales, Confidentialité) in orange */
-.site-footer .fs-right .fs-link{ color: var(--orange-strong) !important; }
+/* Footer links (À propos, Contact, Mentions légales, Confidentialité) in orange and bold */
+.site-footer .fs-right .fs-link{ color: var(--orange-strong) !important; font-weight:700; }
 .site-footer .fs-right .fs-link:hover{ color: var(--orange-strong) !important; text-decoration: underline; }
