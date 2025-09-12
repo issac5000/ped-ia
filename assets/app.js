@@ -930,8 +930,13 @@ try {
     const renderChat = (arr) => {
       const el = document.getElementById('ai-chat-messages');
       if (!el) return;
-      el.innerHTML = arr.map(m=>{ const role = m.role==='user' ? 'user' : 'assistant'; return `<div class=\"meta\">${role==='user'?'Vous':'Assistant'}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div>`; }).join('');
-      el.scrollTo(0, el.scrollHeight);
+      el.innerHTML = arr.map(m=>{
+        const role = m.role==='user' ? 'user' : 'assistant';
+        const avatar = role==='user' ? '🙋' : '👶';
+        const label = role==='user' ? 'Vous' : 'Assistant';
+        return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
+      }).join('');
+      el.scrollTo({ top: el.scrollHeight, behavior:'smooth' });
     };
 
     // Recipes
@@ -982,6 +987,17 @@ try {
     const sChat = document.getElementById('ai-chat-status');
     const msgsEl = document.getElementById('ai-chat-messages');
     const btnReset = document.getElementById('ai-chat-reset');
+    const txtChat = fChat?.querySelector('textarea[name="q"]');
+    if (txtChat) {
+      const placeholders = ['Écris ici…','Pose ta question…','Dis-moi tout…'];
+      let idx = 0;
+      setInterval(() => {
+        if (document.activeElement !== txtChat) {
+          idx = (idx + 1) % placeholders.length;
+          txtChat.placeholder = placeholders[idx];
+        }
+      }, 4000);
+    }
     if (btnReset && !btnReset.dataset.bound) {
       btnReset.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1007,7 +1023,12 @@ try {
       renderChat(history);
       // Show typing indicator
       document.getElementById('ai-typing')?.remove();
-      const typing = document.createElement('div'); typing.id='ai-typing'; typing.className='bubble assistant'; typing.textContent='Assistant écrit…'; msgsEl?.appendChild(typing); msgsEl?.scrollTo(0, msgsEl.scrollHeight);
+      const typing = document.createElement('div');
+      typing.id='ai-typing';
+      typing.className='chat-line assistant';
+      typing.innerHTML='<div class="avatar">👶</div><div class="message"><div class="bubble assistant"><span class="typing"><span></span><span></span><span></span></span></div></div>';
+      msgsEl?.appendChild(typing);
+      msgsEl?.scrollTo({ top: msgsEl.scrollHeight, behavior:"smooth" });
       try {
         const resp = await askAI(q, currentChild, history);
         const newH = loadChat(currentChild);
@@ -1072,7 +1093,7 @@ try {
       }
     };
 
-    (async () => { currentChild = await loadChild(); await renderIndicator(currentChild); renderChat(loadChat(currentChild)); const m=document.getElementById('ai-chat-messages'); m?.scrollTo(0, m.scrollHeight); })();
+    (async () => { currentChild = await loadChild(); await renderIndicator(currentChild); renderChat(loadChat(currentChild)); const m=document.getElementById('ai-chat-messages'); m?.scrollTo({top:m.scrollHeight, behavior:'smooth'}); })();
   }
 
   // Onboarding
