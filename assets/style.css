@@ -663,8 +663,7 @@ body.force-mobile .nav-toggle{
 .faq-item,
 .testimonial, .testimonial:hover,
 .pillar, .pillar:hover,
-.hero-stats .stat,
-.chat-window{
+.hero-stats .stat{
   background: transparent !important;
 }
 
@@ -687,6 +686,36 @@ section[data-route="/"] .hero-title{
 /* Recolor the small underline under the hero title to orange gradient */
 section[data-route="/"] .hero-title::after{
   background: linear-gradient(90deg, var(--orange-strong), var(--orange)) !important;
+}
+
+/* Refined chat window styling */
+.chat-window{
+  background: rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:18px;
+  box-shadow:0 8px 24px rgba(0,0,0,.3);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  padding:10px;
+}
+.chat-textarea{
+  background:rgba(0,0,0,.25);
+  border:1px solid rgba(255,255,255,.15);
+  color:#ffffff;
+}
+.chat-textarea:focus{
+  outline:none;
+  border-color:var(--orange-strong);
+  background:rgba(0,0,0,.35);
+}
+.bubble.assistant{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);
+}
+.bubble.user{
+  background:linear-gradient(135deg, var(--orange-strong), var(--violet-strong));
+  border:none;
+  margin-left:auto;
 }
 
 /* Section titles in orange across the site */
