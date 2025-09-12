@@ -86,6 +86,9 @@ section{opacity:.8}
 .nav-ico{font-size:16px}
 /* Hide emojis in desktop header; show in mobile menu only */
 .main-nav .nav-ico{display:none}
+@media (min-width:901px){
+  .main-nav .nav-link span:last-child{font-weight:700;}
+}
 .auth-actions{display:flex; gap:8px; justify-content:flex-end; flex-wrap:nowrap}
 .auth-actions{align-items:center}
 /* Prevent wrapping inside auth area to keep header height fixed */
