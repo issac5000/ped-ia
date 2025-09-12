@@ -500,9 +500,10 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 .feature-ico{width:56px; height:56px; display:grid; place-items:center; font-size:30px; border-radius:50%; background:linear-gradient(92deg, rgba(255,150,64,.34), rgba(78,124,216,.34)); color:var(--text-inverse); margin:0 auto 2px}
 .feature h3,.feature p{margin:0}
 .steps{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:16px}
-.step{background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:24px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease; text-align:center; display:grid; gap:8px}
+.step{background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:24px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease; text-align:center; display:grid; gap:4px}
 .step:hover{transform:translateY(-2px); box-shadow:0 12px 28px rgba(30,50,100,.16); border-color:#d8e0f2; background:#ffffff}
-.step-num{width:40px; height:40px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(90deg,var(--turquoise), #58e3d8); color:#063a35; font-weight:700; margin:0 auto 6px}
+.step-num{width:40px; height:40px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(90deg,var(--turquoise), #58e3d8); color:#063a35; font-weight:700; margin:0 auto 2px}
+.step h3,.step p{margin:0}
 
 /* IA tools layout */
 section[data-route="/ai"] > .stack{gap:20px}
