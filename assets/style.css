@@ -156,7 +156,7 @@ section{opacity:.8}
 /* Removed two-row layout to preserve constant header thickness */
 
 /* Backdrop for mobile menu */
-.nav-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.25); backdrop-filter:blur(2px); z-index:8; opacity:0; pointer-events:none; transition:opacity .3s ease; display:none}
+.nav-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.25); backdrop-filter:blur(2px); z-index:8; opacity:0; pointer-events:none; transition:opacity .3s ease}
 .nav-backdrop.open{opacity:1; pointer-events:auto}
 
 /* Page top logo (all pages except home) */
@@ -624,8 +624,7 @@ body.force-mobile .nav-toggle{display:inline-flex}
 /* Mobile hamburger menu — full-screen, centered, translucent pills */
 body.force-mobile .main-nav{
   position:fixed; inset:0;
-  /* Avoid covering viewport when closed (helps mobile URL bar collapse) */
-  display:none; place-items:center;
+  display:grid; place-items:center;
   background:transparent; /* rely on backdrop */
   border:none; box-shadow:none;
   /* Add extra top padding to clear the header area visually */
@@ -637,7 +636,7 @@ body.force-mobile .main-nav{
   pointer-events:none;
   transition: transform .3s ease, opacity .3s ease;
 }
-body.force-mobile .main-nav.open{display:grid; transform:translateY(0); opacity:1; pointer-events:auto}
+body.force-mobile .main-nav.open{transform:translateY(0); opacity:1; pointer-events:auto}
 body.force-mobile .main-nav.open .nav-ico{display:none}
 body.force-mobile .main-nav .nav-link{
   display:block;

@@ -391,20 +391,17 @@ try {
       const route = document.querySelector('.route.active');
       if (!route) return;
       const isDashboard = route.getAttribute('data-route') === '/dashboard';
-      const isIOS = (() => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))();
-      // Use fixed full-viewport canvas on dashboard except on iOS where it breaks URL bar collapsing
-      const useFixed = isDashboard && !isIOS;
       const cvs = document.createElement('canvas');
-      // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page (except on iOS)
-      if (useFixed) {
+      // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page
+      if (isDashboard) {
         cvs.className = 'route-canvas route-canvas-fixed';
         document.body.prepend(cvs);
       } else {
         cvs.className = 'route-canvas';
         route.prepend(cvs);
       }
-      const width = useFixed ? window.innerWidth : route.clientWidth;
-      const height = useFixed ? window.innerHeight : route.scrollHeight;
+      const width = isDashboard ? window.innerWidth : route.clientWidth;
+      const height = isDashboard ? window.innerHeight : route.scrollHeight;
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       cvs.width = Math.floor(width * dpr);
       cvs.height = Math.floor(height * dpr);
@@ -441,8 +438,8 @@ try {
         const now = t || performance.now();
         const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
         routeParticles.lastT = now;
-        const W = useFixed ? window.innerWidth : route.clientWidth;
-        const H = useFixed ? window.innerHeight : route.scrollHeight;
+        const W = isDashboard ? window.innerWidth : route.clientWidth;
+        const H = isDashboard ? window.innerHeight : route.scrollHeight;
         const dpr = routeParticles.dpr;
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,W,H);
@@ -460,8 +457,8 @@ try {
         };
         routeParticles.raf = requestAnimationFrame(step);
       const onR = ()=>{
-        const width = useFixed ? window.innerWidth : route.clientWidth;
-        const height = useFixed ? window.innerHeight : route.scrollHeight;
+        const width = isDashboard ? window.innerWidth : route.clientWidth;
+        const height = isDashboard ? window.innerHeight : route.scrollHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         cvs.width = Math.floor(width * dpr);
         cvs.height = Math.floor(height * dpr);
@@ -1404,16 +1401,7 @@ try {
           </div>
           <svg class="chart" id="chart-bmi"></svg>
         </div>
-        <div class="card chart-card">
-          <div class="chart-header">
-            <h3>Sommeil (h)</h3>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="legend-dot" style="background:var(--turquoise)"></span>Enfant</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>Recommandé</span>
-            </div>
-          </div>
-          <svg class="chart" id="chart-sleep"></svg>
-        </div>
+        
         <div class="card chart-card">
           <div class="chart-header">
             <h3>Dents (nb)</h3>
@@ -1603,18 +1591,10 @@ try {
     safeRender('chart-height', heightData, curves.LENGTH_FOR_AGE, 'cm');
     safeRender('chart-weight', weightData, curves.WEIGHT_FOR_AGE, 'kg');
     safeRender('chart-bmi', bmiData, curves.BMI_FOR_AGE, 'IMC');
-    drawChart($('#chart-sleep'), buildSeries(child.growth.sleep.map(s=>({x:s.month,y:s.hours}))), buildSeries(sleepRecommendedSeries()));
     drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
 
     // Plain-language chart notes for parents
     try {
-      const latestS = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
-      const rec = sleepRecommendation(ageM);
-      const noteS = document.createElement('div'); noteS.className='chart-note';
-      if (latestS) noteS.textContent = `Dernier sommeil: ${latestS.hours} h/24h. Recommandé: ${rec.min}–${rec.max} h.`;
-      else noteS.textContent = `Recommandé à ${Math.round(ageM/12)} an(s): ${rec.min}–${rec.max} h/24h.`;
-      document.getElementById('chart-sleep')?.parentElement?.appendChild(noteS);
-
       const latestT = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
       const noteT = document.createElement('div'); noteT.className='chart-note';
       if (latestT) noteT.textContent = `Dernier relevé: ${latestT.count} dent(s). Le calendrier d’éruption varie beaucoup — comparez surtout avec les observations précédentes.`;
