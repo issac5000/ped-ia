@@ -171,7 +171,7 @@ try {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     // Guard routes
     const authed = !!authSession?.user;
-    const needAuth = ['/dashboard','/community','/settings','/onboarding'];
+    const needAuth = ['/dashboard','/community','/ai','/settings','/onboarding'];
     console.log('DEBUG: test guard needAuth', { path, authed, needAuth });
     if (needAuth.includes(path) && !authed) {
       console.log('DEBUG: guard redirect -> /login (needAuth && !authed)');
