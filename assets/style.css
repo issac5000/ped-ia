@@ -156,8 +156,20 @@ section{opacity:.8}
 /* Removed two-row layout to preserve constant header thickness */
 
 /* Backdrop for mobile menu */
-.nav-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.25); backdrop-filter:blur(2px); z-index:8; display:none}
-.nav-backdrop.open{display:block}
+.nav-backdrop{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.25);
+  backdrop-filter:blur(2px);
+  z-index:8;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .3s ease;
+}
+.nav-backdrop.open{
+  opacity:1;
+  pointer-events:auto;
+}
 
 /* Page top logo (all pages except home) */
 .page-logo{padding:6px 0 2px; background:transparent}
@@ -623,18 +635,27 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
 body.force-mobile .nav-toggle{display:inline-flex}
 /* Mobile hamburger menu — full-screen, centered, translucent pills */
 body.force-mobile .main-nav{
-  display:none;
-  position:fixed; inset:0;
+  position:fixed;
+  inset:0;
   background:transparent; /* rely on backdrop */
-  border:none; box-shadow:none;
+  border:none;
+  box-shadow:none;
   /* Add extra top padding to clear the header area visually */
   padding: calc(72px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));
   z-index:90;
   backdrop-filter:none; -webkit-backdrop-filter:none;
-  transform-origin: top right; transform: translateY(-8px) scale(.98);
-  opacity:0; transition: transform .2s ease, opacity .2s ease;
+  display:grid;
+  place-items:center;
+  transform:translateY(-100%);
+  opacity:0;
+  pointer-events:none;
+  transition:transform .3s ease, opacity .3s ease;
 }
-body.force-mobile .main-nav.open{display:grid !important; place-items:center; transform:none; opacity:1}
+body.force-mobile .main-nav.open{
+  transform:translateY(0);
+  opacity:1;
+  pointer-events:auto;
+}
 body.force-mobile .main-nav.open .nav-ico{display:none}
 body.force-mobile .main-nav .nav-link{
   display:block;
