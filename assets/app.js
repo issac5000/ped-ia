@@ -1340,8 +1340,8 @@ try {
       <div class="grid-2">
         <div class="card stack">
           <div class="hstack">
-            ${child.photo ? `<img src="${child.photo}" alt="${child.firstName}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid #2a3161;"/>` :
-            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid #2a3161;display:grid;place-items:center;background:#111845;font-weight:600;font-size:24px;color:#fff;">${(child.firstName||'?').slice(0,1).toUpperCase()}</div>`}
+            ${child.photo ? `<img src="${child.photo}" alt="${child.firstName}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid var(--border);"/>` :
+            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid var(--border);display:grid;place-items:center;background:#111845;font-weight:600;font-size:24px;color:#fff;">${(child.firstName||'?').slice(0,1).toUpperCase()}</div>`}
             <div>
               <h2 style="margin:0">${child.firstName}</h2>
               <div class="muted">${child.sex} • ${ageTxt}</div>
@@ -2733,8 +2733,8 @@ try {
     }
     svg.appendChild(grid);
     // Axes
-    svg.appendChild(line(left, top, left, top+innerH, '#2a3161'));
-    svg.appendChild(line(left, top+innerH, left+innerW, top+innerH, '#2a3161'));
+    svg.appendChild(line(left, top, left, top+innerH, 'var(--border)'));
+    svg.appendChild(line(left, top+innerH, left+innerW, top+innerH, 'var(--border)'));
 
     // Series paths
     series.forEach((s) => {
