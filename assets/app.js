@@ -930,9 +930,11 @@ try {
     const renderChat = (arr) => {
       const el = document.getElementById('ai-chat-messages');
       if (!el) return;
+      const userRole = store.get(K.user)?.role;
+      const userAvatar = userRole === 'papa' ? '👨' : '👩';
       el.innerHTML = arr.map(m=>{
         const role = m.role==='user' ? 'user' : 'assistant';
-        const avatar = role==='user' ? '🙋' : '👶';
+        const avatar = role==='user' ? userAvatar : '🤖';
         const label = role==='user' ? 'Vous' : 'Assistant';
         return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
       }).join('');
@@ -1026,7 +1028,7 @@ try {
       const typing = document.createElement('div');
       typing.id='ai-typing';
       typing.className='chat-line assistant';
-      typing.innerHTML='<div class="avatar">👶</div><div class="message"><div class="bubble assistant"><span class="typing"><span></span><span></span><span></span></span></div></div>';
+      typing.innerHTML='<div class="avatar">🤖</div><div class="message"><div class="bubble assistant"><span class="typing"><span></span><span></span><span></span></span></div></div>';
       msgsEl?.appendChild(typing);
       msgsEl?.scrollTo({ top: msgsEl.scrollHeight, behavior:"smooth" });
       try {
