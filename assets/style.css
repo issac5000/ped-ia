@@ -104,7 +104,7 @@ section{opacity:.8}
 
 .site-footer{border-top:1px solid rgba(255,255,255,.12); margin-top:56px; background:#000000; color:#e9edff}
 .site-footer .container{padding:24px 0}
-.site-footer .brand-synap{color:var(--violet-strong); font-weight:700}
+.site-footer .brand-synap{color:var(--blue-strong); font-weight:700}
 .site-footer .brand-kids{color:var(--orange-strong); font-weight:700}
 /* New simple footer (no patch-styled links) */
 .footer-simple{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap}
