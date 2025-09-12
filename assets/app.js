@@ -385,27 +385,30 @@ try {
 
     // Full-page particles for routes (dashboard uses full-viewport fixed canvas)
     let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
-    function startRouteParticles(){
-      try {
-        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-        const route = document.querySelector('.route.active');
-        if (!route) return;
-        const isDashboard = route.getAttribute('data-route') === '/dashboard';
-        const cvs = document.createElement('canvas');
-        // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page
-        if (isDashboard) {
-          cvs.className = 'route-canvas route-canvas-fixed';
-          document.body.prepend(cvs);
-        } else {
-          cvs.className = 'route-canvas';
-          route.prepend(cvs);
-        }
-        const width = isDashboard ? window.innerWidth : route.clientWidth;
-        const height = isDashboard ? window.innerHeight : route.scrollHeight;
-        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        cvs.width = Math.floor(width * dpr);
-        cvs.height = Math.floor(height * dpr);
-        const ctx = cvs.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  function startRouteParticles(){
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const route = document.querySelector('.route.active');
+      if (!route) return;
+      const isDashboard = route.getAttribute('data-route') === '/dashboard';
+      const isIOS = (() => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))();
+      // Use fixed full-viewport canvas on dashboard except on iOS where it breaks URL bar collapsing
+      const useFixed = isDashboard && !isIOS;
+      const cvs = document.createElement('canvas');
+      // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page (except on iOS)
+      if (useFixed) {
+        cvs.className = 'route-canvas route-canvas-fixed';
+        document.body.prepend(cvs);
+      } else {
+        cvs.className = 'route-canvas';
+        route.prepend(cvs);
+      }
+      const width = useFixed ? window.innerWidth : route.clientWidth;
+      const height = useFixed ? window.innerHeight : route.scrollHeight;
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      cvs.width = Math.floor(width * dpr);
+      cvs.height = Math.floor(height * dpr);
+      const ctx = cvs.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
         // palette from CSS variables
         const cs = getComputedStyle(document.documentElement);
         const palette = [
@@ -434,17 +437,17 @@ try {
           });
         }
         routeParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, route, dpr, observer: null };
-        const step = (t)=>{
-          const now = t || performance.now();
-          const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
-          routeParticles.lastT = now;
-          const W = isDashboard ? window.innerWidth : route.clientWidth;
-          const H = isDashboard ? window.innerHeight : route.scrollHeight;
-          const dpr = routeParticles.dpr;
-          ctx.setTransform(dpr,0,0,dpr,0,0);
-          ctx.clearRect(0,0,W,H);
-          for (const p of routeParticles.parts){
-            p.drift += p.spin*dt;
+      const step = (t)=>{
+        const now = t || performance.now();
+        const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
+        routeParticles.lastT = now;
+        const W = useFixed ? window.innerWidth : route.clientWidth;
+        const H = useFixed ? window.innerHeight : route.scrollHeight;
+        const dpr = routeParticles.dpr;
+        ctx.setTransform(dpr,0,0,dpr,0,0);
+        ctx.clearRect(0,0,W,H);
+        for (const p of routeParticles.parts){
+          p.drift += p.spin*dt;
             p.x += p.vx + Math.cos(p.drift)*.04;
             p.y += p.vy + Math.sin(p.drift)*.04;
             if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
@@ -456,15 +459,15 @@ try {
           routeParticles.raf = requestAnimationFrame(step);
         };
         routeParticles.raf = requestAnimationFrame(step);
-        const onR = ()=>{
-          const width = isDashboard ? window.innerWidth : route.clientWidth;
-          const height = isDashboard ? window.innerHeight : route.scrollHeight;
-          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-          cvs.width = Math.floor(width * dpr);
-          cvs.height = Math.floor(height * dpr);
-          routeParticles.dpr = dpr;
-          routeParticles.ctx?.setTransform(dpr,0,0,dpr,0,0);
-        };
+      const onR = ()=>{
+        const width = useFixed ? window.innerWidth : route.clientWidth;
+        const height = useFixed ? window.innerHeight : route.scrollHeight;
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        cvs.width = Math.floor(width * dpr);
+        cvs.height = Math.floor(height * dpr);
+        routeParticles.dpr = dpr;
+        routeParticles.ctx?.setTransform(dpr,0,0,dpr,0,0);
+      };
         window.addEventListener('resize', onR);
         routeParticles.resize = onR;
         if (!isDashboard && window.ResizeObserver) {
