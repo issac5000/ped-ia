@@ -2657,7 +2657,16 @@ try {
   }
 
   // SVG Chart utils (lightweight)
-  function buildSeries(list){ return [{color:'var(--turquoise)', data:list.filter(p=>Number.isFinite(p.y))}]; }
+  // Helper to build a single series of child data for generic charts.
+  // Marking it as `isChild` ensures points (incl. latest breathing dot)
+  // are rendered like in the WHO growth charts.
+  function buildSeries(list){
+    return [{
+      color: 'var(--turquoise)',
+      data: list.filter(p => Number.isFinite(p.y)),
+      isChild: true
+    }];
+  }
   function drawChart(svg, seriesA, seriesB){ drawMulti(svg, [...(seriesA||[]), ...(seriesB?[{color:'var(--violet)', data:seriesB[0].data}]:[])]); }
 
   function drawMulti(svg, series){
