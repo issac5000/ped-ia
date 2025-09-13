@@ -333,12 +333,13 @@ async function deleteConversation(otherId){
       body: JSON.stringify({ otherId: id })
     });
     if(!r.ok){
-      const t = await r.text().catch(()=> '');
-      throw new Error(`HTTP ${r.status}: ${t}`);
+      let info = '';
+      try { const j = await r.json(); info = j?.error ? `${j.error}${j.details?` - ${j.details}`:''}` : (await r.text()); } catch{}
+      throw new Error(`HTTP ${r.status}${info?`: ${info}`:''}`);
     }
   } catch (e){
     console.error('delete conv', e);
-    alert('Erreur lors de la suppression.');
+    alert(`Erreur lors de la suppression. ${e?.message||''}`);
     return;
   }
   parents = parents.filter(p=>p.id!==id);

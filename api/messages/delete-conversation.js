@@ -11,8 +11,9 @@ export default async function handler(req, res) {
 
   try {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    if (!serviceKey || !url) return res.status(500).json({ error: 'Server misconfigured' });
+    const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+    if (!serviceKey || !supaUrl) return res.status(500).json({ error: 'Server misconfigured' });
 
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
@@ -28,21 +29,36 @@ export default async function handler(req, res) {
     const otherId = String(body.otherId || '').trim();
     if (!otherId) return res.status(400).json({ error: 'otherId required' });
 
-    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-    const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    // Verify user token with GoTrue
+    const uRes = await fetch(`${supaUrl}/auth/v1/user`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': anonKey || serviceKey
+      }
+    });
+    if (!uRes.ok) {
+      const t = await uRes.text().catch(()=>'');
+      return res.status(401).json({ error: 'Invalid token', details: t });
+    }
+    const uJson = await uRes.json();
+    const uid = String(uJson?.id || uJson?.user?.id || '').trim();
+    if (!uid) return res.status(401).json({ error: 'Invalid token' });
 
-    // Verify the caller's token and get their user id
-    const { data: userData, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userData?.user?.id) return res.status(401).json({ error: 'Invalid token' });
-    const uid = String(userData.user.id);
-
-    // Only allow deleting a conversation where the caller is a participant
-    // Perform a single delete covering both directions
-    const { error: delErr } = await admin
-      .from('messages')
-      .delete()
-      .or(`and(sender_id.eq.${uid},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${uid})`);
-    if (delErr) return res.status(500).json({ error: 'Delete failed', details: delErr.message || String(delErr) });
+    // Delete all messages in both directions using PostgREST
+    const inner = `and(sender_id.eq.${uid},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${uid})`;
+    const orParam = encodeURIComponent(inner);
+    const dRes = await fetch(`${supaUrl}/rest/v1/messages?or=(${orParam})`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+        'Prefer': 'return=minimal'
+      }
+    });
+    if (!dRes.ok) {
+      const t = await dRes.text().catch(()=> '');
+      return res.status(500).json({ error: 'Delete failed', details: t });
+    }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({ ok: true });
@@ -50,4 +66,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server error', details: String(e.message || e) });
   }
 }
-

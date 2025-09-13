@@ -195,6 +195,54 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Delete conversation (local dev server parity with Vercel function)
+  if (req.method === 'POST' && url.pathname === '/api/messages/delete-conversation') {
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+      const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+      if (!serviceKey || !supaUrl) return send(res, 500, JSON.stringify({ error:'Server misconfigured' }), { 'Content-Type':'application/json' });
+
+      const auth = req.headers['authorization'] || '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      if (!token) return send(res, 401, JSON.stringify({ error:'Missing Authorization' }), { 'Content-Type':'application/json' });
+
+      const body = await parseJson(req);
+      const otherId = String(body.otherId || '').trim();
+      if (!otherId) return send(res, 400, JSON.stringify({ error:'otherId required' }), { 'Content-Type':'application/json' });
+
+      const uRes = await fetch(`${supaUrl}/auth/v1/user`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': anonKey || serviceKey }
+      });
+      if (!uRes.ok) {
+        const t = await uRes.text().catch(()=> '');
+        return send(res, 401, JSON.stringify({ error:'Invalid token', details: t }), { 'Content-Type':'application/json' });
+      }
+      const uJson = await uRes.json();
+      const uid = String(uJson?.id || uJson?.user?.id || '').trim();
+      if (!uid) return send(res, 401, JSON.stringify({ error:'Invalid token' }), { 'Content-Type':'application/json' });
+
+      const inner = `and(sender_id.eq.${uid},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${uid})`;
+      const orParam = encodeURIComponent(inner);
+      const dRes = await fetch(`${supaUrl}/rest/v1/messages?or=(${orParam})`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Prefer': 'return=minimal'
+        }
+      });
+      if (!dRes.ok) {
+        const t = await dRes.text().catch(()=> '');
+        return send(res, 500, JSON.stringify({ error:'Delete failed', details: t }), { 'Content-Type':'application/json' });
+      }
+
+      return send(res, 200, JSON.stringify({ ok:true }), { 'Content-Type':'application/json' });
+    } catch (e) {
+      return send(res, 500, JSON.stringify({ error:'Server error', details: String(e.message || e) }), { 'Content-Type':'application/json' });
+    }
+  }
+
   // Static
   return handleStatic(req, res);
 });
