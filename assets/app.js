@@ -1,5 +1,6 @@
 let notifCount = 0;
 const NOTIF_LAST_KEY = 'pedia_notif_last';
+const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
@@ -134,8 +135,7 @@ try {
         if (authSession?.user) {
           setupRealtimeNotifications();
           updateBadgeFromStore();
-          replayUnseenNotifs();
-          fetchMissedNotifications();
+          if (!hasBootedNotifs()) { replayUnseenNotifs(); fetchMissedNotifications(); markBootedNotifs(); }
         } else {
           // cleanup channels on logout
           try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
@@ -148,8 +148,12 @@ try {
       } else {
         location.hash = authSession?.user ? '#/dashboard' : '#/';
       }
-      // Bind notifications for existing session and replay unseen ones on open
-      if (authSession?.user) { setupRealtimeNotifications(); updateBadgeFromStore(); replayUnseenNotifs(); fetchMissedNotifications(); }
+      // Bind notifications for existing session and replay once on open
+      if (authSession?.user) {
+        setupRealtimeNotifications();
+        updateBadgeFromStore();
+        if (!hasBootedNotifs()) { replayUnseenNotifs(); fetchMissedNotifications(); markBootedNotifs(); }
+      }
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
@@ -459,6 +463,10 @@ try {
       updateBadgeFromStore();
     } catch (e) { console.warn('fetchMissedNotifications error', e); }
   }
+
+  // Avoid replaying notifications on every route change: guard per session
+  function hasBootedNotifs(){ try { return sessionStorage.getItem(NOTIF_BOOT_FLAG) === '1'; } catch { return false; } }
+  function markBootedNotifs(){ try { sessionStorage.setItem(NOTIF_BOOT_FLAG, '1'); } catch {} }
 
   function setupRealtimeNotifications(){
     try {
