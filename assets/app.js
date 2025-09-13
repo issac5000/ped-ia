@@ -234,44 +234,19 @@ try {
     bd?.classList.remove('open');
   });
 
-  // Detect header overflow and toggle forced mobile header if needed
+  // Always use hamburger menu: force mobile nav layout regardless of width
   function evaluateHeaderFit(){
-    try {
-      const header = document.querySelector('.header-inner');
-      const brand = header?.querySelector('.brand');
-      const nav = header?.querySelector('#main-nav');
-      const auth = header?.querySelector('.auth-actions');
-      if (!header || !brand || !nav || !auth) return;
-      const padding = 40; // spacing/gap buffer
-      const cs = getComputedStyle(header);
-      const areas = (cs.gridTemplateAreas || '').toString();
-      const twoRowLayout = areas.includes('nav'); // matches the medium breakpoint layout with nav on its own row
-      let needMobile = false;
-      if (twoRowLayout) {
-        // In two-row layout, only switch to mobile if nav itself overflows container width
-        needMobile = nav.scrollWidth > header.clientWidth;
-      } else {
-        // Single-row layout: compute true overflow
-        const total = brand.offsetWidth + nav.scrollWidth + auth.offsetWidth + padding;
-        needMobile = total > header.clientWidth;
-      }
-      document.body.classList.toggle('force-mobile', needMobile);
-    } catch {}
+    document.body.classList.add('force-mobile');
   }
 
   // On resize/orientation, re-evaluate header fit and reset menu state if not mobile
   function onViewportChange(){
-    // Fallback: if viewport is wide, drop mobile mode before measuring
-    if (window.innerWidth >= 900) document.body.classList.remove('force-mobile');
-    // Measure and decide
-    evaluateHeaderFit();
-    const isMobile = document.body.classList.contains('force-mobile');
-    if (!isMobile) {
-      // Ensure desktop state: nav visible, hamburger closed, backdrop hidden
-      mainNav?.classList.remove('open');
+    // Always keep mobile mode
+    document.body.classList.add('force-mobile');
+    // Ensure overlay state remains consistent when resizing
+    if (!mainNav?.classList.contains('open')) {
       navBtn?.setAttribute('aria-expanded','false');
       navBackdrop?.classList.remove('open');
-      if (mainNav) mainNav.style.removeProperty('display');
     }
   }
   window.addEventListener('resize', onViewportChange);
