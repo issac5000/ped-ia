@@ -2091,20 +2091,27 @@ try {
         el.className = 'topic';
         const author = authorsMap.get(t.user_id) || 'Anonyme';
         const rs = (replies.get(t.id) || []).sort((a,b)=>a.created_at-b.created_at);
+        const openSet = (renderCommunity._open = renderCommunity._open || new Set());
+        const tid = String(t.id);
+        const isOpen = openSet.has(tid);
+        const toggleLabel = isOpen ? 'Réduire la publication' : 'Afficher les commentaires';
+        const toggleCount = rs.length ? ` (${rs.length})` : '';
         el.innerHTML = `
           <div class="flex-between">
             <h3 style="margin:0">${escapeHtml(title)}</h3>
-            <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span><a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a></div>
+            <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span><a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a><button class="btn btn-secondary" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}">${toggleLabel}${toggleCount}</button></div>
           </div>
-          <p>${escapeHtml(t.content)}</p>
-          <div class="stack">
-            ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">💬 Message privé</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+          <div class="topic-body" data-body="${tid}" style="${isOpen?'':'display:none'}">
+            <p style="margin-top:8px">${escapeHtml(t.content)}</p>
+            <div class="stack">
+              ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">💬 Message privé</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+            </div>
+            <form data-id="${tid}" class="form-reply form-grid" style="margin-top:8px">
+              <label>Réponse<textarea name="content" rows="2" required></textarea></label>
+              <button class="btn btn-secondary" type="submit">Répondre</button>
+            </form>
+            ${ (authSession?.user?.id && t.user_id===authSession.user.id) ? `<button class="btn btn-danger" data-del-topic="${tid}" style="margin-top:8px">Supprimer le sujet</button>`:''}
           </div>
-          <form data-id="${t.id}" class="form-reply form-grid" style="margin-top:8px">
-            <label>Réponse<textarea name="content" rows="2" required></textarea></label>
-            <button class="btn btn-secondary" type="submit">Répondre</button>
-          </form>
-          ${ (authSession?.user?.id && t.user_id===authSession.user.id) ? `<button class="btn btn-danger" data-del-topic="${t.id}" style="margin-top:8px">Supprimer le sujet</button>`:''}
         `;
         list.appendChild(el);
       });
@@ -2144,9 +2151,24 @@ try {
           } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
         });
       });
-      // Delete topic buttons (delegate once; guard busy)
+      // Delegated actions: toggle/collapse and delete (guard busy)
       if (!list.dataset.delBound) {
         list.addEventListener('click', async (e)=>{
+          // Toggle expand/collapse
+          const tgl = e.target.closest('[data-toggle-comments]');
+          if (tgl) {
+            e.preventDefault();
+            const id = tgl.getAttribute('data-toggle-comments');
+            const body = list.querySelector(`[data-body="${id}"]`);
+            const openSet = (renderCommunity._open = renderCommunity._open || new Set());
+            const isOpen = openSet.has(id);
+            if (body) {
+              if (isOpen) { body.style.display = 'none'; openSet.delete(id); tgl.setAttribute('aria-expanded','false'); tgl.textContent = tgl.textContent.replace('Réduire la publication', 'Afficher les commentaires'); }
+              else { body.style.display = ''; openSet.add(id); tgl.setAttribute('aria-expanded','true'); tgl.textContent = tgl.textContent.replace('Afficher les commentaires', 'Réduire la publication'); }
+            }
+            return;
+          }
+          // Delete topic
           const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
           if (btn.dataset.busy === '1') return; btn.dataset.busy='1'; btn.disabled = true;
           const id = btn.getAttribute('data-del-topic');
