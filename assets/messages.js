@@ -451,12 +451,11 @@ function renderParentList(){
     const li = document.createElement('li');
     li.className='parent-item';
     li.dataset.id = p.id;
-    const snippet = last? escapeHTML(last.content.slice(0,50)) : 'Aucun message';
     const time = last? new Date(last.created_at).toLocaleString() : '';
     li.innerHTML = `
       <div class="meta">
         <div class="name">${escapeHTML(p.full_name||'Parent')}</div>
-        <div class="last-msg">${snippet}${time?`<br><time>${time}</time>`:''}</div>
+        ${time?`<time>${time}</time>`:''}
       </div>
       <button class="del-btn" title="Supprimer">✖</button>`;
     li.addEventListener('click', ()=>openConversation(p.id));
