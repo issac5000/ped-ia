@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     // Build PostgREST in() filter list: ("id1","id2")
     const escaped = ids.map(id => String(id).replace(/"/g, '""'));
     const list = `(${escaped.map(id=>`"${id}"`).join(',')})`;
-    const q = `${supaUrl}/rest/v1/profiles?select=id,full_name,avatar_url&id=in.${encodeURIComponent(list)}`;
+    const q = `${supaUrl}/rest/v1/profiles?select=id,full_name&id=in.${encodeURIComponent(list)}`;
     const pRes = await fetch(q, {
       headers: {
         'apikey': serviceKey,
@@ -78,4 +78,3 @@ export default async function handler(req, res) {
     return res.end(JSON.stringify({ error: 'Server error', details: String(e.message || e) }));
   }
 }
-

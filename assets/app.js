@@ -685,24 +685,18 @@ try {
       if (!supabase || !user?.id) return;
       const uid = user.id;
       const metaName = user.user_metadata?.full_name || user.email || '';
-      const metaAvatar = user.user_metadata?.avatar_url || null;
       // Check existing profile
       const { data: existing, error: selErr } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url')
+        .select('id, full_name')
         .eq('id', uid)
         .maybeSingle();
       if (selErr) throw selErr;
       if (!existing) {
-        // Insert new profile with metadata defaults
-        await supabase.from('profiles').insert({ id: uid, full_name: metaName, avatar_url: metaAvatar });
+        // Insert new profile with metadata defaults (no avatar)
+        await supabase.from('profiles').insert({ id: uid, full_name: metaName });
       } else {
-        // Do not override a user‑chosen full_name; only fill missing avatar
-        const next = {};
-        if (!existing.avatar_url && metaAvatar) next.avatar_url = metaAvatar;
-        if (Object.keys(next).length) {
-          await supabase.from('profiles').update(next).eq('id', uid);
-        }
+        // Do not override a user‑chosen full_name; nothing else to update
       }
     } catch (e) {
       if (DEBUG_AUTH) console.warn('ensureProfile failed', e);

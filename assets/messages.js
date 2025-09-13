@@ -277,21 +277,21 @@ async function loadConversations(){
       });
       if (r.ok) {
         const j = await r.json();
-        profiles = (j.profiles||[]).map(p=>({ ...p, id:idStr(p.id) }));
+        profiles = (j.profiles||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
       } else {
-        const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
-        profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
+        const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', ids);
+        profiles = (profs||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
       }
     } catch {
-      const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
-      profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
+      const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', ids);
+      profiles = (profs||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
     }
   }
   parents = profiles;
   // Some conversations may involve users without a profile entry.
   // Ensure those ids still appear in the list with a placeholder profile
   ids.forEach(id=>{
-    if(!parents.some(p=>p.id===id)) parents.push({ id, full_name:'Parent', avatar_url:null });
+    if(!parents.some(p=>p.id===id)) parents.push({ id, full_name:'Parent' });
   });
   lastMessages = convMap;
   renderParentList();
@@ -313,7 +313,6 @@ function renderParentList(){
     const snippet = last? escapeHTML(last.content.slice(0,50)) : 'Aucun message';
     const time = last? new Date(last.created_at).toLocaleString() : '';
     li.innerHTML = `
-      <img src="${p.avatar_url||'/logo.png'}" alt="" class="avatar" width="32" height="32">
       <div class="meta">
         <div class="name">${escapeHTML(p.full_name||'Parent')}</div>
         <div class="last-msg">${snippet}${time?`<br><time>${time}</time>`:''}</div>
@@ -329,7 +328,7 @@ function renderParentList(){
 async function ensureConversation(otherId){
   const id = idStr(otherId);
   if(parents.some(p=>p.id===id)) return;
-  let profile = { id, full_name:'Parent', avatar_url:null };
+  let profile = { id, full_name:'Parent' };
   try {
     const { data: { session: s } } = await supabase.auth.getSession();
     const token = s?.access_token || '';
@@ -341,14 +340,14 @@ async function ensureConversation(otherId){
     if (r.ok) {
       const j = await r.json();
       const p = (j.profiles||[])[0];
-      if (p) profile = { ...p, id: idStr(p.id) };
+      if (p) profile = { id: idStr(p.id), full_name: p.full_name };
     } else {
-      const { data } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).maybeSingle();
-      if (data) profile = { ...data, id:idStr(data.id) };
+      const { data } = await supabase.from('profiles').select('id,full_name').eq('id', id).maybeSingle();
+      if (data) profile = { id:idStr(data.id), full_name: data.full_name };
     }
   } catch {
-    const { data } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).maybeSingle();
-    if (data) profile = { ...data, id:idStr(data.id) };
+    const { data } = await supabase.from('profiles').select('id,full_name').eq('id', id).maybeSingle();
+    if (data) profile = { id:idStr(data.id), full_name: data.full_name };
   }
   parents.push(profile);
   lastMessages.set(id, null);
