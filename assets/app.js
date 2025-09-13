@@ -1,4 +1,5 @@
 let notifCount = 0;
+const NOTIF_LAST_KEY = 'pedia_notif_last';
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
@@ -383,7 +384,6 @@ try {
   }
 
   // Last-seen timestamps to fetch missed notifications at login
-  const NOTIF_LAST_KEY = 'pedia_notif_last';
   function getNotifLast(){ return store.get(NOTIF_LAST_KEY, {}); }
   function setNotifLast(obj){ store.set(NOTIF_LAST_KEY, obj); }
   function getNotifLastSince(kind){ const o = getNotifLast(); return o[kind] || null; }

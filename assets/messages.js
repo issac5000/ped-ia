@@ -524,6 +524,10 @@ async function deleteConversation(otherId){
     $('#conversation').innerHTML='';
     if(messagesChannel) await supabase.removeChannel(messagesChannel);
     messagesChannel=null;
+    const cw = document.querySelector('.chat-window');
+    if (cw) cw.classList.remove('open');
+    const ph = document.getElementById('chat-placeholder');
+    if (ph) ph.classList.remove('hidden');
   }
   renderParentList();
 }
@@ -537,6 +541,10 @@ async function openConversation(otherId){
   $('#conversation').innerHTML='';
   await fetchConversation(id);
   setupMessageSubscription(id);
+  const cw = document.querySelector('.chat-window');
+  if (cw) cw.classList.add('open');
+  const ph = document.getElementById('chat-placeholder');
+  if (ph) ph.classList.add('hidden');
 }
 
 async function fetchConversation(otherId){
