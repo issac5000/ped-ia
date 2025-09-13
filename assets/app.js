@@ -355,17 +355,25 @@ try {
     } catch {}
   }
 
-  // Badge on Messages nav link
-  function setMessagesBadge(n){
-    notifCount = Math.max(0, n|0);
-    const link = document.querySelector('#main-nav a[href="messages.html"]');
+  // Badges on nav links (messages + community)
+  function setNavBadgeFor(hrefSel, n){
+    const link = document.querySelector(`#main-nav a[href="${hrefSel}"]`);
     if (!link) return;
     let b = link.querySelector('.nav-badge');
     if (!b) { b = document.createElement('span'); b.className = 'nav-badge'; link.appendChild(b); }
-    b.textContent = String(notifCount);
-    b.hidden = notifCount === 0;
+    b.textContent = String(Math.max(0, n|0));
+    b.hidden = (n|0) === 0;
   }
-  function bumpMessagesBadge(){ setMessagesBadge((notifCount|0)+1); }
+  function countsByKind(){
+    const arr = loadNotifs();
+    let msg = 0, reply = 0;
+    for (const n of arr) { if (!n.seen) { if (n.kind==='msg') msg++; else if (n.kind==='reply') reply++; } }
+    return { msg, reply };
+  }
+  function bumpMessagesBadge(){
+    // Keep for compatibility: recompute all badges from store
+    updateBadgeFromStore();
+  }
 
   // --- Unseen notifications persistence (localStorage) ---
   function loadNotifs(){ return store.get(K.notifs, []); }
@@ -378,9 +386,13 @@ try {
   function markNotifSeen(id){ const arr = loadNotifs(); const i = arr.findIndex(x=>x.id===id); if (i>=0) { arr[i].seen=true; saveNotifs(arr); } updateBadgeFromStore(); }
   function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); setNotifLastNow(kind); updateBadgeFromStore(); }
   function unseenNotifs(){ return loadNotifs().filter(x=>!x.seen); }
-  function updateBadgeFromStore(count = notifCount){
-    if (typeof count !== 'number') count = unseenNotifs().length;
-    setMessagesBadge(count);
+  function updateBadgeFromStore(){
+    const { msg, reply } = countsByKind();
+    setNavBadgeFor('messages.html', msg);
+    setNavBadgeFor('#/community', reply);
+  }
+  function isNotifUnseen(id){
+    try { return unseenNotifs().some(x => x.id === id); } catch { return false; }
   }
   function replayUnseenNotifs(){
     unseenNotifs().forEach(n => {
@@ -425,7 +437,9 @@ try {
           const fromName = names.get(m.sender_id) || 'Un parent';
           const notifId = `msg:${m.id}`;
           addNotif({ id:notifId, kind:'msg', fromId:m.sender_id, fromName, createdAt:m.created_at });
-          showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${m.sender_id}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
+          if (isNotifUnseen(notifId)) {
+            showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${m.sender_id}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
+          }
         }
       }
       // Replies to topics I own or where I already commented since last seen
@@ -462,7 +476,9 @@ try {
             const title = titleMap.get(r.topic_id) || '';
             const notifId = `reply:${r.id}`;
             addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
-            showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('reply'); } });
+            if (isNotifUnseen(notifId)) {
+              showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('reply'); } });
+            }
           }
         }
       }
@@ -504,7 +520,7 @@ try {
             actionLabel: 'Ouvrir',
             onAcknowledge: () => markNotifSeen(notifId)
           });
-          bumpMessagesBadge();
+          updateBadgeFromStore();
         })
         .subscribe();
       notifChannels.push(chMsg);
@@ -548,7 +564,7 @@ try {
               actionLabel: 'Voir',
               onAcknowledge: () => markNotifSeen(notifId)
             });
-            bumpMessagesBadge();
+            updateBadgeFromStore();
           } catch {}
         })
         .subscribe();
@@ -556,10 +572,13 @@ try {
     } catch {}
   }
 
-  // Clear badge when user visits Messages
+  // Clear badges when user visits pages
   window.addEventListener('DOMContentLoaded', () => {
     const link = document.querySelector('#main-nav a[href="messages.html"]');
-    link?.addEventListener('click', () => { markAllByTypeSeen('msg'); });
+    // For Messages: only hide the badge on click; real 'seen' occurs when opening a conversation
+    link?.addEventListener('click', () => { try { setNavBadgeFor('messages.html', 0); } catch {} });
+    const linkComm = document.querySelector('#main-nav a[href="#/community"]');
+    linkComm?.addEventListener('click', () => { markAllByTypeSeen('reply'); });
   });
 
   // Mark community notifications as seen when visiting the community page

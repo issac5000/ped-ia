@@ -134,7 +134,7 @@ function showNotification({ title='Notification', text='', actionHref='', action
     const link = toast.querySelector('.nt-link');
     if (actionHref) { link.setAttribute('href', actionHref); link.hidden=false; } else { link.hidden=true; }
     const hide = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch (e) { toast.remove(); } };
-    const acknowledge = () => { hide(); markAllByTypeSeen('msg'); };
+    const acknowledge = () => { hide(); };
     toast.querySelector('.nt-close').addEventListener('click', acknowledge);
     link.addEventListener('click', acknowledge);
     host.appendChild(toast);
@@ -144,15 +144,20 @@ function showNotification({ title='Notification', text='', actionHref='', action
     toast.addEventListener('mouseleave', () => setTimeout(hide, 1500));
   } catch (e) {}
 }
-function setMessagesBadge(n){
-  notifCount = Math.max(0, n|0);
-  const link = document.querySelector('#main-nav a[href="messages.html"]');
+function setNavBadgeFor(hrefSel, n){
+  const link = document.querySelector(`#main-nav a[href="${hrefSel}"]`);
   if (!link) return;
   let b = link.querySelector('.nav-badge');
   if (!b) { b=document.createElement('span'); b.className='nav-badge'; link.appendChild(b); }
-  b.textContent = String(notifCount); b.hidden = notifCount===0;
+  b.textContent = String(Math.max(0, n|0)); b.hidden = (n|0)===0;
 }
-function bumpMessagesBadge(){ setMessagesBadge((notifCount|0)+1); }
+function countsByKind(){
+  const arr = loadNotifs();
+  let msg=0, reply=0; for(const n of arr){ if(!n.seen){ if(n.kind==='msg') msg++; else if(n.kind==='reply') reply++; } }
+  return { msg, reply };
+}
+function updateBadges(){ const { msg, reply } = countsByKind(); setNavBadgeFor('messages.html', msg); setNavBadgeFor('#/community', reply); }
+function bumpMessagesBadge(){ updateBadges(); }
 
 // Persist unseen notifications (shared with SPA via localStorage)
 const NOTIF_STORE = 'pedia_notifs';
@@ -161,7 +166,7 @@ function saveNotifs(arr){ try { localStorage.setItem(NOTIF_STORE, JSON.stringify
 function addNotif(n){ const arr = loadNotifs(); if(!arr.some(x=>x.id===n.id)) { arr.push({ ...n, seen:false }); saveNotifs(arr); } updateBadgeFromStore(); }
 function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); setNotifLastNow(kind); updateBadgeFromStore(); }
 function unseen(){ return loadNotifs().filter(x=>!x.seen); }
-function updateBadgeFromStore(){ setMessagesBadge(unseen().length); }
+function updateBadgeFromStore(){ updateBadges(); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
 // Unread helpers per sender
@@ -177,6 +182,7 @@ function markSenderSeen(otherId){
 
 // Missed messages since last seen
 const NOTIF_LAST_KEY = 'pedia_notif_last';
+function isNotifUnseen(id){ try { return loadNotifs().some(n=>n.id===id && !n.seen); } catch { return false; } }
 function getNotifLast(){ try { return JSON.parse(localStorage.getItem(NOTIF_LAST_KEY)) || {}; } catch (e) { return {}; } }
 function setNotifLast(o){ try { localStorage.setItem(NOTIF_LAST_KEY, JSON.stringify(o)); } catch (e) {} }
 function getNotifLastSince(kind){ const o=getNotifLast(); return o[kind] || null; }
@@ -200,10 +206,13 @@ async function fetchMissedMessages(){
       for (const m of msgs) {
         const fromId = idStr(m.sender_id);
         const fromName = names.get(fromId) || 'Un parent';
-        addNotif({ id:`msg:${m.id}`, kind:'msg', fromId, fromName, createdAt:m.created_at });
-        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
+        const notifId = `msg:${m.id}`;
+        addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
+        if (isNotifUnseen(notifId)) {
+          showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
+        }
       }
-      updateBadgeFromStore();
+      updateBadges();
     }
   } catch (e) {}
 }
@@ -418,10 +427,13 @@ async function init(){
           for (const r of reps) {
             const who = names.get(String(r.user_id)) || 'Un parent';
             const title = titleMap.get(r.topic_id) || '';
-            addNotif({ id:`reply:${r.id}`, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
-            showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+            const notifId = `reply:${r.id}`;
+            addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
+            if (isNotifUnseen(notifId)) {
+              showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+            }
           }
-          updateBadgeFromStore();
+          updateBadges();
         }
       }
       }
@@ -680,7 +692,7 @@ function setupRealtimeNotifications(){
       try { const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle(); if (data?.full_name) fromName=data.full_name; } catch (e) {}
       addNotif({ id:`msg:${row.id}`, kind:'msg', fromId, fromName, createdAt: row.created_at });
       showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
-      bumpMessagesBadge();
+      updateBadges();
       // Refresh conversation list to reflect unread dots
       try { renderParentList(); } catch (e) {}
     })
@@ -707,7 +719,7 @@ function setupRealtimeNotifications(){
           let who='Un parent'; try { const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle(); if (prof?.full_name) who=prof.full_name; } catch (e) {}
           const title=(topic.title||'').replace(/^\[(.*?)\]\s*/, '');
           showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
-          bumpMessagesBadge();
+          updateBadges();
         } catch (e) {}
       })
       .subscribe();
