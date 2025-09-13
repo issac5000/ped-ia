@@ -43,6 +43,7 @@ console.log('DEBUG: app.js chargé');
     privacy: 'pedia_privacy',
     session: 'pedia_session',
     messages: 'pedia_messages',
+    notifs: 'pedia_notifs',
     childUpdates: 'pedia_child_updates'
   };
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
@@ -142,8 +143,8 @@ try {
       } else {
         location.hash = authSession?.user ? '#/dashboard' : '#/';
       }
-      // Bind notifications for existing session
-      if (authSession?.user) setupRealtimeNotifications();
+      // Bind notifications for existing session and replay unseen ones on open
+      if (authSession?.user) { setupRealtimeNotifications(); updateBadgeFromStore(); replayUnseenNotifs(); }
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
@@ -306,7 +307,7 @@ try {
   }
   function showNotification(opts){
     try {
-      const { title = 'Notification', text = '', actionHref = '', actionLabel = 'Voir' } = opts || {};
+      const { title = 'Notification', text = '', actionHref = '', actionLabel = 'Voir', onAcknowledge } = opts || {};
       const host = getToastHost();
       // Cap the stack to 4 by removing the oldest
       while (host.children.length >= 4) host.removeChild(host.firstElementChild);
@@ -327,15 +328,16 @@ try {
       const link = toast.querySelector('.nt-link');
       if (actionHref) { link.setAttribute('href', actionHref); link.hidden = false; }
       else { link.hidden = true; }
-      const close = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } };
-      toast.querySelector('.nt-close').addEventListener('click', close);
-      link.addEventListener('click', close);
+      const hide = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } };
+      const acknowledge = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } finally { try { onAcknowledge && onAcknowledge(); } catch {} } };
+      toast.querySelector('.nt-close').addEventListener('click', acknowledge);
+      link.addEventListener('click', acknowledge);
       host.appendChild(toast);
       // Discreet sound on notification
       playNotifySound();
-      const timer = setTimeout(close, 4000);
+      const timer = setTimeout(hide, 4000);
       toast.addEventListener('mouseenter', () => clearTimeout(timer));
-      toast.addEventListener('mouseleave', () => setTimeout(close, 1500));
+      toast.addEventListener('mouseleave', () => setTimeout(hide, 1500));
     } catch {}
   }
 
@@ -350,6 +352,29 @@ try {
     b.hidden = notifCount === 0;
   }
   function bumpMessagesBadge(){ setMessagesBadge((notifCount|0)+1); }
+
+  // --- Unseen notifications persistence (localStorage) ---
+  function loadNotifs(){ return store.get(K.notifs, []); }
+  function saveNotifs(arr){ store.set(K.notifs, arr); }
+  function addNotif(n){
+    const arr = loadNotifs();
+    if (!arr.some(x=>x.id===n.id)) { arr.push({ ...n, seen:false }); saveNotifs(arr); }
+    updateBadgeFromStore();
+  }
+  function markNotifSeen(id){ const arr = loadNotifs(); const i = arr.findIndex(x=>x.id===id); if (i>=0) { arr[i].seen=true; saveNotifs(arr); } updateBadgeFromStore(); }
+  function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); updateBadgeFromStore(); }
+  function unseenNotifs(){ return loadNotifs().filter(x=>!x.seen); }
+  function updateBadgeFromStore(){ setMessagesBadge(unseenNotifs().length); }
+  function replayUnseenNotifs(){
+    unseenNotifs().forEach(n => {
+      if (n.kind==='msg') {
+        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => markNotifSeen(n.id) });
+      } else if (n.kind==='reply') {
+        const t = n.title ? ` « ${n.title} »` : '';
+        showNotification({ title:'Nouvelle réponse', text:`${n.who||'Un parent'} a répondu à votre publication${t}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => markNotifSeen(n.id) });
+      }
+    });
+  }
 
   function setupRealtimeNotifications(){
     try {
@@ -372,11 +397,14 @@ try {
             const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle();
             if (data?.full_name) fromName = data.full_name;
           } catch {}
+          const notifId = `msg:${row.id}`;
+          addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt: row.created_at });
           showNotification({
             title: 'Nouveau message',
             text: `Vous avez un nouveau message de ${fromName}`,
             actionHref: `messages.html?user=${fromId}`,
-            actionLabel: 'Ouvrir'
+            actionLabel: 'Ouvrir',
+            onAcknowledge: () => markNotifSeen(notifId)
           });
           bumpMessagesBadge();
         })
@@ -403,11 +431,14 @@ try {
               if (prof?.full_name) who = prof.full_name;
             } catch {}
             const title = (topic.title||'').replace(/^\[(.*?)\]\s*/, '');
+            const notifId = `reply:${r.id}`;
+            addNotif({ id:notifId, kind:'reply', who, title, topicId: r.topic_id, createdAt: r.created_at });
             showNotification({
               title: 'Nouvelle réponse',
               text: `${who} a répondu à votre publication${title?` « ${title} »`:''}`,
               actionHref: '#/community',
-              actionLabel: 'Voir'
+              actionLabel: 'Voir',
+              onAcknowledge: () => markNotifSeen(notifId)
             });
             bumpMessagesBadge();
           } catch {}
@@ -420,8 +451,18 @@ try {
   // Clear badge when user visits Messages
   window.addEventListener('DOMContentLoaded', () => {
     const link = document.querySelector('#main-nav a[href="messages.html"]');
-    link?.addEventListener('click', () => setMessagesBadge(0));
+    link?.addEventListener('click', () => { markAllByTypeSeen('msg'); });
   });
+
+  // Mark community notifications as seen when visiting the community page
+  const origSetActiveRoute = setActiveRoute;
+  setActiveRoute = function(hash){
+    origSetActiveRoute(hash);
+    try {
+      const path = (hash.replace('#','')||'/');
+      if (path === '/community') markAllByTypeSeen('reply');
+    } catch {}
+  };
 
   // Soft pastel particles in hero
   let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null };

@@ -9,6 +9,10 @@ let activeParent = null;
 let currentMessages = [];
 let messagesChannel = null;
 let navBtn, mainNav, navBackdrop;
+// Notifications
+let notifChannels = [];
+let notifCount = 0;
+let notifyAudioCtx = null;
 
 // Normalize all user IDs to strings to avoid type mismatches
 const idStr = id => String(id);
@@ -94,6 +98,70 @@ window.addEventListener('resize', () => {
   resizeRaf = requestAnimationFrame(onViewportChange);
 });
 window.addEventListener('load', evaluateHeaderFit);
+
+// ---- Toast notifications (same style as SPA) ----
+function getToastHost(){
+  let host = document.getElementById('notify-toasts');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'notify-toasts';
+    host.className = 'notify-toasts';
+    document.body.appendChild(host);
+  }
+  return host;
+}
+function playNotifySound(){
+  try {
+    notifyAudioCtx = notifyAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = notifyAudioCtx; const now = ctx.currentTime + 0.01;
+    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    osc.type='sine'; osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.06, now+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now+0.20);
+    osc.connect(gain).connect(ctx.destination); osc.start(now); osc.stop(now+0.22);
+  } catch {}
+}
+function showNotification({ title='Notification', text='', actionHref='', actionLabel='Voir' }={}){
+  try {
+    const host = getToastHost();
+    while (host.children.length >= 4) host.removeChild(host.firstElementChild);
+    const toast = document.createElement('div'); toast.className='notify-toast';
+    toast.innerHTML=`<div class="nt-content"><h3 class="nt-title"></h3><p class="nt-text"></p><div class="nt-actions"><button type="button" class="btn btn-secondary nt-close">Fermer</button><a class="btn btn-primary nt-link" href="#">${actionLabel}</a></div></div>`;
+    toast.querySelector('.nt-title').textContent = title;
+    toast.querySelector('.nt-text').textContent = text;
+    const link = toast.querySelector('.nt-link');
+    if (actionHref) { link.setAttribute('href', actionHref); link.hidden=false; } else { link.hidden=true; }
+    const hide = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } };
+    const acknowledge = () => { hide(); markAllByTypeSeen('msg'); };
+    toast.querySelector('.nt-close').addEventListener('click', acknowledge);
+    link.addEventListener('click', acknowledge);
+    host.appendChild(toast);
+    playNotifySound();
+    const timer = setTimeout(hide, 4000);
+    toast.addEventListener('mouseenter', () => clearTimeout(timer));
+    toast.addEventListener('mouseleave', () => setTimeout(hide, 1500));
+  } catch {}
+}
+function setMessagesBadge(n){
+  notifCount = Math.max(0, n|0);
+  const link = document.querySelector('#main-nav a[href="messages.html"]');
+  if (!link) return;
+  let b = link.querySelector('.nav-badge');
+  if (!b) { b=document.createElement('span'); b.className='nav-badge'; link.appendChild(b); }
+  b.textContent = String(notifCount); b.hidden = notifCount===0;
+}
+function bumpMessagesBadge(){ setMessagesBadge((notifCount|0)+1); }
+
+// Persist unseen notifications (shared with SPA via localStorage)
+const NOTIF_STORE = 'pedia_notifs';
+function loadNotifs(){ try { return JSON.parse(localStorage.getItem(NOTIF_STORE)) || []; } catch { return []; } }
+function saveNotifs(arr){ try { localStorage.setItem(NOTIF_STORE, JSON.stringify(arr)); } catch {} }
+function addNotif(n){ const arr = loadNotifs(); if(!arr.some(x=>x.id===n.id)) { arr.push({ ...n, seen:false }); saveNotifs(arr); } updateBadgeFromStore(); }
+function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); updateBadgeFromStore(); }
+function unseen(){ return loadNotifs().filter(x=>!x.seen); }
+function updateBadgeFromStore(){ setMessagesBadge(unseen().length); }
+function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
 // Soft pastel particles over entire page
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
@@ -244,6 +312,8 @@ async function init(){
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
+    // Bind realtime notifications on messages page as well
+    setupRealtimeNotifications();
   } catch (e){ console.error('Init error', e); }
 }
 
@@ -464,6 +534,45 @@ function setupMessageSubscription(otherId){
       }
     })
     .subscribe();
+}
+
+// Realtime notifications (messages to me, replies to my topics)
+function setupRealtimeNotifications(){
+  try {
+    if (!supabase || !user?.id) return;
+    // cleanup old
+    try { for(const ch of notifChannels) supabase.removeChannel(ch); } catch {}
+    notifChannels = [];
+    // messages to me
+  const chMsg = supabase
+    .channel('notify-messages-'+user.id)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`receiver_id=eq.${user.id}` }, async (payload) => {
+      const row = payload.new || {}; const fromId = idStr(row.sender_id);
+      let fromName = 'Un parent';
+      try { const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle(); if (data?.full_name) fromName=data.full_name; } catch {}
+      addNotif({ id:`msg:${row.id}`, kind:'msg', fromId, fromName, createdAt: row.created_at });
+      showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
+      bumpMessagesBadge();
+    })
+      .subscribe();
+    notifChannels.push(chMsg);
+    // replies to my topics
+    const chRep = supabase
+      .channel('notify-replies-'+user.id)
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'forum_replies' }, async (payload) => {
+        const r = payload.new || {}; if(!r?.topic_id) return; if (String(r.user_id)===String(user.id)) return;
+        try {
+          const { data: topic } = await supabase.from('forum_topics').select('id,user_id,title').eq('id', r.topic_id).maybeSingle();
+          if (!topic || String(topic.user_id)!==String(user.id)) return;
+          let who='Un parent'; try { const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle(); if (prof?.full_name) who=prof.full_name; } catch {}
+          const title=(topic.title||'').replace(/^\[(.*?)\]\s*/, '');
+          showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+          bumpMessagesBadge();
+        } catch {}
+      })
+      .subscribe();
+    notifChannels.push(chRep);
+  } catch (e) { console.warn('setupRealtimeNotifications error', e); }
 }
 
 init();
