@@ -395,9 +395,12 @@ try {
       // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page
       if (isDashboard) {
         cvs.className = 'route-canvas route-canvas-fixed';
+        // Prevent canvas from blocking UI elements
+        cvs.style.pointerEvents = 'none';
         document.body.prepend(cvs);
       } else {
         cvs.className = 'route-canvas';
+        cvs.style.pointerEvents = 'none';
         route.prepend(cvs);
       }
       const width = isDashboard ? window.innerWidth : route.clientWidth;
