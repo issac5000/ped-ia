@@ -8,8 +8,6 @@ let lastMessages = new Map();
 let activeParent = null;
 let currentMessages = [];
 let messagesChannel = null;
-let notifChannel = null;
-let notifications = [];
 
 // Normalize all user IDs to strings to avoid type mismatches
 const idStr = id => String(id);
@@ -53,6 +51,131 @@ function setupHeader(){
   });
 }
 
+// Soft pastel particles over entire page
+let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
+function startRouteParticles(){
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const cvs = document.createElement('canvas');
+    cvs.className = 'route-canvas route-canvas-fixed';
+    document.body.prepend(cvs);
+    const ctx = cvs.getContext('2d');
+    const state = routeParticles;
+    state.cvs = cvs; state.ctx = ctx; state.parts = [];
+    function resize(){
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio||1));
+      state.W = window.innerWidth; state.H = window.innerHeight;
+      cvs.width = Math.floor(state.W*dpr); cvs.height = Math.floor(state.H*dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    resize();
+    state.resize = resize;
+    window.addEventListener('resize', resize);
+    const cs = getComputedStyle(document.documentElement);
+    const palette = [
+      cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+      cs.getPropertyValue('--orange').trim()||'#ffcba4',
+      cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+      '#ffd9e6'
+    ];
+    const area = Math.max(1, state.W*state.H);
+    const N = Math.max(14, Math.min(40, Math.round(area/52000)));
+    for(let i=0;i<N;i++){
+      const u=Math.random();
+      const r = u<.5 ? (4+Math.random()*7) : (u<.85 ? (10+Math.random()*10) : (20+Math.random()*18));
+      state.parts.push({
+        x:Math.random()*state.W,
+        y:Math.random()*state.H,
+        r,
+        vx:(Math.random()*.28-.14),
+        vy:(Math.random()*.28-.14),
+        hue:palette[Math.floor(Math.random()*palette.length)],
+        alpha:.10+Math.random()*.20,
+        drift:Math.random()*Math.PI*2,
+        spin:.001+Math.random()*.003
+      });
+    }
+    const step=()=>{
+      ctx.clearRect(0,0,state.W,state.H);
+      for(const p of state.parts){
+        p.drift += p.spin;
+        p.x += p.vx + Math.cos(p.drift)*.04;
+        p.y += p.vy + Math.sin(p.drift)*.04;
+        if(p.x<-20) p.x=state.W+20; if(p.x>state.W+20) p.x=-20;
+        if(p.y<-20) p.y=state.H+20; if(p.y>state.H+20) p.y=-20;
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.hue;
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+      }
+      state.raf = requestAnimationFrame(step);
+    };
+    step();
+  } catch{}
+}
+
+// Particles around page logo
+let logoParticles = { cvs:null, ctx:null, parts:[], raf:0, resize:null, W:0, H:0 };
+function startLogoParticles(){
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const wrap = document.querySelector('#page-logo .container');
+    if(!wrap) return;
+    const cvs = document.createElement('canvas');
+    cvs.className='logo-canvas';
+    wrap.prepend(cvs);
+    const ctx = cvs.getContext('2d');
+    const state = logoParticles;
+    state.cvs=cvs; state.ctx=ctx; state.parts=[];
+    function resize(){
+      const dpr=Math.max(1, Math.min(2, window.devicePixelRatio||1));
+      state.W=wrap.clientWidth; state.H=wrap.clientHeight;
+      cvs.width=Math.floor(state.W*dpr); cvs.height=Math.floor(state.H*dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    resize();
+    state.resize=resize;
+    window.addEventListener('resize', resize);
+    const cs = getComputedStyle(document.documentElement);
+    const palette=[
+      cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+      cs.getPropertyValue('--orange').trim()||'#ffcba4',
+      cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+      '#ffd9e6'
+    ];
+    const area=Math.max(1,state.W*state.H);
+    const N=Math.max(6, Math.min(16, Math.round(area/20000)));
+    for(let i=0;i<N;i++){
+      const u=Math.random();
+      const r=u<.5?(3+Math.random()*5):(u<.85?(8+Math.random()*8):(16+Math.random()*12));
+      state.parts.push({
+        x:Math.random()*state.W,
+        y:Math.random()*state.H,
+        r,
+        vx:(Math.random()*.25-.125),
+        vy:(Math.random()*.25-.125),
+        hue:palette[Math.floor(Math.random()*palette.length)],
+        alpha:.10+Math.random()*.20,
+        drift:Math.random()*Math.PI*2,
+        spin:.001+Math.random()*.003
+      });
+    }
+    const step=()=>{
+      ctx.clearRect(0,0,state.W,state.H);
+      for(const p of state.parts){
+        p.drift+=p.spin;
+        p.x+=p.vx+Math.cos(p.drift)*.03;
+        p.y+=p.vy+Math.sin(p.drift)*.03;
+        if(p.x<-20) p.x=state.W+20; if(p.x>state.W+20) p.x=-20;
+        if(p.y<-20) p.y=state.H+20; if(p.y>state.H+20) p.y=-20;
+        ctx.globalAlpha=p.alpha; ctx.fillStyle=p.hue;
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+      }
+      state.raf=requestAnimationFrame(step);
+    };
+    step();
+  } catch{}
+}
+
 async function init(){
   try {
     const env = await fetch('/api/env').then(r=>r.json());
@@ -66,12 +189,12 @@ async function init(){
     user.id = idStr(user.id);
     setupHeader();
     updateHeaderAuth();
+    document.getElementById('page-logo').hidden = false;
+    startRouteParticles();
+    startLogoParticles();
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
-    await loadNotifications();
-    setupNotifButton();
-    setupSubscriptions();
   } catch (e){ console.error('Init error', e); }
 }
 
@@ -155,7 +278,6 @@ async function openConversation(otherId){
   $('#conversation').innerHTML='';
   await fetchConversation(id);
   setupMessageSubscription(id);
-  await markNotificationsRead(id);
 }
 
 async function fetchConversation(otherId){
@@ -205,9 +327,6 @@ $('#message-form').addEventListener('submit', async e=>{
   renderMessages();
   lastMessages.set(activeParent.id, msg);
   renderParentList();
-  await supabase
-    .from('notifications')
-    .insert({ user_id: idStr(activeParent.id), type: 'message', reference_id: data.id, is_read: false });
 });
 
 function setupMessageSubscription(otherId){
@@ -225,69 +344,6 @@ function setupMessageSubscription(otherId){
         lastMessages.set(id, msg); renderParentList();
       }
     })
-    .subscribe();
-}
-
-async function loadNotifications(){
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('id,is_read,reference_id,created_at,messages(id,sender_id,content,profiles(full_name,avatar_url))')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending:false });
-  if(!error){ notifications = data||[]; renderNotifications(); }
-}
-
-function renderNotifications(){
-  const count = notifications.filter(n=>!n.is_read).length;
-  $('#notif-count').textContent = count ? String(count) : '';
-  const list = $('#notif-list');
-  list.innerHTML='';
-  notifications.forEach(n=>{
-    const msg = n.messages;
-    const sender = msg?.profiles?.full_name || 'Parent';
-    const snippet = msg?.content?.slice(0,50) || '';
-    const item = document.createElement('div');
-    item.className='notif-item '+(n.is_read?'read':'unread');
-    item.dataset.id=n.id;
-    item.dataset.sender=msg?.sender_id;
-    item.innerHTML = `<strong>${sender}</strong><div class="notif-snippet">${escapeHTML(snippet)}</div>`;
-    item.addEventListener('click', async ()=>{
-      await supabase.from('notifications').update({ is_read:true }).eq('id', n.id);
-      await loadNotifications();
-      openConversation(item.dataset.sender);
-      $('#notif-list').hidden = true;
-    });
-    list.appendChild(item);
-  });
-  if(!notifications.length) list.textContent='Aucune notification';
-}
-
-function setupNotifButton(){
-  $('#notif-btn').addEventListener('click', e=>{
-    e.preventDefault();
-    const panel = $('#notif-list');
-    panel.hidden = !panel.hidden;
-  });
-}
-
-async function markNotificationsRead(otherId){
-  const id = idStr(otherId);
-  const ids = currentMessages.filter(m=>m.sender_id===id).map(m=>m.id);
-  if(!ids.length) return;
-  await supabase
-    .from('notifications')
-    .update({ is_read:true })
-    .eq('user_id', user.id)
-    .eq('type','message')
-    .in('reference_id', ids);
-  loadNotifications();
-}
-
-function setupSubscriptions(){
-  notifChannel = supabase
-    .channel('notif-'+user.id)
-    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`user_id=eq.${user.id}` }, ()=>{ loadNotifications(); loadConversations(); })
-    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'notifications', filter:`user_id=eq.${user.id}` }, ()=>{ loadNotifications(); loadConversations(); })
     .subscribe();
 }
 
