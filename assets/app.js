@@ -1747,6 +1747,8 @@ try {
 
   // Community
   function renderCommunity() {
+    // Render instance guard to avoid race conditions and duplicate DOM nodes
+    const rid = (renderCommunity._rid = (renderCommunity._rid || 0) + 1);
     const list = $('#forum-list');
     list.innerHTML = '';
     // Category filter handlers
@@ -1763,6 +1765,7 @@ try {
     }
     const activeCat = cats?.getAttribute('data-active') || 'all';
     const showEmpty = () => {
+      if (rid !== renderCommunity._rid) return;
       const empty = document.createElement('div');
       empty.className = 'card';
       empty.textContent = 'Aucun sujet pour le moment. Lancez la discussion !';
@@ -1770,6 +1773,7 @@ try {
     };
     const renderTopics = (topics, replies, authorsMap) => {
       if (!topics.length) return showEmpty();
+      if (rid !== renderCommunity._rid) return;
       topics.slice().forEach(t => {
         // Extract category from title prefix like [Sommeil] Titre
         let title = t.title || '';
