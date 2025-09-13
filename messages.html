@@ -16,11 +16,6 @@
     .parent-item .last-msg time{display:block;font-size:.75rem;opacity:.7}
     .chat-window{flex:1;display:flex;flex-direction:column;max-height:70vh}
     #conversation{flex:1;overflow-y:auto}
-    #notif-list{position:absolute;right:20px;top:60px;width:300px;max-height:400px;overflow-y:auto;z-index:1000}
-    #notif-list .notif-item{padding:8px 12px;border-bottom:1px solid rgba(0,0,0,.1);cursor:pointer}
-    #notif-list .notif-item.unread{background:rgba(255,255,255,.1)}
-    #notif-list .notif-item.read{opacity:.6}
-    #notif-count{font-weight:bold;margin-left:4px}
     @media(max-width:600px){
       .chat-area{flex-direction:column}
       .parent-list{flex:0 0 auto;width:100%;max-height:40vh}
@@ -31,18 +26,17 @@
 <body class="no-js">
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="index.html#/">
+      <a class="brand" href="#/">
         <img src="/logotexte.png" alt="Synap'Kids" width="377" height="74" decoding="async" fetchpriority="high" class="brand-text-logo" />
       </a>
       <nav id="main-nav" class="main-nav" aria-label="Navigation principale">
-        <a href="index.html#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
-        <a href="index.html#/dashboard" class="nav-link"><span class="nav-ico">📊</span><span>Dashboard</span></a>
-        <a href="index.html#/community" class="nav-link"><span class="nav-ico">💬</span><span>Communauté</span></a>
+        <a href="#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
+        <a href="#/dashboard" class="nav-link"><span class="nav-ico">📊</span><span>Dashboard</span></a>
+        <a href="#/community" class="nav-link"><span class="nav-ico">💬</span><span>Communauté</span></a>
         <a href="messages.html" class="nav-link"><span class="nav-ico">📨</span><span>Messages</span></a>
-        <a href="index.html#/ai" class="nav-link"><span class="nav-ico">🤖</span><span>Fonctionnalité IA</span></a>
-        <a href="index.html#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
-        <a href="index.html#/about" class="nav-link"><span class="nav-ico">ℹ️</span><span>À propos</span></a>
-        <a href="#" id="notif-btn" class="nav-link" role="button"><span class="nav-ico">🔔</span><span id="notif-count"></span></a>
+        <a href="#/ai" class="nav-link"><span class="nav-ico">🤖</span><span>Fonctionnalité IA</span></a>
+        <a href="#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
+        <a href="#/about" class="nav-link"><span class="nav-ico">ℹ️</span><span>À propos</span></a>
       </nav>
       <div class="auth-actions">
         <button id="nav-toggle" class="nav-toggle" aria-controls="main-nav" aria-expanded="false" title="Menu">☰</button>
@@ -50,7 +44,6 @@
         <button id="btn-login" class="btn btn-secondary">Se connecter</button>
         <button id="btn-logout" class="btn btn-secondary" hidden>Se déconnecter</button>
       </div>
-      <div id="notif-list" class="card" hidden></div>
     </div>
   </header>
   <div id="page-logo" class="page-logo" hidden>
@@ -79,16 +72,16 @@
     <div class="container">
       <div class="footer-simple">
         <div class="fs-left">
-          <a class="brand" href="index.html#/" aria-label="Accueil Synap'Kids">
+          <a class="brand" href="#/" aria-label="Accueil Synap'Kids">
             <span class="brand-text"><span class="brand-synap">Synap'</span><span class="brand-kids">Kids</span></span>
           </a>
           <p class="fs-tag">Le copilote parental 0–3 ans</p>
         </div>
         <div class="fs-right">
-          <a class="fs-link" href="index.html#/about">À propos</a>
-          <a class="fs-link" href="index.html#/contact">Contact</a>
-          <a class="fs-link" href="index.html#/legal">Mentions légales</a>
-          <a class="fs-link" href="index.html#/legal">Confidentialité</a>
+          <a class="fs-link" href="#/about">À propos</a>
+          <a class="fs-link" href="#/contact">Contact</a>
+          <a class="fs-link" href="#/legal">Mentions légales</a>
+          <a class="fs-link" href="#/legal">Confidentialité</a>
         </div>
       </div>
       <div class="footer-simple">
