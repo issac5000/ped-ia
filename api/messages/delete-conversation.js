@@ -44,20 +44,22 @@ export default async function handler(req, res) {
     const uid = String(uJson?.id || uJson?.user?.id || '').trim();
     if (!uid) return res.status(401).json({ error: 'Invalid token' });
 
-    // Delete all messages in both directions using PostgREST
-    const inner = `and(sender_id.eq.${uid},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${uid})`;
-    const orParam = encodeURIComponent(inner);
-    const dRes = await fetch(`${supaUrl}/rest/v1/messages?or=(${orParam})`, {
-      method: 'DELETE',
-      headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${serviceKey}`,
-        'Prefer': 'return=minimal'
+    // Delete all messages in both directions using two calls (avoids tricky or= syntax)
+    const q1 = `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(uid)}&receiver_id=eq.${encodeURIComponent(otherId)}`;
+    const q2 = `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(otherId)}&receiver_id=eq.${encodeURIComponent(uid)}`;
+    for (const url of [q1, q2]) {
+      const dRes = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Prefer': 'return=minimal'
+        }
+      });
+      if (!dRes.ok) {
+        const t = await dRes.text().catch(()=> '');
+        return res.status(500).json({ error: 'Delete failed', details: t });
       }
-    });
-    if (!dRes.ok) {
-      const t = await dRes.text().catch(()=> '');
-      return res.status(500).json({ error: 'Delete failed', details: t });
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');

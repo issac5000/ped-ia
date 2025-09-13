@@ -243,19 +243,21 @@ const server = createServer(async (req, res) => {
       const uid = String(uJson?.id || uJson?.user?.id || '').trim();
       if (!uid) return send(res, 401, JSON.stringify({ error:'Invalid token' }), { 'Content-Type':'application/json' });
 
-      const inner = `and(sender_id.eq.${uid},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${uid})`;
-      const orParam = encodeURIComponent(inner);
-      const dRes = await fetch(`${supaUrl}/rest/v1/messages?or=(${orParam})`, {
-        method: 'DELETE',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
-          'Prefer': 'return=minimal'
+      const q1 = `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(uid)}&receiver_id=eq.${encodeURIComponent(otherId)}`;
+      const q2 = `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(otherId)}&receiver_id=eq.${encodeURIComponent(uid)}`;
+      for (const u of [q1, q2]) {
+        const dRes = await fetch(u, {
+          method: 'DELETE',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${serviceKey}`,
+            'Prefer': 'return=minimal'
+          }
+        });
+        if (!dRes.ok) {
+          const t = await dRes.text().catch(()=> '');
+          return send(res, 500, JSON.stringify({ error:'Delete failed', details: t }), { 'Content-Type':'application/json' });
         }
-      });
-      if (!dRes.ok) {
-        const t = await dRes.text().catch(()=> '');
-        return send(res, 500, JSON.stringify({ error:'Delete failed', details: t }), { 'Content-Type':'application/json' });
       }
 
       return send(res, 200, JSON.stringify({ ok:true }), { 'Content-Type':'application/json' });
