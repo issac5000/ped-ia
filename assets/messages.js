@@ -91,12 +91,12 @@ function renderParentList(){
 async function ensureConversation(otherId){
   const id = idStr(otherId);
   if(parents.some(p=>p.id===id)) return;
-  const { data, error } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).single();
-  if(!error && data){
-    parents.push({ ...data, id });
-    lastMessages.set(id, null);
-    renderParentList();
-  }
+  let profile = { id, full_name:'Parent', avatar_url:null };
+  const { data } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).single();
+  if(data) profile = { ...data, id:idStr(data.id) };
+  parents.push(profile);
+  lastMessages.set(id, null);
+  renderParentList();
 }
 
 async function openConversation(otherId){
