@@ -8,6 +8,26 @@ import { fileURLToPath } from 'url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
+
+// Load env vars from .env.local/.env for local dev if not already present
+async function loadLocalEnv() {
+  const tryFiles = ['.env.local', '.env'];
+  for (const f of tryFiles) {
+    try {
+      const p = resolve(ROOT, f);
+      const content = await readFile(p, 'utf8');
+      content.split(/\r?\n/).forEach(line => {
+        const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+        if (!m) return;
+        const k = m[1];
+        let v = m[2];
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+        if (process.env[k] == null) process.env[k] = v;
+      });
+    } catch {}
+  }
+}
+await loadLocalEnv();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const API_KEY = process.env.OPENAI_API_KEY || '';
 
@@ -30,7 +50,8 @@ function send(res, status, body, headers={}) {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=()',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    // Allow Supabase + jsdelivr to match production CSP in vercel.json
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://*.supabase.in https://cdn.jsdelivr.net; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
   };
   const h = { 'Access-Control-Allow-Origin': '*', ...security, ...headers };
   res.writeHead(status, h);
