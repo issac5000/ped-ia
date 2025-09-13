@@ -158,10 +158,43 @@ const NOTIF_STORE = 'pedia_notifs';
 function loadNotifs(){ try { return JSON.parse(localStorage.getItem(NOTIF_STORE)) || []; } catch { return []; } }
 function saveNotifs(arr){ try { localStorage.setItem(NOTIF_STORE, JSON.stringify(arr)); } catch {} }
 function addNotif(n){ const arr = loadNotifs(); if(!arr.some(x=>x.id===n.id)) { arr.push({ ...n, seen:false }); saveNotifs(arr); } updateBadgeFromStore(); }
-function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); updateBadgeFromStore(); }
+function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); setNotifLastNow(kind); updateBadgeFromStore(); }
 function unseen(){ return loadNotifs().filter(x=>!x.seen); }
 function updateBadgeFromStore(){ setMessagesBadge(unseen().length); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
+
+// Missed messages since last seen
+const NOTIF_LAST_KEY = 'pedia_notif_last';
+function getNotifLast(){ try { return JSON.parse(localStorage.getItem(NOTIF_LAST_KEY)) || {}; } catch { return {}; } }
+function setNotifLast(o){ try { localStorage.setItem(NOTIF_LAST_KEY, JSON.stringify(o)); } catch {} }
+function getNotifLastSince(kind){ const o=getNotifLast(); return o[kind] || null; }
+function setNotifLastNow(kind){ const o=getNotifLast(); o[kind]=new Date().toISOString(); setNotifLast(o); }
+async function fetchMissedMessages(){
+  try {
+    if (!supabase || !user?.id) return;
+    const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
+    const since = getNotifLastSince('msg') || sinceDefault;
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('id,sender_id,created_at')
+      .eq('receiver_id', user.id)
+      .gt('created_at', since)
+      .order('created_at', { ascending:true })
+      .limit(50);
+    if (msgs && msgs.length) {
+      const senders = Array.from(new Set(msgs.map(m=>m.sender_id)));
+      let names = new Map();
+      try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', senders); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch {}
+      for (const m of msgs) {
+        const fromId = idStr(m.sender_id);
+        const fromName = names.get(fromId) || 'Un parent';
+        addNotif({ id:`msg:${m.id}`, kind:'msg', fromId, fromName, createdAt:m.created_at });
+        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
+      }
+      updateBadgeFromStore();
+    }
+  } catch {}
+}
 
 // Soft pastel particles over entire page
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
@@ -312,8 +345,46 @@ async function init(){
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
-    // Bind realtime notifications on messages page as well
+    // Bind realtime notifications and replay missed items
     setupRealtimeNotifications();
+    updateBadgeFromStore();
+    replayUnseen();
+    fetchMissedMessages();
+    // Also fetch missed community replies where I participated
+    try {
+      const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
+      const sinceRep = getNotifLastSince('reply') || sinceDefault;
+      const [{ data: topics }, { data: myReps }] = await Promise.all([
+        supabase.from('forum_topics').select('id').eq('user_id', user.id).limit(200),
+        supabase.from('forum_replies').select('topic_id').eq('user_id', user.id).limit(500)
+      ]);
+      const topicIdSet = new Set([...(topics||[]).map(t=>t.id), ...(myReps||[]).map(r=>r.topic_id)]);
+      const topicIds = Array.from(topicIdSet);
+      if (topicIds.length) {
+        const { data: reps } = await supabase
+          .from('forum_replies')
+          .select('id,topic_id,user_id,created_at')
+          .in('topic_id', topicIds)
+          .neq('user_id', user.id)
+          .gt('created_at', sinceRep)
+          .order('created_at', { ascending:true })
+          .limit(100);
+        if (reps && reps.length) {
+          const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
+          let names = new Map();
+          try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch {}
+          let titleMap = new Map();
+          try { const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id)))); titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')])); } catch {}
+          for (const r of reps) {
+            const who = names.get(String(r.user_id)) || 'Un parent';
+            const title = titleMap.get(r.topic_id) || '';
+            addNotif({ id:`reply:${r.id}`, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
+            showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+          }
+          updateBadgeFromStore();
+        }
+      }
+    } catch {}
   } catch (e){ console.error('Init error', e); }
 }
 
@@ -536,7 +607,7 @@ function setupMessageSubscription(otherId){
     .subscribe();
 }
 
-// Realtime notifications (messages to me, replies to my topics)
+// Realtime notifications (messages to me, replies to topics I own or commented)
 function setupRealtimeNotifications(){
   try {
     if (!supabase || !user?.id) return;
@@ -556,14 +627,24 @@ function setupRealtimeNotifications(){
     })
       .subscribe();
     notifChannels.push(chMsg);
-    // replies to my topics
+    // replies to topics I own or commented
     const chRep = supabase
       .channel('notify-replies-'+user.id)
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'forum_replies' }, async (payload) => {
         const r = payload.new || {}; if(!r?.topic_id) return; if (String(r.user_id)===String(user.id)) return;
         try {
           const { data: topic } = await supabase.from('forum_topics').select('id,user_id,title').eq('id', r.topic_id).maybeSingle();
-          if (!topic || String(topic.user_id)!==String(user.id)) return;
+          if (!topic) return;
+          let isParticipant = String(topic.user_id)===String(user.id);
+          if (!isParticipant) {
+            const { count } = await supabase
+              .from('forum_replies')
+              .select('id', { count:'exact', head:true })
+              .eq('topic_id', r.topic_id)
+              .eq('user_id', user.id);
+            isParticipant = (count||0) > 0;
+          }
+          if (!isParticipant) return;
           let who='Un parent'; try { const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle(); if (prof?.full_name) who=prof.full_name; } catch {}
           const title=(topic.title||'').replace(/^\[(.*?)\]\s*/, '');
           showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });

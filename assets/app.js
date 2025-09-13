@@ -131,6 +131,9 @@ try {
         // Rebind realtime notifications on auth change
         if (authSession?.user) {
           setupRealtimeNotifications();
+          updateBadgeFromStore();
+          replayUnseenNotifs();
+          fetchMissedNotifications();
         } else {
           // cleanup channels on logout
           try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
@@ -144,7 +147,7 @@ try {
         location.hash = authSession?.user ? '#/dashboard' : '#/';
       }
       // Bind notifications for existing session and replay unseen ones on open
-      if (authSession?.user) { setupRealtimeNotifications(); updateBadgeFromStore(); replayUnseenNotifs(); }
+      if (authSession?.user) { setupRealtimeNotifications(); updateBadgeFromStore(); replayUnseenNotifs(); fetchMissedNotifications(); }
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
@@ -362,18 +365,96 @@ try {
     updateBadgeFromStore();
   }
   function markNotifSeen(id){ const arr = loadNotifs(); const i = arr.findIndex(x=>x.id===id); if (i>=0) { arr[i].seen=true; saveNotifs(arr); } updateBadgeFromStore(); }
-  function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); updateBadgeFromStore(); }
+  function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); setNotifLastNow(kind); updateBadgeFromStore(); }
   function unseenNotifs(){ return loadNotifs().filter(x=>!x.seen); }
   function updateBadgeFromStore(){ setMessagesBadge(unseenNotifs().length); }
   function replayUnseenNotifs(){
     unseenNotifs().forEach(n => {
       if (n.kind==='msg') {
-        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => markNotifSeen(n.id) });
+        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(n.id); setNotifLastNow('msg'); } });
       } else if (n.kind==='reply') {
         const t = n.title ? ` « ${n.title} »` : '';
-        showNotification({ title:'Nouvelle réponse', text:`${n.who||'Un parent'} a répondu à votre publication${t}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => markNotifSeen(n.id) });
+        showNotification({ title:'Nouvelle réponse', text:`${n.who||'Un parent'} a répondu à votre publication${t}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(n.id); setNotifLastNow('reply'); } });
       }
     });
+  }
+
+  // Last-seen timestamps to fetch missed notifications at login
+  const NOTIF_LAST_KEY = 'pedia_notif_last';
+  function getNotifLast(){ return store.get(NOTIF_LAST_KEY, {}); }
+  function setNotifLast(obj){ store.set(NOTIF_LAST_KEY, obj); }
+  function getNotifLastSince(kind){ const o = getNotifLast(); return o[kind] || null; }
+  function setNotifLastNow(kind){ const o = getNotifLast(); o[kind] = new Date().toISOString(); setNotifLast(o); }
+
+  async function fetchMissedNotifications(){
+    try {
+      if (!useRemote()) return;
+      const uid = authSession?.user?.id; if (!uid) return;
+      const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
+      const sinceMsg = getNotifLastSince('msg') || sinceDefault;
+      const sinceRep = getNotifLastSince('reply') || sinceDefault;
+      // Messages to me since last seen
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id,sender_id,created_at')
+        .eq('receiver_id', uid)
+        .gt('created_at', sinceMsg)
+        .order('created_at', { ascending:true })
+        .limit(50);
+      if (msgs && msgs.length) {
+        const senders = Array.from(new Set(msgs.map(m=>m.sender_id)));
+        let names = new Map();
+        try {
+          const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', senders);
+          names = new Map((profs||[]).map(p=>[p.id, p.full_name]));
+        } catch {}
+        for (const m of msgs) {
+          const fromName = names.get(m.sender_id) || 'Un parent';
+          const notifId = `msg:${m.id}`;
+          addNotif({ id:notifId, kind:'msg', fromId:m.sender_id, fromName, createdAt:m.created_at });
+          showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${m.sender_id}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
+        }
+      }
+      // Replies to topics I own or where I already commented since last seen
+      const [{ data: topics }, { data: myReps }] = await Promise.all([
+        supabase.from('forum_topics').select('id').eq('user_id', uid).limit(200),
+        supabase.from('forum_replies').select('topic_id').eq('user_id', uid).limit(500)
+      ]);
+      const topicIdSet = new Set([...(topics||[]).map(t=>t.id), ...(myReps||[]).map(r=>r.topic_id)]);
+      const topicIds = Array.from(topicIdSet);
+      if (topicIds.length) {
+        const { data: reps } = await supabase
+          .from('forum_replies')
+          .select('id,topic_id,user_id,created_at')
+          .in('topic_id', topicIds)
+          .neq('user_id', uid)
+          .gt('created_at', sinceRep)
+          .order('created_at', { ascending:true })
+          .limit(100);
+        if (reps && reps.length) {
+          const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
+          let names = new Map();
+          try {
+            const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds);
+            names = new Map((profs||[]).map(p=>[p.id, p.full_name]));
+          } catch {}
+          // also need titles map
+          let titleMap = new Map();
+          try {
+            const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id))));
+            titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')]));
+          } catch {}
+          for (const r of reps) {
+            const who = names.get(r.user_id) || 'Un parent';
+            const title = titleMap.get(r.topic_id) || '';
+            const notifId = `reply:${r.id}`;
+            addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
+            showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('reply'); } });
+          }
+        }
+      }
+      updateBadgeFromStore();
+    } catch (e) { console.warn('fetchMissedNotifications error', e); }
   }
 
   function setupRealtimeNotifications(){
@@ -411,7 +492,7 @@ try {
         .subscribe();
       notifChannels.push(chMsg);
 
-      // Replies on my topics
+      // Replies on topics I own or where I already commented
       const chRep = supabase
         .channel('notify-replies-'+uid)
         .on('postgres_changes', {
@@ -423,7 +504,17 @@ try {
           if (String(r.user_id) === String(uid)) return;
           try {
             const { data: topic } = await supabase.from('forum_topics').select('id,user_id,title').eq('id', r.topic_id).maybeSingle();
-            if (!topic || String(topic.user_id) !== String(uid)) return;
+            if (!topic) return;
+            let isParticipant = String(topic.user_id) === String(uid);
+            if (!isParticipant) {
+              const { count } = await supabase
+                .from('forum_replies')
+                .select('id', { count: 'exact', head: true })
+                .eq('topic_id', r.topic_id)
+                .eq('user_id', uid);
+              isParticipant = (count||0) > 0;
+            }
+            if (!isParticipant) return;
             // Resolve replier name
             let who = 'Un parent';
             try {
