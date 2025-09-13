@@ -8,6 +8,7 @@ let lastMessages = new Map();
 let activeParent = null;
 let currentMessages = [];
 let messagesChannel = null;
+let navBtn, mainNav, navBackdrop;
 
 // Normalize all user IDs to strings to avoid type mismatches
 const idStr = id => String(id);
@@ -29,9 +30,9 @@ function setupHeader(){
     alert('Déconnecté.');
     location.href='/';
   });
-  const navBtn = $('#nav-toggle');
-  const mainNav = $('#main-nav');
-  const navBackdrop = $('#nav-backdrop');
+  navBtn = $('#nav-toggle');
+  mainNav = $('#main-nav');
+  navBackdrop = $('#nav-backdrop');
   navBtn?.addEventListener('click', ()=>{
     const isOpen = mainNav?.classList.toggle('open');
     navBtn.setAttribute('aria-expanded', String(!!isOpen));
@@ -50,6 +51,49 @@ function setupHeader(){
     navBackdrop?.classList.remove('open');
   });
 }
+
+function evaluateHeaderFit(){
+  try{
+    const header = document.querySelector('.header-inner');
+    const brand = header?.querySelector('.brand');
+    const nav = header?.querySelector('#main-nav');
+    const auth = header?.querySelector('.auth-actions');
+    if(!header || !brand || !nav || !auth) return;
+    const padding = 40;
+    const cs = getComputedStyle(header);
+    const areas = (cs.gridTemplateAreas || '').toString();
+    const twoRowLayout = areas.includes('nav');
+    let needMobile = false;
+    if(twoRowLayout){
+      needMobile = nav.scrollWidth > header.clientWidth;
+    } else {
+      const total = brand.offsetWidth + nav.scrollWidth + auth.offsetWidth + padding;
+      needMobile = total > header.clientWidth;
+    }
+    document.body.classList.toggle('force-mobile', needMobile);
+  } catch{}
+}
+
+function onViewportChange(){
+  if(window.innerWidth >= 900) document.body.classList.remove('force-mobile');
+  evaluateHeaderFit();
+  const isMobile = document.body.classList.contains('force-mobile');
+  if(!isMobile){
+    mainNav?.classList.remove('open');
+    navBtn?.setAttribute('aria-expanded','false');
+    navBackdrop?.classList.remove('open');
+    if(mainNav) mainNav.style.removeProperty('display');
+  }
+}
+
+window.addEventListener('resize', onViewportChange);
+window.addEventListener('orientationchange', onViewportChange);
+let resizeRaf = null;
+window.addEventListener('resize', () => {
+  if(resizeRaf) cancelAnimationFrame(resizeRaf);
+  resizeRaf = requestAnimationFrame(onViewportChange);
+});
+window.addEventListener('load', evaluateHeaderFit);
 
 // Soft pastel particles over entire page
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
@@ -189,6 +233,7 @@ async function init(){
     user.id = idStr(user.id);
     setupHeader();
     updateHeaderAuth();
+    evaluateHeaderFit();
     document.getElementById('page-logo').hidden = false;
     startRouteParticles();
     startLogoParticles();
