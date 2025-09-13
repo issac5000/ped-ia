@@ -323,12 +323,21 @@ async function ensureConversation(otherId){
 async function deleteConversation(otherId){
   const id = idStr(otherId);
   if(!confirm('Supprimer cette conversation ?')) return;
-  const { error } = await supabase
-    .from('messages')
-    .delete()
-    .or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`);
-  if(error){
-    console.error('delete conv', error);
+  try {
+    const r = await fetch('/api/messages/delete-conversation', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token || ''}`
+      },
+      body: JSON.stringify({ otherId: id })
+    });
+    if(!r.ok){
+      const t = await r.text().catch(()=> '');
+      throw new Error(`HTTP ${r.status}: ${t}`);
+    }
+  } catch (e){
+    console.error('delete conv', e);
     alert('Erreur lors de la suppression.');
     return;
   }
