@@ -1824,10 +1824,9 @@ try {
         el.innerHTML = `
           <div class="flex-between">
             <h3 style="margin:0">${escapeHtml(title)}</h3>
-            <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span></div>
+            <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span><a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a></div>
           </div>
           <p>${escapeHtml(t.content)}</p>
-          <a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a>
           <div class="stack">
             ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">💬 Message privé</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
           </div>
@@ -1955,6 +1954,10 @@ try {
 
     // New topic dialog
     const dlg = $('#dialog-topic');
+    // Move dialog to body to avoid parent section opacity affecting it
+    if (dlg && dlg.parentElement && dlg.parentElement.tagName.toLowerCase() !== 'body') {
+      document.body.appendChild(dlg);
+    }
     $('#btn-new-topic').onclick = () => { if (dlg) dlg.showModal(); };
     const formTopic = $('#form-topic');
     // Make cancel button close the dialog and reset the form
