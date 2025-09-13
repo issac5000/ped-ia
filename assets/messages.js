@@ -102,6 +102,8 @@ function startRouteParticles(){
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const cvs = document.createElement('canvas');
     cvs.className = 'route-canvas route-canvas-fixed';
+    // Ensure background canvas never blocks interactions
+    cvs.style.pointerEvents = 'none';
     document.body.prepend(cvs);
     const ctx = cvs.getContext('2d');
     const state = routeParticles;
@@ -166,6 +168,8 @@ function startLogoParticles(){
     if(!wrap) return;
     const cvs = document.createElement('canvas');
     cvs.className='logo-canvas';
+    // Canvas is decorative; it must not intercept clicks
+    cvs.style.pointerEvents = 'none';
     wrap.prepend(cvs);
     const ctx = cvs.getContext('2d');
     const state = logoParticles;
