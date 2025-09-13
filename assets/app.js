@@ -1825,7 +1825,7 @@ try {
             const user = store.get(K.user);
             const children = store.get(K.children, []);
             const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-            const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
+            const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
             topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
             store.set(K.forum, forum);
             renderCommunity();
@@ -1944,7 +1944,7 @@ try {
           const user = store.get(K.user);
           const children = store.get(K.children, []);
           const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-          const whoAmI = user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme';
+          const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
           forum.topics.push({ id: genId(), title, content, author: whoAmI, createdAt: Date.now(), replies: [] });
           store.set(K.forum, forum);
           dlg.close();
@@ -1966,20 +1966,29 @@ try {
     const user = store.get(K.user);
     const form = $('#form-settings');
     form.role.value = user?.role || 'maman';
-    // Privacy load
+    form.pseudo.value = user?.pseudo || '';
+    // Privacy & profile load
     (async () => {
       if (useRemote()) {
         try {
           const uid = authSession?.user?.id;
-          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (fetch)'); throw new Error('Pas de user_id'); }
-          const { data: p } = await supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle();
-          form.showStats.checked = !!p?.show_stats;
-          form.allowMessages.checked = !!p?.allow_messages;
-        } catch { form.showStats.checked = true; form.allowMessages.checked = true; }
+          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (fetch)'); throw new Error('Pas de user_id'); }
+          const [priv, prof] = await Promise.all([
+            supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle(),
+            supabase.from('profiles').select('full_name').eq('id', uid).maybeSingle()
+          ]);
+          const p = priv.data || {};
+          form.showStats.checked = !!p.show_stats;
+          form.allowMessages.checked = !!p.allow_messages;
+          if (prof.data?.full_name) form.pseudo.value = prof.data.full_name;
+        } catch {
+          form.showStats.checked = true; form.allowMessages.checked = true;
+        }
       } else {
         const privacy = store.get(K.privacy);
         form.showStats.checked = !!privacy.showStats;
         form.allowMessages.checked = !!privacy.allowMessages;
+        form.pseudo.value = user?.pseudo || '';
       }
     })();
     form.onsubmit = async (e)=>{
@@ -1989,19 +1998,23 @@ try {
       try {
         const fd = new FormData(form);
         const role = fd.get('role').toString();
+        const pseudo = fd.get('pseudo').toString().trim();
         const showStats = !!fd.get('showStats');
         const allowMessages = !!fd.get('allowMessages');
         if (useRemote()) {
           try {
             const uid = authSession?.user?.id;
-            if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings (upsert)'); throw new Error('Pas de user_id'); }
-            await supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]);
-            store.set(K.user, { ...user, role });
+            if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (upsert)'); throw new Error('Pas de user_id'); }
+            await Promise.all([
+              supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]),
+              supabase.from('profiles').upsert([{ id: uid, full_name: pseudo }])
+            ]);
+            store.set(K.user, { ...user, role, pseudo });
             alert('Paramètres enregistrés');
             return;
           } catch {}
         }
-        store.set(K.user, { ...user, role });
+        store.set(K.user, { ...user, role, pseudo });
         store.set(K.privacy, { showStats, allowMessages });
         alert('Paramètres enregistrés (local)');
       } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
