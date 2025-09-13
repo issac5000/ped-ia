@@ -96,6 +96,7 @@ try {
       if (user) {
         authSession = { user };
         await ensureProfile(user);
+        await syncUserFromSupabase();
         if (DEBUG_AUTH) console.log("Utilisateur connecté après retour Google:", user.email);
         updateHeaderAuth();
         // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
@@ -117,6 +118,7 @@ try {
       supabase.auth.onAuthStateChange(async (_event, session) => {
         authSession = session || null;
         if (session?.user) await ensureProfile(session.user);
+        if (session?.user) await syncUserFromSupabase();
         updateHeaderAuth();
         if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
           location.hash = '#/dashboard';
@@ -677,15 +679,55 @@ try {
     $('#login-status').hidden = !authSession?.user;
   }
 
-  // Ensure a row exists in profiles for the authenticated user
+  // Ensure a row exists in profiles for the authenticated user without overwriting custom pseudo
   async function ensureProfile(user){
     try {
       if (!supabase || !user?.id) return;
-      const full_name = user.user_metadata?.full_name || user.email || '';
-      const avatar_url = user.user_metadata?.avatar_url || null;
-      await supabase.from('profiles').upsert({ id: user.id, full_name, avatar_url });
+      const uid = user.id;
+      const metaName = user.user_metadata?.full_name || user.email || '';
+      const metaAvatar = user.user_metadata?.avatar_url || null;
+      // Check existing profile
+      const { data: existing, error: selErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .eq('id', uid)
+        .maybeSingle();
+      if (selErr) throw selErr;
+      if (!existing) {
+        // Insert new profile with metadata defaults
+        await supabase.from('profiles').insert({ id: uid, full_name: metaName, avatar_url: metaAvatar });
+      } else {
+        // Do not override a user‑chosen full_name; only fill missing avatar
+        const next = {};
+        if (!existing.avatar_url && metaAvatar) next.avatar_url = metaAvatar;
+        if (Object.keys(next).length) {
+          await supabase.from('profiles').update(next).eq('id', uid);
+        }
+      }
     } catch (e) {
       if (DEBUG_AUTH) console.warn('ensureProfile failed', e);
+    }
+  }
+
+  // Keep local user pseudo in sync with Supabase profile
+  async function syncUserFromSupabase() {
+    try {
+      if (!useRemote()) return;
+      const uid = authSession?.user?.id;
+      if (!uid) return;
+      const { data: prof, error } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', uid)
+        .maybeSingle();
+      if (error) throw error;
+      const current = store.get(K.user) || {};
+      const pseudo = prof?.full_name || current.pseudo || '';
+      if (pseudo !== current.pseudo) {
+        store.set(K.user, { ...current, pseudo });
+      }
+    } catch (e) {
+      if (DEBUG_AUTH) console.warn('syncUserFromSupabase failed', e);
     }
   }
   async function signInGoogle(){
@@ -1987,7 +2029,14 @@ try {
           const p = priv.data || {};
           form.showStats.checked = !!p.show_stats;
           form.allowMessages.checked = !!p.allow_messages;
-          if (prof.data?.full_name) form.pseudo.value = prof.data.full_name;
+          if (prof.data?.full_name) {
+            form.pseudo.value = prof.data.full_name;
+            // Keep local store aligned so other pages see the pseudo immediately
+            const current = store.get(K.user) || {};
+            if (current.pseudo !== prof.data.full_name) {
+              store.set(K.user, { ...current, pseudo: prof.data.full_name });
+            }
+          }
         } catch {
           form.showStats.checked = true; form.allowMessages.checked = true;
         }
