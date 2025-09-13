@@ -323,17 +323,22 @@ async function ensureConversation(otherId){
 async function deleteConversation(otherId){
   const id = idStr(otherId);
   if(!confirm('Supprimer cette conversation ?')) return;
-  await supabase
+  const { error } = await supabase
     .from('messages')
     .delete()
     .or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`);
+  if(error){
+    console.error('delete conv', error);
+    alert('Erreur lors de la suppression.');
+    return;
+  }
   parents = parents.filter(p=>p.id!==id);
   lastMessages.delete(id);
   if(activeParent?.id===id){
     activeParent=null;
     currentMessages=[];
     $('#conversation').innerHTML='';
-    if(messagesChannel) supabase.removeChannel(messagesChannel);
+    if(messagesChannel) await supabase.removeChannel(messagesChannel);
     messagesChannel=null;
   }
   renderParentList();
