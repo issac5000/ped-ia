@@ -135,7 +135,10 @@ try {
         if (authSession?.user) {
           setupRealtimeNotifications();
           updateBadgeFromStore();
-          if (!hasBootedNotifs()) { replayUnseenNotifs(); fetchMissedNotifications(); markBootedNotifs(); }
+          // Always fetch missed notifs after login to avoid gaps during OAuth redirects
+          fetchMissedNotifications();
+          // Only replay toast popups once per session
+          if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
         } else {
           // cleanup channels on logout
           try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
@@ -152,7 +155,10 @@ try {
       if (authSession?.user) {
         setupRealtimeNotifications();
         updateBadgeFromStore();
-        if (!hasBootedNotifs()) { replayUnseenNotifs(); fetchMissedNotifications(); markBootedNotifs(); }
+        // Always fetch missed on entry if already logged in
+        fetchMissedNotifications();
+        // Replay toast popups at most once per session
+        if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
       }
     }
   } catch (e) {

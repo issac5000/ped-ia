@@ -342,6 +342,15 @@ async function init(){
     const env = await fetch('/api/env').then(r=>r.json());
     const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
     supabase = createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true } });
+    // Handle OAuth return (?code=...) to ensure session is established on this page too
+    try {
+      const urlNow = new URL(window.location.href);
+      if (urlNow.searchParams.get('code')) {
+        await supabase.auth.exchangeCodeForSession(window.location.href);
+        urlNow.search = '';
+        history.replaceState({}, '', urlNow.toString());
+      }
+    } catch (e) { console.warn('OAuth code exchange failed', e); }
     const { data: { session:s } } = await supabase.auth.getSession();
     if(!s){ alert('Veuillez vous connecter.'); window.location.href='/'; return; }
     session = s;
@@ -369,21 +378,16 @@ async function init(){
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
-    // Bind realtime notifications and replay missed items (only once per session)
+    // Bind realtime notifications and update badges
     setupRealtimeNotifications();
     updateBadgeFromStore();
+    // Always fetch missed messages on entry (avoid gaps after OAuth redirects)
+    fetchMissedMessages();
+    // Replay unseen toasts at most once per tab session
     try {
       const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
-      if (!booted) {
-        replayUnseen();
-        fetchMissedMessages();
-        sessionStorage.setItem('pedia_notif_booted', '1');
-      }
-    } catch (e) {
-      // Fallback if storage is unavailable
-      replayUnseen();
-      fetchMissedMessages();
-    }
+      if (!booted) { replayUnseen(); sessionStorage.setItem('pedia_notif_booted', '1'); }
+    } catch (e) { /* ignore */ }
     // Also fetch missed community replies where I participated (guarded once per session)
     try {
       const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
