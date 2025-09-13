@@ -154,11 +154,18 @@ $('#message-form').addEventListener('submit', async e=>{
     .select()
     .single();
   if(error){ console.error('send message', error); return; }
-  currentMessages.push(data);
+  const msg = {
+    ...data,
+    sender_id: idStr(data.sender_id),
+    receiver_id: idStr(data.receiver_id)
+  };
+  currentMessages.push(msg);
   renderMessages();
-  lastMessages.set(activeParent.id, data);
+  lastMessages.set(activeParent.id, msg);
   renderParentList();
-  await supabase.from('notifications').insert({ user_id:activeParent.id, type:'message', reference_id:data.id, is_read:false });
+  await supabase
+    .from('notifications')
+    .insert({ user_id: activeParent.id, type: 'message', reference_id: data.id, is_read: false });
 });
 
 function setupMessageSubscription(otherId){
