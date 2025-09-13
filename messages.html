@@ -7,9 +7,13 @@
   <link rel="stylesheet" href="assets/style.css?v=6" />
   <style>
     .chat-area{display:flex;gap:20px;margin-top:20px}
-    .parent-list{flex:0 0 200px;max-height:70vh;overflow-y:auto}
-    .parent-item{display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer}
+    .parent-list{flex:0 0 250px;max-height:70vh;overflow-y:auto}
+    .parent-item{display:flex;align-items:flex-start;gap:8px;padding:8px;cursor:pointer}
     .parent-item.active{background:rgba(255,255,255,.1)}
+    .parent-item .meta{flex:1}
+    .parent-item .name{font-weight:600}
+    .parent-item .last-msg{font-size:.875rem;color:var(--muted,#666)}
+    .parent-item .last-msg time{display:block;font-size:.75rem;opacity:.7}
     .chat-window{flex:1;display:flex;flex-direction:column;max-height:70vh}
     #conversation{flex:1;overflow-y:auto}
     #notif-list{position:absolute;right:20px;top:60px;width:300px;max-height:400px;overflow-y:auto;z-index:1000}

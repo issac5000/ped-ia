@@ -1784,8 +1784,9 @@ try {
             <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span></div>
           </div>
           <p>${escapeHtml(t.content)}</p>
+          <a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a>
           <div class="stack">
-            ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()}</div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+            ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">💬 Message privé</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
           </div>
           <form data-id="${t.id}" class="form-reply form-grid" style="margin-top:8px">
             <label>Réponse<textarea name="content" rows="2" required></textarea></label>
