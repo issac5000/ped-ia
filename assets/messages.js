@@ -3,6 +3,7 @@ const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
 let supabase, session, user;
+let myInitial = '';
 let parents = [];
 let lastMessages = new Map();
 let activeParent = null;
@@ -162,6 +163,17 @@ function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind
 function unseen(){ return loadNotifs().filter(x=>!x.seen); }
 function updateBadgeFromStore(){ setMessagesBadge(unseen().length); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
+
+// Unread helpers per sender
+function hasUnreadFrom(otherId){
+  const id = idStr(otherId);
+  return loadNotifs().some(n => !n.seen && n.kind==='msg' && idStr(n.fromId)===id);
+}
+function markSenderSeen(otherId){
+  const id = idStr(otherId);
+  const arr = loadNotifs().map(n => (n.kind==='msg' && idStr(n.fromId)===id) ? { ...n, seen:true } : n);
+  saveNotifs(arr);
+}
 
 // Missed messages since last seen
 const NOTIF_LAST_KEY = 'pedia_notif_last';
@@ -336,6 +348,18 @@ async function init(){
     user = s.user;
     // force user ID to string to avoid type mismatches with DB numeric ids
     user.id = idStr(user.id);
+    // Fetch my profile to compute my initial for avatars
+    try {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle();
+      const name = (prof?.full_name || '').trim();
+      myInitial = (name ? name[0] : (user.email?.[0] || '')).toUpperCase();
+    } catch (e) {
+      try { myInitial = (user.email?.[0] || '').toUpperCase(); } catch {}
+    }
     setupHeader();
     updateHeaderAuth();
     evaluateHeaderFit();
@@ -465,9 +489,10 @@ function renderParentList(){
     li.className='parent-item';
     li.dataset.id = p.id;
     const time = last? new Date(last.created_at).toLocaleString() : '';
+    const unreadDot = hasUnreadFrom(p.id) ? '<span class="dot-unread" title="Nouveau message"></span>' : '';
     li.innerHTML = `
       <div class="meta">
-        <div class="name">${escapeHTML(p.full_name||'Parent')}</div>
+        <div class="name">${escapeHTML(p.full_name||'Parent')} ${unreadDot}</div>
         ${time?`<time>${time}</time>`:''}
       </div>
       <button class="del-btn" title="Supprimer">✖</button>`;
@@ -550,6 +575,8 @@ async function openConversation(otherId){
   await ensureConversation(id);
   activeParent = parents.find(p=>p.id===id);
   $$('#parents-list .parent-item').forEach(li=>li.classList.toggle('active', li.dataset.id===id));
+  // Mark unread for this sender as seen and refresh badges/list
+  try { markSenderSeen(id); updateBadgeFromStore(); renderParentList(); } catch (e) {}
   currentMessages = [];
   $('#conversation').innerHTML='';
   await fetchConversation(id);
@@ -579,7 +606,9 @@ function renderMessages(){
     const mine = m.sender_id===user.id;
     const line = document.createElement('div');
     line.className = 'chat-line ' + (mine? 'user':'assistant');
-    line.innerHTML = `\n      <div class="avatar">${mine? 'Moi' : (activeParent?.full_name?.[0]||'')}</div>\n      <div class="message"><div class="bubble ${mine?'user':'assistant'}">${escapeHTML(m.content)}</div></div>`;
+    const otherInitial = (activeParent?.full_name?.[0]||'').toUpperCase();
+    const meInitial = (myInitial||'').toUpperCase();
+    line.innerHTML = `\n      <div class="avatar">${mine? meInitial : otherInitial}</div>\n      <div class="message"><div class="bubble ${mine?'user':'assistant'}">${escapeHTML(m.content)}</div></div>`;
     wrap.appendChild(line);
   });
   wrap.scrollTop = wrap.scrollHeight;
@@ -624,6 +653,8 @@ function setupMessageSubscription(otherId){
         const msg = { ...m, sender_id: sender, receiver_id: receiver };
         currentMessages.push(msg); renderMessages();
         lastMessages.set(id, msg); renderParentList();
+        // If receiving a message from the active interlocutor, mark it seen
+        if (sender===id && receiver===user.id) { try { markSenderSeen(id); updateBadgeFromStore(); renderParentList(); } catch (e) {} }
       }
     })
     .subscribe();
@@ -646,6 +677,8 @@ function setupRealtimeNotifications(){
       addNotif({ id:`msg:${row.id}`, kind:'msg', fromId, fromName, createdAt: row.created_at });
       showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
       bumpMessagesBadge();
+      // Refresh conversation list to reflect unread dots
+      try { renderParentList(); } catch (e) {}
     })
       .subscribe();
     notifChannels.push(chMsg);

@@ -12,7 +12,7 @@
     .parent-item{display:flex;align-items:flex-start;gap:8px;padding:8px;cursor:pointer;border-radius:12px;width:100%}
     .parent-item.active{background:rgba(255,255,255,.1)}
     .parent-item .meta{flex:1}
-    .parent-item .name{font-weight:600}
+    .parent-item .name{font-weight:600; display:flex; align-items:center; gap:6px}
     .parent-item time{display:block;font-size:.75rem;opacity:.7;color:var(--muted,#666)}
     .parent-item .del-btn{background:none;border:none;color:var(--muted,#666);cursor:pointer;padding:2px;margin-left:auto}
     .parent-item .del-btn:hover{color:#c00}
@@ -20,6 +20,10 @@
     .chat-window.open{display:flex}
     .chat-placeholder{flex:1;display:flex;align-items:center;justify-content:center;height:100%;text-align:center}
     #conversation{flex:1;overflow-y:auto}
+    /* Make my sent bubbles translucent on messages page only */
+    .chat-window .bubble.user{opacity:.65}
+    /* Small green dot for unread conversations */
+    .dot-unread{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok,#2dc07a);box-shadow:0 0 0 2px rgba(255,255,255,.12)}
     @media(max-width:600px){
         .chat-area{flex-direction:column;height:auto}
         .parent-list{flex:0 0 auto;width:100%;max-height:30vh;height:auto}
