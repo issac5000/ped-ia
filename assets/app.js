@@ -1,3 +1,4 @@
+let notifCount = 0;
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
@@ -278,7 +279,6 @@ try {
 
   // --- Notifications (popup) -------------------------------------------------
   // Toast-based notifications (auto-close after 4s; stackable)
-  let notifCount = 0;
   let notifyAudioCtx = null;
   function playNotifySound(){
     try {
@@ -367,7 +367,10 @@ try {
   function markNotifSeen(id){ const arr = loadNotifs(); const i = arr.findIndex(x=>x.id===id); if (i>=0) { arr[i].seen=true; saveNotifs(arr); } updateBadgeFromStore(); }
   function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); setNotifLastNow(kind); updateBadgeFromStore(); }
   function unseenNotifs(){ return loadNotifs().filter(x=>!x.seen); }
-  function updateBadgeFromStore(){ setMessagesBadge(unseenNotifs().length); }
+  function updateBadgeFromStore(count = notifCount){
+    if (typeof count !== 'number') count = unseenNotifs().length;
+    setMessagesBadge(count);
+  }
   function replayUnseenNotifs(){
     unseenNotifs().forEach(n => {
       if (n.kind==='msg') {
