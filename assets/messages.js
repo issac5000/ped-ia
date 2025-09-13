@@ -4,6 +4,7 @@ const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
 let supabase, session, user;
 let parents = [];
+let lastMessages = new Map();
 let activeParent = null;
 let currentMessages = [];
 let messagesChannel = null;
@@ -22,31 +23,79 @@ async function init(){
     const { data: { session:s } } = await supabase.auth.getSession();
     if(!s){ alert('Veuillez vous connecter.'); window.location.href='/'; return; }
     session = s; user = s.user;
-    await loadParents();
+    await loadConversations();
+    const pre = new URLSearchParams(location.search).get('user');
+    if(pre){ await ensureConversation(pre); openConversation(pre); }
     await loadNotifications();
     setupNotifButton();
     setupSubscriptions();
   } catch (e){ console.error('Init error', e); }
 }
 
-async function loadParents(){
+async function loadConversations(){
   const list = $('#parents-list');
   list.innerHTML = '<li>Chargement…</li>';
-  const { data, error } = await supabase.from('profiles').select('id,full_name,avatar_url').neq('id', user.id);
+  const { data, error } = await supabase
+    .from('messages')
+    .select('id,sender_id,receiver_id,content,created_at')
+    .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+    .order('created_at', { ascending:false });
   if(error){ list.innerHTML = '<li>Erreur.</li>'; return; }
-  parents = data || [];
+  const convMap = new Map();
+  (data||[]).forEach(m=>{
+    const other = m.sender_id===user.id? m.receiver_id : m.sender_id;
+    if(!convMap.has(other)) convMap.set(other, m);
+  });
+  const ids = Array.from(convMap.keys());
+  let profiles = [];
+  if(ids.length){
+    const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
+    profiles = profs || [];
+  }
+  parents = profiles;
+  lastMessages = convMap;
+  renderParentList();
+}
+
+function renderParentList(){
+  const list = $('#parents-list');
   list.innerHTML='';
+  parents.sort((a,b)=>{
+    const ta = new Date(lastMessages.get(a.id)?.created_at||0);
+    const tb = new Date(lastMessages.get(b.id)?.created_at||0);
+    return tb - ta;
+  });
   parents.forEach(p=>{
+    const last = lastMessages.get(p.id);
     const li = document.createElement('li');
     li.className='parent-item';
     li.dataset.id = p.id;
-    li.innerHTML = `<img src="${p.avatar_url||'/logo.png'}" alt="" class="avatar" width="32" height="32"> <span>${p.full_name||'Parent'}</span>`;
+    const snippet = last? escapeHTML(last.content.slice(0,50)) : 'Aucun message';
+    const time = last? new Date(last.created_at).toLocaleString() : '';
+    li.innerHTML = `
+      <img src="${p.avatar_url||'/logo.png'}" alt="" class="avatar" width="32" height="32">
+      <div class="meta">
+        <div class="name">${escapeHTML(p.full_name||'Parent')}</div>
+        <div class="last-msg">${snippet}${time?`<br><time>${time}</time>`:''}</div>
+      </div>`;
     li.addEventListener('click', ()=>openConversation(p.id));
     list.appendChild(li);
   });
+  if(!parents.length) list.innerHTML='<li>Aucune conversation</li>';
+}
+
+async function ensureConversation(otherId){
+  if(parents.some(p=>p.id===otherId)) return;
+  const { data, error } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', otherId).single();
+  if(!error && data){
+    parents.push(data);
+    lastMessages.set(otherId, null);
+    renderParentList();
+  }
 }
 
 async function openConversation(otherId){
+  await ensureConversation(otherId);
   activeParent = parents.find(p=>p.id===otherId);
   $$('#parents-list .parent-item').forEach(li=>li.classList.toggle('active', li.dataset.id===otherId));
   currentMessages = [];
@@ -95,6 +144,8 @@ $('#message-form').addEventListener('submit', async e=>{
   if(error){ console.error('send message', error); return; }
   currentMessages.push(data);
   renderMessages();
+  lastMessages.set(activeParent.id, data);
+  renderParentList();
   await supabase.from('notifications').insert({ user_id:activeParent.id, type:'message', reference_id:data.id, is_read:false });
 });
 
@@ -106,6 +157,7 @@ function setupMessageSubscription(otherId){
       const m = payload.new;
       if((m.sender_id===user.id && m.receiver_id===otherId) || (m.sender_id===otherId && m.receiver_id===user.id)){
         currentMessages.push(m); renderMessages();
+        lastMessages.set(otherId, m); renderParentList();
       }
     })
     .subscribe();
@@ -168,8 +220,8 @@ async function markNotificationsRead(otherId){
 function setupSubscriptions(){
   notifChannel = supabase
     .channel('notif-'+user.id)
-    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`user_id=eq.${user.id}` }, loadNotifications)
-    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'notifications', filter:`user_id=eq.${user.id}` }, loadNotifications)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`user_id=eq.${user.id}` }, ()=>{ loadNotifications(); loadConversations(); })
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'notifications', filter:`user_id=eq.${user.id}` }, ()=>{ loadNotifications(); loadConversations(); })
     .subscribe();
 }
 
