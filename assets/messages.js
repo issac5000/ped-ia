@@ -300,8 +300,10 @@ function renderParentList(){
       <div class="meta">
         <div class="name">${escapeHTML(p.full_name||'Parent')}</div>
         <div class="last-msg">${snippet}${time?`<br><time>${time}</time>`:''}</div>
-      </div>`;
+      </div>
+      <button class="del-btn" title="Supprimer">✖</button>`;
     li.addEventListener('click', ()=>openConversation(p.id));
+    li.querySelector('.del-btn').addEventListener('click', e=>{ e.stopPropagation(); deleteConversation(p.id); });
     list.appendChild(li);
   });
   if(!parents.length) list.innerHTML='<li>Aucune conversation</li>';
@@ -315,6 +317,25 @@ async function ensureConversation(otherId){
   if(data) profile = { ...data, id:idStr(data.id) };
   parents.push(profile);
   lastMessages.set(id, null);
+  renderParentList();
+}
+
+async function deleteConversation(otherId){
+  const id = idStr(otherId);
+  if(!confirm('Supprimer cette conversation ?')) return;
+  await supabase
+    .from('messages')
+    .delete()
+    .or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`);
+  parents = parents.filter(p=>p.id!==id);
+  lastMessages.delete(id);
+  if(activeParent?.id===id){
+    activeParent=null;
+    currentMessages=[];
+    $('#conversation').innerHTML='';
+    if(messagesChannel) supabase.removeChannel(messagesChannel);
+    messagesChannel=null;
+  }
   renderParentList();
 }
 
