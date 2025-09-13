@@ -11,6 +11,9 @@ let messagesChannel = null;
 let notifChannel = null;
 let notifications = [];
 
+// Normalize all user IDs to strings to avoid type mismatches
+const idStr = id => String(id);
+
 function escapeHTML(str){
   return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 }
@@ -44,13 +47,14 @@ async function loadConversations(){
   const convMap = new Map();
   (data||[]).forEach(m=>{
     const other = m.sender_id===user.id? m.receiver_id : m.sender_id;
-    if(!convMap.has(other)) convMap.set(other, m);
+    const key = idStr(other);
+    if(!convMap.has(key)) convMap.set(key, m);
   });
   const ids = Array.from(convMap.keys());
   let profiles = [];
   if(ids.length){
     const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
-    profiles = profs || [];
+    profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
   }
   parents = profiles;
   lastMessages = convMap;
@@ -85,31 +89,34 @@ function renderParentList(){
 }
 
 async function ensureConversation(otherId){
-  if(parents.some(p=>p.id===otherId)) return;
-  const { data, error } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', otherId).single();
+  const id = idStr(otherId);
+  if(parents.some(p=>p.id===id)) return;
+  const { data, error } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).single();
   if(!error && data){
-    parents.push(data);
-    lastMessages.set(otherId, null);
+    parents.push({ ...data, id });
+    lastMessages.set(id, null);
     renderParentList();
   }
 }
 
 async function openConversation(otherId){
-  await ensureConversation(otherId);
-  activeParent = parents.find(p=>p.id===otherId);
-  $$('#parents-list .parent-item').forEach(li=>li.classList.toggle('active', li.dataset.id===otherId));
+  const id = idStr(otherId);
+  await ensureConversation(id);
+  activeParent = parents.find(p=>p.id===id);
+  $$('#parents-list .parent-item').forEach(li=>li.classList.toggle('active', li.dataset.id===id));
   currentMessages = [];
   $('#conversation').innerHTML='';
-  await fetchConversation(otherId);
-  setupMessageSubscription(otherId);
-  await markNotificationsRead(otherId);
+  await fetchConversation(id);
+  setupMessageSubscription(id);
+  await markNotificationsRead(id);
 }
 
 async function fetchConversation(otherId){
+  const id = idStr(otherId);
   const { data, error } = await supabase
     .from('messages')
     .select('id,sender_id,receiver_id,content,created_at')
-    .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${user.id})`)
+    .or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`)
     .order('created_at', { ascending:true });
   if(error){ console.error('load messages', error); return; }
   currentMessages = data || [];
@@ -150,14 +157,15 @@ $('#message-form').addEventListener('submit', async e=>{
 });
 
 function setupMessageSubscription(otherId){
+  const id = idStr(otherId);
   if(messagesChannel) supabase.removeChannel(messagesChannel);
   messagesChannel = supabase
-    .channel('room-'+otherId)
+    .channel('room-'+id)
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages' }, payload => {
       const m = payload.new;
-      if((m.sender_id===user.id && m.receiver_id===otherId) || (m.sender_id===otherId && m.receiver_id===user.id)){
+      if((m.sender_id===user.id && m.receiver_id===id) || (m.sender_id===id && m.receiver_id===user.id)){
         currentMessages.push(m); renderMessages();
-        lastMessages.set(otherId, m); renderParentList();
+        lastMessages.set(id, m); renderParentList();
       }
     })
     .subscribe();
@@ -206,7 +214,8 @@ function setupNotifButton(){
 }
 
 async function markNotificationsRead(otherId){
-  const ids = currentMessages.filter(m=>m.sender_id===otherId).map(m=>m.id);
+  const id = idStr(otherId);
+  const ids = currentMessages.filter(m=>m.sender_id===id).map(m=>m.id);
   if(!ids.length) return;
   await supabase
     .from('notifications')
