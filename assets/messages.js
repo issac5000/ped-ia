@@ -18,6 +18,41 @@ function escapeHTML(str){
   return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 }
 
+function updateHeaderAuth(){
+  $('#btn-login').hidden = !!session?.user;
+  $('#btn-logout').hidden = !session?.user;
+  $('#login-status').hidden = !session?.user;
+}
+
+function setupHeader(){
+  $('#btn-logout')?.addEventListener('click', async e=>{
+    const btn = e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
+    try{ await supabase?.auth.signOut(); } catch{}
+    alert('Déconnecté.');
+    location.href='/';
+  });
+  const navBtn = $('#nav-toggle');
+  const mainNav = $('#main-nav');
+  const navBackdrop = $('#nav-backdrop');
+  navBtn?.addEventListener('click', ()=>{
+    const isOpen = mainNav?.classList.toggle('open');
+    navBtn.setAttribute('aria-expanded', String(!!isOpen));
+    if(isOpen) navBackdrop?.classList.add('open'); else navBackdrop?.classList.remove('open');
+  });
+  $$('.main-nav .nav-link').forEach(a=>a.addEventListener('click', ()=>{
+    if(mainNav?.classList.contains('open')){
+      mainNav.classList.remove('open');
+      navBtn?.setAttribute('aria-expanded','false');
+      navBackdrop?.classList.remove('open');
+    }
+  }));
+  navBackdrop?.addEventListener('click', ()=>{
+    mainNav?.classList.remove('open');
+    navBtn?.setAttribute('aria-expanded','false');
+    navBackdrop?.classList.remove('open');
+  });
+}
+
 async function init(){
   try {
     const env = await fetch('/api/env').then(r=>r.json());
@@ -29,6 +64,8 @@ async function init(){
     user = s.user;
     // force user ID to string to avoid type mismatches with DB numeric ids
     user.id = idStr(user.id);
+    setupHeader();
+    updateHeaderAuth();
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
