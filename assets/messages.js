@@ -25,7 +25,10 @@ async function init(){
     supabase = createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true } });
     const { data: { session:s } } = await supabase.auth.getSession();
     if(!s){ alert('Veuillez vous connecter.'); window.location.href='/'; return; }
-    session = s; user = s.user;
+    session = s;
+    user = s.user;
+    // force user ID to string to avoid type mismatches with DB numeric ids
+    user.id = idStr(user.id);
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
@@ -46,9 +49,11 @@ async function loadConversations(){
   if(error){ list.innerHTML = '<li>Erreur.</li>'; return; }
   const convMap = new Map();
   (data||[]).forEach(m=>{
-    const other = m.sender_id===user.id? m.receiver_id : m.sender_id;
+    const sender = idStr(m.sender_id);
+    const receiver = idStr(m.receiver_id);
+    const other = sender===user.id ? receiver : sender;
     const key = idStr(other);
-    if(!convMap.has(key)) convMap.set(key, m);
+    if(!convMap.has(key)) convMap.set(key, { ...m, sender_id: sender, receiver_id: receiver });
   });
   const ids = Array.from(convMap.keys());
   let profiles = [];
@@ -119,7 +124,7 @@ async function fetchConversation(otherId){
     .or(`and(sender_id.eq.${user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user.id})`)
     .order('created_at', { ascending:true });
   if(error){ console.error('load messages', error); return; }
-  currentMessages = data || [];
+  currentMessages = (data||[]).map(m=>({ ...m, sender_id:idStr(m.sender_id), receiver_id:idStr(m.receiver_id) }));
   renderMessages();
 }
 
@@ -145,7 +150,7 @@ $('#message-form').addEventListener('submit', async e=>{
   textarea.value='';
   const { data, error } = await supabase
     .from('messages')
-    .insert({ sender_id:user.id, receiver_id:activeParent.id, content })
+    .insert({ sender_id:user.id, receiver_id:idStr(activeParent.id), content })
     .select()
     .single();
   if(error){ console.error('send message', error); return; }
@@ -163,9 +168,12 @@ function setupMessageSubscription(otherId){
     .channel('room-'+id)
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages' }, payload => {
       const m = payload.new;
-      if((m.sender_id===user.id && m.receiver_id===id) || (m.sender_id===id && m.receiver_id===user.id)){
-        currentMessages.push(m); renderMessages();
-        lastMessages.set(id, m); renderParentList();
+      const sender = idStr(m.sender_id);
+      const receiver = idStr(m.receiver_id);
+      if((sender===user.id && receiver===id) || (sender===id && receiver===user.id)){
+        const msg = { ...m, sender_id: sender, receiver_id: receiver };
+        currentMessages.push(msg); renderMessages();
+        lastMessages.set(id, msg); renderParentList();
       }
     })
     .subscribe();
