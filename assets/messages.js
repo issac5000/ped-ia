@@ -267,8 +267,25 @@ async function loadConversations(){
   const ids = Array.from(convMap.keys());
   let profiles = [];
   if(ids.length){
-    const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
-    profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      const token = s?.access_token || '';
+      const r = await fetch('/api/profiles/by-ids', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ids })
+      });
+      if (r.ok) {
+        const j = await r.json();
+        profiles = (j.profiles||[]).map(p=>({ ...p, id:idStr(p.id) }));
+      } else {
+        const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
+        profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
+      }
+    } catch {
+      const { data: profs } = await supabase.from('profiles').select('id,full_name,avatar_url').in('id', ids);
+      profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
+    }
   }
   parents = profiles;
   // Some conversations may involve users without a profile entry.
@@ -313,8 +330,26 @@ async function ensureConversation(otherId){
   const id = idStr(otherId);
   if(parents.some(p=>p.id===id)) return;
   let profile = { id, full_name:'Parent', avatar_url:null };
-  const { data } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).single();
-  if(data) profile = { ...data, id:idStr(data.id) };
+  try {
+    const { data: { session: s } } = await supabase.auth.getSession();
+    const token = s?.access_token || '';
+    const r = await fetch('/api/profiles/by-ids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ ids: [id] })
+    });
+    if (r.ok) {
+      const j = await r.json();
+      const p = (j.profiles||[])[0];
+      if (p) profile = { ...p, id: idStr(p.id) };
+    } else {
+      const { data } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).maybeSingle();
+      if (data) profile = { ...data, id:idStr(data.id) };
+    }
+  } catch {
+    const { data } = await supabase.from('profiles').select('id,full_name,avatar_url').eq('id', id).maybeSingle();
+    if (data) profile = { ...data, id:idStr(data.id) };
+  }
   parents.push(profile);
   lastMessages.set(id, null);
   renderParentList();

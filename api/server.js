@@ -266,6 +266,54 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Fetch limited public profile fields for a list of user IDs using service role
+  if (req.method === 'POST' && url.pathname === '/api/profiles/by-ids') {
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+      const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+      if (!serviceKey || !supaUrl) return send(res, 500, JSON.stringify({ error:'Server misconfigured' }), { 'Content-Type':'application/json' });
+
+      const auth = req.headers['authorization'] || '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      if (!token) return send(res, 401, JSON.stringify({ error:'Missing Authorization' }), { 'Content-Type':'application/json' });
+
+      // Verify the token corresponds to a logged-in user (only to prevent open scraping)
+      const uRes = await fetch(`${supaUrl}/auth/v1/user`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': anonKey || serviceKey }
+      });
+      if (!uRes.ok) {
+        const t = await uRes.text().catch(()=> '');
+        return send(res, 401, JSON.stringify({ error:'Invalid token', details: t }), { 'Content-Type':'application/json' });
+      }
+
+      const body = await parseJson(req);
+      const ids = Array.isArray(body?.ids) ? body.ids.map(x=>String(x)).filter(Boolean) : [];
+      // Limit to a reasonable amount
+      if (!ids.length) return send(res, 400, JSON.stringify({ error:'ids required' }), { 'Content-Type':'application/json' });
+      if (ids.length > 200) return send(res, 400, JSON.stringify({ error:'too many ids' }), { 'Content-Type':'application/json' });
+
+      // Build PostgREST in() filter
+      const escaped = ids.map(id => id.replace(/"/g, '""'));
+      const list = `(${escaped.map(id=>`"${id}"`).join(',')})`;
+      const q = `${supaUrl}/rest/v1/profiles?select=id,full_name,avatar_url&id=in.${encodeURIComponent(list)}`;
+      const pRes = await fetch(q, {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`
+        }
+      });
+      if (!pRes.ok) {
+        const t = await pRes.text().catch(()=> '');
+        return send(res, 500, JSON.stringify({ error:'Fetch profiles failed', details: t }), { 'Content-Type':'application/json' });
+      }
+      const arr = await pRes.json();
+      return send(res, 200, JSON.stringify({ profiles: arr }), { 'Content-Type':'application/json' });
+    } catch (e) {
+      return send(res, 500, JSON.stringify({ error:'Server error', details: String(e.message || e) }), { 'Content-Type':'application/json' });
+    }
+  }
+
   // Static
   return handleStatic(req, res);
 });

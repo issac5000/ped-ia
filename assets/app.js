@@ -1923,8 +1923,29 @@ try {
           const ids = (topics||[]).map(t=>t.id);
           const { data: reps } = ids.length? await supabase.from('forum_replies').select('id,topic_id,user_id,content,created_at').in('topic_id', ids) : { data: [] };
           const userIds = new Set([...(topics||[]).map(t=>t.user_id), ...(reps||[]).map(r=>r.user_id)]);
-          const profiles = userIds.size? await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds)) : { data: [] };
-          const authorsMap = new Map((profiles.data||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+          let authorsMap = new Map();
+          if (userIds.size) {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const token = session?.access_token || '';
+              const r = await fetch('/api/profiles/by-ids', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ ids: Array.from(userIds) })
+              });
+              if (r.ok) {
+                const j = await r.json();
+                authorsMap = new Map((j.profiles||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+              } else {
+                // Fallback to direct select (may be restricted by RLS)
+                const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds));
+                authorsMap = new Map((profs||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+              }
+            } catch {
+              const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds));
+              authorsMap = new Map((profs||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+            }
+          }
           const repliesMap = new Map();
           (reps||[]).forEach(r=>{ const arr = repliesMap.get(r.topic_id)||[]; arr.push(r); repliesMap.set(r.topic_id, arr); });
           renderTopics(topics||[], repliesMap, authorsMap);
