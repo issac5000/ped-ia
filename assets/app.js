@@ -50,6 +50,8 @@ console.log('DEBUG: app.js chargé');
   // Load Supabase env and client
   let supabase = null; 
   let authSession = null;
+  // Keep notification channels to clean up on logout
+  let notifChannels = [];
   // Reveal observer (initialized later in setupScrollAnimations)
   let revealObserver = null;
 
@@ -125,6 +127,14 @@ try {
         } else {
           setActiveRoute(location.hash);
         }
+        // Rebind realtime notifications on auth change
+        if (authSession?.user) {
+          setupRealtimeNotifications();
+        } else {
+          // cleanup channels on logout
+          try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
+          notifChannels = [];
+        }
       });
       // Initial routing once auth state is resolved
       if (location.hash) {
@@ -132,6 +142,8 @@ try {
       } else {
         location.hash = authSession?.user ? '#/dashboard' : '#/';
       }
+      // Bind notifications for existing session
+      if (authSession?.user) setupRealtimeNotifications();
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
@@ -259,6 +271,157 @@ try {
   });
   // Re-evaluate after full load (fonts/assets can change widths)
   window.addEventListener('load', evaluateHeaderFit);
+
+  // --- Notifications (popup) -------------------------------------------------
+  // Toast-based notifications (auto-close after 4s; stackable)
+  let notifCount = 0;
+  let notifyAudioCtx = null;
+  function playNotifySound(){
+    try {
+      // Create or reuse a single AudioContext
+      notifyAudioCtx = notifyAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = notifyAudioCtx;
+      const now = ctx.currentTime + 0.01;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now); // soft chime
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    } catch {}
+  }
+  function getToastHost(){
+    let host = document.getElementById('notify-toasts');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'notify-toasts';
+      host.className = 'notify-toasts';
+      document.body.appendChild(host);
+    }
+    return host;
+  }
+  function showNotification(opts){
+    try {
+      const { title = 'Notification', text = '', actionHref = '', actionLabel = 'Voir' } = opts || {};
+      const host = getToastHost();
+      // Cap the stack to 4 by removing the oldest
+      while (host.children.length >= 4) host.removeChild(host.firstElementChild);
+      const toast = document.createElement('div');
+      toast.className = 'notify-toast';
+      toast.innerHTML = `
+        <div class="nt-content">
+          <h3 class="nt-title"></h3>
+          <p class="nt-text"></p>
+          <div class="nt-actions">
+            <button type="button" class="btn btn-secondary nt-close">Fermer</button>
+            <a class="btn btn-primary nt-link" href="#">${actionLabel}</a>
+          </div>
+        </div>
+      `;
+      toast.querySelector('.nt-title').textContent = title;
+      toast.querySelector('.nt-text').textContent = text;
+      const link = toast.querySelector('.nt-link');
+      if (actionHref) { link.setAttribute('href', actionHref); link.hidden = false; }
+      else { link.hidden = true; }
+      const close = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } };
+      toast.querySelector('.nt-close').addEventListener('click', close);
+      link.addEventListener('click', close);
+      host.appendChild(toast);
+      // Discreet sound on notification
+      playNotifySound();
+      const timer = setTimeout(close, 4000);
+      toast.addEventListener('mouseenter', () => clearTimeout(timer));
+      toast.addEventListener('mouseleave', () => setTimeout(close, 1500));
+    } catch {}
+  }
+
+  // Badge on Messages nav link
+  function setMessagesBadge(n){
+    notifCount = Math.max(0, n|0);
+    const link = document.querySelector('#main-nav a[href="messages.html"]');
+    if (!link) return;
+    let b = link.querySelector('.nav-badge');
+    if (!b) { b = document.createElement('span'); b.className = 'nav-badge'; link.appendChild(b); }
+    b.textContent = String(notifCount);
+    b.hidden = notifCount === 0;
+  }
+  function bumpMessagesBadge(){ setMessagesBadge((notifCount|0)+1); }
+
+  function setupRealtimeNotifications(){
+    try {
+      if (!useRemote()) return;
+      const uid = authSession?.user?.id; if (!uid) return;
+      // Cleanup previous
+      try { for (const ch of notifChannels) supabase.removeChannel(ch); } catch {}
+      notifChannels = [];
+      // New messages addressed to me
+      const chMsg = supabase
+        .channel('notify-messages-'+uid)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${uid}`
+        }, async (payload) => {
+          const row = payload.new || {};
+          const fromId = row.sender_id;
+          // Resolve sender name
+          let fromName = 'Un parent';
+          try {
+            const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle();
+            if (data?.full_name) fromName = data.full_name;
+          } catch {}
+          showNotification({
+            title: 'Nouveau message',
+            text: `Vous avez un nouveau message de ${fromName}`,
+            actionHref: `messages.html?user=${fromId}`,
+            actionLabel: 'Ouvrir'
+          });
+          bumpMessagesBadge();
+        })
+        .subscribe();
+      notifChannels.push(chMsg);
+
+      // Replies on my topics
+      const chRep = supabase
+        .channel('notify-replies-'+uid)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'forum_replies'
+        }, async (payload) => {
+          const r = payload.new || {};
+          if (!r?.topic_id) return;
+          // Don't notify for my own replies
+          if (String(r.user_id) === String(uid)) return;
+          try {
+            const { data: topic } = await supabase.from('forum_topics').select('id,user_id,title').eq('id', r.topic_id).maybeSingle();
+            if (!topic || String(topic.user_id) !== String(uid)) return;
+            // Resolve replier name
+            let who = 'Un parent';
+            try {
+              const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle();
+              if (prof?.full_name) who = prof.full_name;
+            } catch {}
+            const title = (topic.title||'').replace(/^\[(.*?)\]\s*/, '');
+            showNotification({
+              title: 'Nouvelle réponse',
+              text: `${who} a répondu à votre publication${title?` « ${title} »`:''}`,
+              actionHref: '#/community',
+              actionLabel: 'Voir'
+            });
+            bumpMessagesBadge();
+          } catch {}
+        })
+        .subscribe();
+      notifChannels.push(chRep);
+    } catch {}
+  }
+
+  // Clear badge when user visits Messages
+  window.addEventListener('DOMContentLoaded', () => {
+    const link = document.querySelector('#main-nav a[href="messages.html"]');
+    link?.addEventListener('click', () => setMessagesBadge(0));
+  });
 
   // Soft pastel particles in hero
   let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null };

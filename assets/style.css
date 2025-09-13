@@ -447,6 +447,34 @@ input[type="checkbox"]{width:auto}
 /* Dialog labels in white for readability */
 .dialog label{ color:#ffffff }
 
+/* Inline notification popup (reuses dialog glass style) */
+.notify-dialog{ width:min(420px, 96vw); padding:0 }
+.notify-content{ display:grid; gap:10px; padding:14px }
+.notify-title{ margin:0; font-size:16px; color:#ffffff }
+.notify-text{ margin:0; color:#ffffff }
+.notify-actions{ display:flex; justify-content:flex-end; gap:8px; padding-top:6px }
+
+/* Toast stack for multiple notifications */
+.notify-toasts{ position:fixed; top:12px; right:12px; display:grid; gap:10px; width:min(96vw, 420px); z-index:300; pointer-events:none }
+@media(max-width:900px){
+  .notify-toasts{ left:50%; right:auto; transform:translateX(-50%); width:min(96vw, 520px) }
+}
+.notify-toast{ pointer-events:auto; border:1px solid rgba(255,255,255,.22); border-radius:16px; overflow:hidden;
+  background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.08));
+  backdrop-filter:blur(14px) saturate(150%); -webkit-backdrop-filter:blur(14px) saturate(150%);
+  box-shadow:0 12px 28px rgba(0,0,0,.35); color:#ffffff; opacity:1; transform:translateY(0); transition:opacity .25s ease, transform .25s ease }
+.notify-toast.hide{ opacity:0; transform:translateY(-6px) }
+.notify-toast .nt-content{ padding:12px 14px; display:grid; gap:8px }
+.notify-toast .nt-title{ margin:0; font-weight:700; font-size:15px; color:#ffffff }
+.notify-toast .nt-text{ margin:0; color:#ffffff; font-size:14px }
+.notify-toast .nt-actions{ display:flex; justify-content:flex-end; gap:8px }
+
+/* Badge on Messages link in hamburger */
+body.force-mobile .main-nav .nav-link{ position:relative }
+.nav-badge{ display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; border-radius:999px; font-size:12px; font-weight:800; color:#ffffff;
+  background:linear-gradient(92deg, rgba(255,150,64,.85), rgba(78,124,216,.85)); border:1px solid rgba(255,255,255,.22) }
+body.force-mobile .main-nav .nav-link .nav-badge{ position:absolute; right:12px; top:50%; transform:translateY(-50%) }
+
 /* Charts */
 .chart-card{padding:0; display:grid; gap:6px}
 .chart-header{display:flex; justify-content:space-between; align-items:center; padding:12px 16px 0}
