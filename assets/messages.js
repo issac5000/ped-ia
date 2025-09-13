@@ -62,6 +62,11 @@ async function loadConversations(){
     profiles = (profs||[]).map(p=>({ ...p, id:idStr(p.id) }));
   }
   parents = profiles;
+  // Some conversations may involve users without a profile entry.
+  // Ensure those ids still appear in the list with a placeholder profile
+  ids.forEach(id=>{
+    if(!parents.some(p=>p.id===id)) parents.push({ id, full_name:'Parent', avatar_url:null });
+  });
   lastMessages = convMap;
   renderParentList();
 }
@@ -165,7 +170,7 @@ $('#message-form').addEventListener('submit', async e=>{
   renderParentList();
   await supabase
     .from('notifications')
-    .insert({ user_id: activeParent.id, type: 'message', reference_id: data.id, is_read: false });
+    .insert({ user_id: idStr(activeParent.id), type: 'message', reference_id: data.id, is_read: false });
 });
 
 function setupMessageSubscription(otherId){
