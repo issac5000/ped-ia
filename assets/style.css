@@ -425,6 +425,7 @@ section[data-route="/login"] .card{
 
 .card{background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:20px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease}
 .card:hover{transform:translateY(-3px); box-shadow:0 14px 34px rgba(30,50,100,.16); border-color:#d8e0f2; background:#ffffff}
+section[data-route="/"] .card{position:relative; overflow:hidden}
 .stack{display:grid; gap:12px}
 .hstack{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
 .flex-between{display:flex; justify-content:space-between; align-items:center; gap:12px}
@@ -575,6 +576,7 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 /* Canvas layers: use normal blend by default so they remain visible on dark backgrounds */
 /* Increase default opacity of bubble canvases on non-home pages */
 .section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9; mix-blend-mode:normal}
+.card-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9; mix-blend-mode:normal}
 .route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9; mix-blend-mode:normal}
 .logo-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.8; mix-blend-mode:screen}
 /* Dashboard full-viewport canvas (fixed, no stretch) */
@@ -588,14 +590,16 @@ section[data-route="/"] .route-canvas{
 @media(max-width:900px){
     .section-canvas,
     .route-canvas,
-    .route-canvas-fixed{
+    .route-canvas-fixed,
+    .card-canvas{
       opacity:.7 !important;
       mix-blend-mode: normal !important;
     }
   section[data-route="/"] > .route-canvas{
     opacity:.08 !important;
   }
-  section[data-route="/"] .section-canvas{
+  section[data-route="/"] .section-canvas,
+  section[data-route="/"] .card-canvas{
     opacity:.35 !important;
   }
 }
@@ -607,7 +611,8 @@ section[data-route="/"] .route-canvas{
     z-index:1;
   }
   section[data-route="/"] > .route-canvas,
-  section[data-route="/"] .section-canvas{
+  section[data-route="/"] .section-canvas,
+  section[data-route="/"] .card-canvas{
     z-index:1;
   }
 }

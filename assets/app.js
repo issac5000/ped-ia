@@ -239,15 +239,19 @@ try {
       stopSectionParticles();
       startHeroParticles();
       stopLogoParticles();
-      // On mobile, also overlay the page with floating bubbles at low opacity
+      // On mobile, overlay the page and cards with floating bubbles at low opacity
       if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
         startRouteParticles();
+        startCardParticles();
+      } else {
+        stopCardParticles();
       }
     } else {
       stopHeroParticles();
       stopSectionParticles();
       stopRouteParticles();
       stopLogoParticles();
+      stopCardParticles();
       startRouteParticles();
       startLogoParticles();
     }
@@ -983,6 +987,96 @@ try {
       sectionParticlesStates = [];
       if (startSectionParticles._resize) window.removeEventListener('resize', startSectionParticles._resize);
       startSectionParticles._resize = null;
+    } catch {}
+  }
+
+  let cardParticlesStates = [];
+  function startCardParticles(){
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches)) return;
+      stopCardParticles();
+      const root = document.querySelector('section[data-route="/"]');
+      if (!root) return;
+      const cards = Array.from(root.querySelectorAll('.card'));
+      cards.forEach(card => {
+        const cvs = document.createElement('canvas');
+        cvs.className = 'card-canvas';
+        card.prepend(cvs);
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const rect = card.getBoundingClientRect();
+        cvs.width = Math.floor(rect.width * dpr);
+        cvs.height = Math.floor(rect.height * dpr);
+        const ctx = cvs.getContext('2d'); ctx.scale(dpr, dpr);
+        const cs = getComputedStyle(document.documentElement);
+        const palette = [
+          cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
+          cs.getPropertyValue('--orange').trim()||'#ffcba4',
+          cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
+          '#ffd9e6'
+        ];
+        const W = rect.width, H = rect.height;
+        const area = Math.max(1, W*H);
+        const isSmallScreen = true;
+        const N = Math.max(8, Math.min(24, Math.round(area/52000)));
+        const parts = [];
+        for (let i=0;i<N;i++){
+          const u = Math.random();
+          const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));
+          parts.push({
+            x: Math.random()*W,
+            y: Math.random()*H,
+            r,
+            vx: (Math.random()*.28 - .14),
+            vy: (Math.random()*.28 - .14),
+            hue: palette[Math.floor(Math.random()*palette.length)],
+            alpha: (.08) + Math.random()*.22,
+            drift: Math.random()*Math.PI*2,
+            spin: .001 + Math.random()*.003
+          });
+        }
+        const state = { el: card, cvs, ctx, parts, raf: 0, lastT: 0 };
+        const step = (t)=>{
+          const now = t || performance.now();
+          const dt = state.lastT? Math.min(40, now - state.lastT) : 16;
+          state.lastT = now;
+          const W = card.clientWidth, H = card.clientHeight;
+          ctx.setTransform(1,0,0,1,0,0);
+          ctx.clearRect(0,0,W,H);
+          for (const p of state.parts){
+            p.drift += p.spin*dt;
+            p.x += p.vx + Math.cos(p.drift)*.04;
+            p.y += p.vy + Math.sin(p.drift)*.04;
+            if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
+            if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.hue;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+          }
+          state.raf = requestAnimationFrame(step);
+        };
+        state.raf = requestAnimationFrame(step);
+        cardParticlesStates.push(state);
+      });
+      const onR = ()=>{
+        cardParticlesStates.forEach(st => {
+          const rect = st.el.getBoundingClientRect();
+          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          st.cvs.width = Math.floor(rect.width * dpr);
+          st.cvs.height = Math.floor(rect.height * dpr);
+          st.ctx.setTransform(dpr,0,0,dpr,0,0);
+        });
+      };
+      window.addEventListener('resize', onR);
+      startCardParticles._resize = onR;
+    } catch {}
+  }
+  function stopCardParticles(){
+    try {
+      (cardParticlesStates||[]).forEach(st => { cancelAnimationFrame(st.raf); st.raf=0; st.ctx?.clearRect(0,0,st.cvs.width, st.cvs.height); st.cvs.remove(); });
+      cardParticlesStates = [];
+      if (startCardParticles._resize) window.removeEventListener('resize', startCardParticles._resize);
+      startCardParticles._resize = null;
     } catch {}
   }
 
