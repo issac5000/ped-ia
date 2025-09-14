@@ -9,6 +9,8 @@ console.log('DEBUG: app.js chargé');
 (async () => {
   console.log('DEBUG: entrée dans init()');
   document.body.classList.remove('no-js');
+  // Always use hamburger layout on all viewports
+  try { document.body.classList.add('force-mobile'); } catch {}
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -230,23 +232,21 @@ try {
     if (path === '/contact') { console.log('DEBUG: appel de setupContact()'); setupContact(); }
     // prepare and trigger scroll-based reveals
     setTimeout(setupScrollAnimations, 0);
-    // Particles: apply bubbles across full home page (route-level canvas)
-      if (path === '/') {
-        // Accueil: binder la newsletter
-        try { setupNewsletter(); } catch {}
-        stopHeroParticles();
-        stopSectionParticles();
-        // Keep a single route-wide canvas for home too
-        startRouteParticles();
-        stopLogoParticles();
-      } else {
-        stopHeroParticles();
-        stopSectionParticles();
-        stopRouteParticles();
-        stopLogoParticles();
-        startRouteParticles();
-        startLogoParticles();
-      }
+    // Particles: Home uses hero canvas; other routes use route-wide canvas
+    if (path === '/') {
+      try { setupNewsletter(); } catch {}
+      stopRouteParticles();
+      stopSectionParticles();
+      startHeroParticles();
+      stopLogoParticles();
+    } else {
+      stopHeroParticles();
+      stopSectionParticles();
+      stopRouteParticles();
+      stopLogoParticles();
+      startRouteParticles();
+      startLogoParticles();
+    }
     console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
 
@@ -598,7 +598,7 @@ try {
   function startHeroParticles(){
     try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const sec = document.querySelector('section[data-route="/"] .hero');
+      const sec = document.querySelector('section[data-route="/"] .hero-v2') || document.querySelector('section[data-route="/"] .hero');
       const cvs = document.getElementById('hero-canvas');
       if (!sec || !cvs) return;
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -636,7 +636,7 @@ try {
           vx: (Math.random()*.35 - .175),
           vy: (Math.random()*.35 - .175),
           hue: palette[Math.floor(Math.random()*palette.length)],
-          alpha: (isSmallScreen ? .04 : .10) + Math.random()*(isSmallScreen ? .08 : .20),
+          alpha: (isSmallScreen ? .08 : .12) + Math.random()*(isSmallScreen ? .22 : .24),
           drift: Math.random()*Math.PI*2,
           spin: .0015 + Math.random()*.0035
         });
@@ -744,7 +744,7 @@ try {
             vx:(Math.random()*.28 - .14),
             vy:(Math.random()*.28 - .14),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha:(isSmallScreen ? .04 : .10) + Math.random()*(isSmallScreen ? .08 : .20),
+            alpha:(isSmallScreen ? .08 : .12) + Math.random()*(isSmallScreen ? .22 : .24),
             drift: Math.random()*Math.PI*2,
             spin:.001 + Math.random()*.003
           });
@@ -933,7 +933,7 @@ try {
             vx: (Math.random()*.28 - .14),
             vy: (Math.random()*.28 - .14),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha: (isSmallScreen ? .04 : .10) + Math.random()*(isSmallScreen ? .08 : .20),
+            alpha: (isSmallScreen ? .08 : .12) + Math.random()*(isSmallScreen ? .22 : .24),
             drift: Math.random()*Math.PI*2,
             spin: .001 + Math.random()*.003
           });
