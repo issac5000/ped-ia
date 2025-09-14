@@ -2132,6 +2132,7 @@ try {
         const isOpen = openSet.has(tid);
         const toggleLabel = isOpen ? 'Réduire la publication' : 'Afficher les commentaires';
         const toggleCount = rs.length ? ` (${rs.length})` : '';
+        const isMobile = document.body.classList.contains('force-mobile');
         el.innerHTML = `
           <div class="flex-between">
             <h3 style="margin:0">${escapeHtml(title)}</h3>
@@ -2140,7 +2141,7 @@ try {
           <div class="topic-body" data-body="${tid}" style="${isOpen?'':'display:none'}">
             <p style="margin-top:8px">${escapeHtml(t.content)}</p>
             <div class="stack">
-              ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">💬 Message privé</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+              ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">${isMobile ? '💬' : '💬 Message privé'}</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
             </div>
             <form data-id="${tid}" class="form-reply form-grid" style="margin-top:8px">
               <label>Réponse<textarea name="content" rows="2" required></textarea></label>
