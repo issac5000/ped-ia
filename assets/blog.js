@@ -1,11 +1,42 @@
 document.body.classList.remove('no-js');
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+let supabase=null, authSession=null;
+
+function updateHeaderAuth(){
+  $('#btn-login').hidden = !!authSession?.user;
+  $('#btn-logout').hidden = !authSession?.user;
+  $('#login-status').hidden = !authSession?.user;
+}
+
+async function signInGoogle(){
+  try{
+    if(!supabase){
+      const env = await fetch('/api/env').then(r=>r.json());
+      if(!env?.url || !env?.anonKey) throw new Error('Env manquante');
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      supabase = createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
+    }
+    await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin } });
+  }catch(e){ alert('Connexion Google indisponible'); }
+}
 
 function setupHeader(){
   const navBtn = $('#nav-toggle');
   const mainNav = $('#main-nav');
   const navBackdrop = $('#nav-backdrop');
+  $('#btn-login')?.addEventListener('click', async e=>{
+    e.preventDefault();
+    const btn=e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
+    try{ await signInGoogle(); } finally{}
+  });
+  $('#btn-logout')?.addEventListener('click', async e=>{
+    const btn=e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
+    try{ await supabase?.auth.signOut(); } catch{}
+    alert('Déconnecté.');
+    authSession=null;
+    updateHeaderAuth();
+  });
   navBtn?.addEventListener('click', ()=>{
     const isOpen = mainNav?.classList.toggle('open');
     navBtn.setAttribute('aria-expanded', String(!!isOpen));
@@ -23,6 +54,20 @@ function setupHeader(){
     navBtn?.setAttribute('aria-expanded','false');
     navBackdrop?.classList.remove('open');
   });
+}
+
+async function initAuth(){
+  try{
+    const env = await fetch('/api/env').then(r=>r.json());
+    if(env?.url && env?.anonKey){
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      supabase = createClient(env.url, env.anonKey, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }});
+      const { data:{ session } } = await supabase.auth.getSession();
+      authSession = session;
+      updateHeaderAuth();
+      supabase.auth.onAuthStateChange((_e, sess)=>{ authSession=sess; updateHeaderAuth(); });
+    }
+  }catch(e){ console.warn('Auth init failed', e); }
 }
 
 function evaluateHeaderFit(){
@@ -198,13 +243,14 @@ function startLogoParticles(){
   }catch(e){}
 }
 
-function init(){
+async function init(){
   setupHeader();
   evaluateHeaderFit();
   const yEl = document.getElementById('y');
   if(yEl) yEl.textContent = new Date().getFullYear();
   const pl = document.getElementById('page-logo');
   if(pl) pl.hidden = false;
+  await initAuth();
   startRouteParticles();
   startLogoParticles();
 }
