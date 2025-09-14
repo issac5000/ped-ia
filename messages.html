@@ -20,8 +20,8 @@
     .chat-window.open{display:flex}
     .chat-placeholder{flex:1;display:flex;align-items:center;justify-content:center;height:100%;text-align:center}
     #conversation{flex:1;overflow-y:auto}
-    /* Make my sent bubbles slightly translucent (more opaque than before) */
-    .chat-window .bubble.user{opacity:.8}
+    /* Ensure my sent bubbles use solid black text */
+    .chat-window .bubble.user{color:#000}
     /* Small green dot for unread conversations */
     .dot-unread{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok,#2dc07a);box-shadow:0 0 0 2px rgba(255,255,255,.12)}
     @media(max-width:600px){
