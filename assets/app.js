@@ -616,6 +616,7 @@ try {
         '#ffd9e6'
       ];
       const W = rect.width, H = rect.height;
+      const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
       // Adjust particle count on low-power or small screens
       const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
       const lowPower = !!(conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || ''))) || Math.min(W, H) < 520;
@@ -635,7 +636,7 @@ try {
           vx: (Math.random()*.35 - .175),
           vy: (Math.random()*.35 - .175),
           hue: palette[Math.floor(Math.random()*palette.length)],
-          alpha: .10 + Math.random()*.20,
+          alpha: (isSmallScreen ? .04 : .10) + Math.random()*(isSmallScreen ? .08 : .20),
           drift: Math.random()*Math.PI*2,
           spin: .0015 + Math.random()*.0035
         });
@@ -731,6 +732,8 @@ try {
         const area = Math.max(1, W*H);
         const N = Math.max(14, Math.min(40, Math.round(area/52000)));
         const parts = [];
+        const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+        const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
         for (let i=0;i<N;i++){
           const u = Math.random();
           const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));
@@ -741,7 +744,7 @@ try {
             vx:(Math.random()*.28 - .14),
             vy:(Math.random()*.28 - .14),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha:.10 + Math.random()*.20,
+            alpha:(isSmallScreen ? .04 : .10) + Math.random()*(isSmallScreen ? .08 : .20),
             drift: Math.random()*Math.PI*2,
             spin:.001 + Math.random()*.003
           });
@@ -930,7 +933,7 @@ try {
             vx: (Math.random()*.28 - .14),
             vy: (Math.random()*.28 - .14),
             hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha: .10 + Math.random()*.20,
+            alpha: (isSmallScreen ? .04 : .10) + Math.random()*(isSmallScreen ? .08 : .20),
             drift: Math.random()*Math.PI*2,
             spin: .001 + Math.random()*.003
           });
