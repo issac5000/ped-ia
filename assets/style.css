@@ -552,9 +552,10 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 .feature-ico{width:56px; height:56px; display:grid; place-items:center; font-size:30px; border-radius:50%; background:linear-gradient(92deg, rgba(255,150,64,.34), rgba(78,124,216,.34)); color:var(--text-inverse); margin:0 auto 2px}
 .feature h3,.feature p{margin:0}
 .steps{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:16px}
-.step{background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:24px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease; text-align:center; display:grid; gap:4px}
+.step{background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:32px 24px 24px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease; text-align:center; display:grid; gap:12px}
 .step:hover{transform:translateY(-2px); box-shadow:0 12px 28px rgba(30,50,100,.16); border-color:#d8e0f2; background:#ffffff}
-.step-num{width:40px; height:40px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(92deg,var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 6px 16px rgba(78,124,216,.32), 0 3px 10px rgba(255,170,110,.30); font-weight:700; margin:0 auto 2px}
+.step-icon{position:relative; width:72px; height:72px; display:grid; place-items:center; font-size:34px; border-radius:50%; background:linear-gradient(92deg, rgba(255,150,64,.15), rgba(78,124,216,.15)); margin:0 auto}
+.step-icon .step-num{position:absolute; top:-8px; left:-8px; width:32px; height:32px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(92deg,var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 6px 16px rgba(78,124,216,.32), 0 3px 10px rgba(255,170,110,.30); font-weight:700}
 .step h3,.step p{margin:0}
 
 /* IA tools layout */
