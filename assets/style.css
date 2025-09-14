@@ -605,6 +605,27 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
 .faq-item > summary::after{content:'\25B8'; position:absolute; right:24px; top:50%; transform:translateY(-50%); transition:transform .25s ease}
 .faq-item[open] > summary::after{transform:translateY(-50%) rotate(90deg)}
 .faq-item > p{margin:0; padding:0 24px 24px; color:var(--text); background:rgba(0,0,0,.15)}
+.newsletter-form{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:center;
+  max-width:480px;
+  margin:0 auto;
+  padding:24px;
+  background:linear-gradient(120deg, rgba(142,125,255,.25), rgba(53,223,207,.2));
+  border:1px solid var(--border);
+  border-radius:20px;
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(6px);
+}
+.newsletter-form input{
+  flex:1 1 220px;
+  width:auto;
+}
+.newsletter-form button{
+  flex:0 0 auto;
+}
 .cta-banner{padding:24px 0}
 .cta-inner{background:linear-gradient(120deg, rgba(142,125,255,.25), rgba(53,223,207,.2)); border:1px solid var(--border); border-radius:20px; padding:24px; display:grid; place-items:center; text-align:center; backdrop-filter:blur(8px)}
 
