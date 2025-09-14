@@ -840,3 +840,23 @@ section[data-route="/community"] .btn-danger:hover{
 /* Footer links (À propos, Contact, Mentions légales, Confidentialité) in orange and bold */
 .site-footer .fs-right .fs-link{ color: var(--orange-strong) !important; font-weight:700; }
 .site-footer .fs-right .fs-link:hover{ color: var(--orange-strong) !important; text-decoration: underline; }
+
+/* Blog cards */
+.blog-list{list-style:none; padding:0; display:grid; gap:24px;}
+.blog-card{padding:0; overflow:hidden;}
+.blog-card-link{display:block; text-decoration:none; color:inherit;}
+.blog-card-img{display:block; width:100%; height:auto;}
+.blog-card-content{padding:16px;}
+.blog-card-content h3{margin:0 0 4px; color:var(--blue-strong);}
+.blog-card-content p{margin:0; color:var(--muted); font-size:14px;}
+
+/* Article styles */
+.article-cover{display:block; max-width:600px; margin:0 auto 32px; border-radius:16px;}
+.article-content{gap:32px;}
+.article-content section + section{padding-top:24px; border-top:1px solid var(--border);}
+#toc{max-width:600px; margin:0 auto 32px;}
+#toc ul{list-style:none; padding:0; margin:0; display:grid; gap:8px; counter-reset:item;}
+#toc li{counter-increment:item;}
+#toc li::before{content:counter(item) '.'; font-weight:600; margin-right:8px; color:var(--orange-strong);}
+#toc a{text-decoration:none; color:var(--blue-strong);}
+#toc a:hover{text-decoration:underline;}
