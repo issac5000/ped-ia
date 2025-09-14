@@ -597,13 +597,13 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
 .testimonial:hover{transform:translateY(-3px); box-shadow:0 14px 34px rgba(30,50,100,.18); border-color:#d8e0f2; background:#ffffff}
 .testimonial p{margin:0 0 8px; font-style:italic; font-size:15px; color:var(--text); opacity:.95}
 .testimonial .who{color:var(--muted); font-size:12px; font-weight:600}
-.faq{display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(300px,1fr))}
-.faq-item{border:1px solid var(--border); border-radius:16px; background:#fff; box-shadow:var(--shadow); overflow:hidden}
-.faq-item > summary{padding:14px 16px; font-weight:400; cursor:pointer; list-style:none; color:var(--text); position:relative}
+.faq{display:flex; flex-direction:column; gap:16px}
+.faq-item{border:none; border-radius:20px; background:linear-gradient(120deg, rgba(142,125,255,.25), rgba(53,223,207,.2)); box-shadow:var(--shadow); overflow:hidden; backdrop-filter:blur(6px); color:var(--text)}
+.faq-item > summary{padding:20px 24px; font-weight:600; cursor:pointer; list-style:none; position:relative}
 .faq-item > summary::-webkit-details-marker{display:none}
-.faq-item > summary::after{content:'+'; position:absolute; right:16px; top:50%; transform:translateY(-50%); color:var(--muted); transition:transform .2s ease}
-.faq-item[open] > summary::after{content:'–'}
-.faq-item > p{margin:0; padding:0 16px 16px; color:var(--muted)}
+.faq-item > summary::after{content:'\25B8'; position:absolute; right:24px; top:50%; transform:translateY(-50%); transition:transform .25s ease}
+.faq-item[open] > summary::after{transform:translateY(-50%) rotate(90deg)}
+.faq-item > p{margin:0; padding:0 24px 24px; color:var(--text); background:rgba(0,0,0,.15)}
 .cta-banner{padding:24px 0}
 .cta-inner{background:linear-gradient(120deg, rgba(142,125,255,.25), rgba(53,223,207,.2)); border:1px solid var(--border); border-radius:20px; padding:24px; display:grid; place-items:center; text-align:center; backdrop-filter:blur(8px)}
 
