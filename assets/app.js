@@ -605,19 +605,31 @@ try {
   };
 
   // Soft pastel particles in hero
-  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null };
+  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null, extra: 0 };
   function startHeroParticles(){
     try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       const sec = document.querySelector('section[data-route="/"] .hero-v2') || document.querySelector('section[data-route="/"] .hero');
       const cvs = document.getElementById('hero-canvas');
       if (!sec || !cvs) return;
-      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       const rect = sec.getBoundingClientRect();
-      cvs.width = Math.floor(rect.width * dpr);
-      cvs.height = Math.floor(rect.height * dpr);
-      const ctx = cvs.getContext('2d'); ctx.scale(dpr, dpr);
-      heroParticlesState.canvas = cvs; heroParticlesState.ctx = ctx; heroParticlesState.parts = [];
+      const extra = 80; // allow particles to float outside the hero card
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      cvs.style.left = `${-extra/2}px`;
+      cvs.style.top = `${-extra/2}px`;
+      cvs.style.right = 'auto';
+      cvs.style.bottom = 'auto';
+      cvs.style.width = `${rect.width + extra}px`;
+      cvs.style.height = `${rect.height + extra}px`;
+      cvs.width = Math.floor((rect.width + extra) * dpr);
+      cvs.height = Math.floor((rect.height + extra) * dpr);
+      const ctx = cvs.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.translate(extra/2, extra/2);
+      heroParticlesState.canvas = cvs;
+      heroParticlesState.ctx = ctx;
+      heroParticlesState.parts = [];
+      heroParticlesState.extra = extra;
       // Palette from CSS variables
       const cs = getComputedStyle(document.documentElement);
       const palette = [
@@ -660,8 +672,9 @@ try {
         if (document.hidden) { heroParticlesState.lastT = now; heroParticlesState.raf = requestAnimationFrame(step); return; }
         heroParticlesState.lastT = now;
         const W = sec.clientWidth, H = sec.clientHeight;
+        const extra = heroParticlesState.extra || 0;
         // Clear
-        ctx.clearRect(0,0,W,H);
+        ctx.clearRect(-extra/2,-extra/2,W+extra,H+extra);
         // Draw parts
         for (const p of heroParticlesState.parts){
           p.drift += p.spin*dt;
@@ -682,10 +695,13 @@ try {
       const onR = ()=>{
         const rect = sec.getBoundingClientRect();
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        cvs.width = Math.floor(rect.width * dpr);
-        cvs.height = Math.floor(rect.height * dpr);
-        heroParticlesState.ctx?.setTransform(1,0,0,1,0,0);
-        heroParticlesState.ctx?.scale(dpr, dpr);
+        const extra = heroParticlesState.extra || 0;
+        cvs.style.width = `${rect.width + extra}px`;
+        cvs.style.height = `${rect.height + extra}px`;
+        cvs.width = Math.floor((rect.width + extra) * dpr);
+        cvs.height = Math.floor((rect.height + extra) * dpr);
+        heroParticlesState.ctx?.setTransform(dpr,0,0,dpr,0,0);
+        heroParticlesState.ctx?.translate(extra/2, extra/2);
       };
       window.addEventListener('resize', onR);
       heroParticlesState.resize = onR;
@@ -704,10 +720,20 @@ try {
       heroParticlesState.resize = null;
       if (heroParticlesState.observer) { heroParticlesState.observer.disconnect(); heroParticlesState.observer = null; }
       if (heroParticlesState.ctx){
-        const sec = document.querySelector('section[data-route="/"] .hero');
-        if (sec) heroParticlesState.ctx.clearRect(0,0,sec.clientWidth,sec.clientHeight);
+        const sec = document.querySelector('section[data-route="/"] .hero-v2') || document.querySelector('section[data-route="/"] .hero');
+        const extra = heroParticlesState.extra || 0;
+        if (sec) heroParticlesState.ctx.clearRect(-extra/2,-extra/2,sec.clientWidth+extra,sec.clientHeight+extra);
+      }
+      if (heroParticlesState.canvas){
+        heroParticlesState.canvas.style.left = '';
+        heroParticlesState.canvas.style.top = '';
+        heroParticlesState.canvas.style.right = '';
+        heroParticlesState.canvas.style.bottom = '';
+        heroParticlesState.canvas.style.width = '';
+        heroParticlesState.canvas.style.height = '';
       }
       heroParticlesState.ctx = null; heroParticlesState.parts = [];
+      heroParticlesState.extra = 0;
     } catch {}
   }
 
