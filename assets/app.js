@@ -602,7 +602,7 @@ try {
   };
 
   // Soft pastel particles in hero
-  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null };
+  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null };
   function startHeroParticles(){
     try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -686,6 +686,11 @@ try {
       };
       window.addEventListener('resize', onR);
       heroParticlesState.resize = onR;
+      if (window.ResizeObserver && window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+        const ro = new ResizeObserver(onR);
+        ro.observe(sec);
+        heroParticlesState.observer = ro;
+      }
     } catch {}
   }
   function stopHeroParticles(){
@@ -694,6 +699,7 @@ try {
       heroParticlesState.raf = 0;
       if (heroParticlesState.resize) window.removeEventListener('resize', heroParticlesState.resize);
       heroParticlesState.resize = null;
+      if (heroParticlesState.observer) { heroParticlesState.observer.disconnect(); heroParticlesState.observer = null; }
       if (heroParticlesState.ctx){
         const sec = document.querySelector('section[data-route="/"] .hero');
         if (sec) heroParticlesState.ctx.clearRect(0,0,sec.clientWidth,sec.clientHeight);
@@ -906,6 +912,7 @@ try {
       stopSectionParticles();
       const root = document.querySelector('section[data-route="/"]');
       if (!root) return;
+      const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
       const sections = Array.from(root.querySelectorAll(':scope > .section'));
       sections.forEach((sec, idx) => {
         // Apply ONLY to light-background sections (even-of-type): indexes 1,3,5,...
@@ -945,7 +952,7 @@ try {
             spin: .001 + Math.random()*.003
           });
         }
-        const state = { sec, cvs, ctx, parts, raf: 0, lastT: 0 };
+        const state = { sec, cvs, ctx, parts, raf: 0, lastT: 0, ro: null };
         const step = (t)=>{
           const now = t || performance.now();
           const dt = state.lastT? Math.min(40, now - state.lastT) : 16;
@@ -966,6 +973,17 @@ try {
           state.raf = requestAnimationFrame(step);
         };
         state.raf = requestAnimationFrame(step);
+        if (window.ResizeObserver && isSmallScreen) {
+          const rObs = new ResizeObserver(()=>{
+            const rect = sec.getBoundingClientRect();
+            const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+            cvs.width = Math.floor(rect.width * dpr);
+            cvs.height = Math.floor(rect.height * dpr);
+            ctx.setTransform(dpr,0,0,dpr,0,0);
+          });
+          rObs.observe(sec);
+          state.ro = rObs;
+        }
         sectionParticlesStates.push(state);
       });
       const onR = ()=>{
@@ -983,7 +1001,7 @@ try {
   }
   function stopSectionParticles(){
     try {
-      (sectionParticlesStates||[]).forEach(st => { cancelAnimationFrame(st.raf); st.raf=0; st.ctx?.clearRect(0,0,st.cvs.width, st.cvs.height); st.cvs.remove(); });
+      (sectionParticlesStates||[]).forEach(st => { cancelAnimationFrame(st.raf); st.raf=0; st.ctx?.clearRect(0,0,st.cvs.width, st.cvs.height); st.cvs.remove(); st.ro?.disconnect(); });
       sectionParticlesStates = [];
       if (startSectionParticles._resize) window.removeEventListener('resize', startSectionParticles._resize);
       startSectionParticles._resize = null;
@@ -1003,11 +1021,17 @@ try {
         const cvs = document.createElement('canvas');
         cvs.className = 'card-canvas';
         card.prepend(cvs);
-        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        const rect = card.getBoundingClientRect();
-        cvs.width = Math.floor(rect.width * dpr);
-        cvs.height = Math.floor(rect.height * dpr);
-        const ctx = cvs.getContext('2d'); ctx.scale(dpr, dpr);
+        const ctx = cvs.getContext('2d');
+        const state = { el: card, cvs, ctx, parts: [], raf: 0, lastT: 0, ro: null };
+        const resize = ()=>{
+          const rect = card.getBoundingClientRect();
+          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          cvs.width = Math.floor(rect.width * dpr);
+          cvs.height = Math.floor(rect.height * dpr);
+          ctx.setTransform(dpr,0,0,dpr,0,0);
+          return rect;
+        };
+        const rect = resize();
         const cs = getComputedStyle(document.documentElement);
         const palette = [
           cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
@@ -1019,11 +1043,10 @@ try {
         const area = Math.max(1, W*H);
         const isSmallScreen = true;
         const N = Math.max(8, Math.min(24, Math.round(area/52000)));
-        const parts = [];
         for (let i=0;i<N;i++){
           const u = Math.random();
           const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));
-          parts.push({
+          state.parts.push({
             x: Math.random()*W,
             y: Math.random()*H,
             r,
@@ -1035,7 +1058,6 @@ try {
             spin: .001 + Math.random()*.003
           });
         }
-        const state = { el: card, cvs, ctx, parts, raf: 0, lastT: 0 };
         const step = (t)=>{
           const now = t || performance.now();
           const dt = state.lastT? Math.min(40, now - state.lastT) : 16;
@@ -1056,6 +1078,11 @@ try {
           state.raf = requestAnimationFrame(step);
         };
         state.raf = requestAnimationFrame(step);
+        if (window.ResizeObserver) {
+          const rObs = new ResizeObserver(resize);
+          rObs.observe(card);
+          state.ro = rObs;
+        }
         cardParticlesStates.push(state);
       });
       const onR = ()=>{
@@ -1073,7 +1100,7 @@ try {
   }
   function stopCardParticles(){
     try {
-      (cardParticlesStates||[]).forEach(st => { cancelAnimationFrame(st.raf); st.raf=0; st.ctx?.clearRect(0,0,st.cvs.width, st.cvs.height); st.cvs.remove(); });
+      (cardParticlesStates||[]).forEach(st => { cancelAnimationFrame(st.raf); st.raf=0; st.ctx?.clearRect(0,0,st.cvs.width, st.cvs.height); st.cvs.remove(); st.ro?.disconnect(); });
       cardParticlesStates = [];
       if (startCardParticles._resize) window.removeEventListener('resize', startCardParticles._resize);
       startCardParticles._resize = null;
