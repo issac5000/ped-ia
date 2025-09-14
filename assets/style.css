@@ -687,12 +687,12 @@ section[data-route="/"] .route-canvas{
   /* Same background config as hero v2/newsletter */
   background: linear-gradient(135deg, rgba(255,225,200,.14), rgba(183,211,255,.12));
   border:1px solid var(--border);
-  border-radius:26px;
-  padding:32px 24px 24px;
+  border-radius:36px;
+  padding:24px 20px 18px;
   box-shadow:0 20px 50px rgba(0,0,0,.45);
   backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
   transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease;
-  text-align:center; display:grid; gap:12px
+  text-align:center; display:grid; gap:6px
 }
 .step:hover{
   transform:translateY(-2px);
@@ -700,9 +700,14 @@ section[data-route="/"] .route-canvas{
   border-color:rgba(255,255,255,.22);
   background: linear-gradient(135deg, rgba(255,225,200,.18), rgba(183,211,255,.16));
 }
-.step-icon{position:relative; width:72px; height:72px; display:grid; place-items:center; font-size:34px; border-radius:50%; background:#000000; border:1px solid rgba(255,255,255,.18); color:#ffffff; margin:0 auto}
+.step-icon{position:relative; width:64px; height:64px; display:grid; place-items:center; font-size:30px; border-radius:50%; background:#000000; border:1px solid rgba(255,255,255,.18); color:#ffffff; margin:0 auto; box-shadow:0 6px 16px rgba(78,124,216,.24), 0 3px 10px rgba(255,170,110,.20); transition:transform .18s ease}
+.step:hover .step-icon{ transform: translateY(-2px) }
 .step-icon .step-num{position:absolute; top:-8px; left:-8px; width:32px; height:32px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(92deg,var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 6px 16px rgba(78,124,216,.32), 0 3px 10px rgba(255,170,110,.30); font-weight:700}
 .step h3,.step p{margin:0}
+.step h3{ letter-spacing:.2px }
+.step h3::after{ content:""; display:block; height:2px; width:36%; margin:6px auto 0; border-radius:999px; background:linear-gradient(90deg, var(--orange-strong), var(--blue-strong)); opacity:.85 }
+.step p{ color: var(--text); opacity:.92; line-height:1.45 }
+@media(max-width:900px){ .step{ padding:20px 16px 16px } }
 
 /* IA tools layout */
 section[data-route="/ai"] > .stack{gap:20px}
