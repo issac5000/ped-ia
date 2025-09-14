@@ -671,6 +671,26 @@ try {
           spin: .0015 + Math.random()*.0035
         });
       }
+      // Add extra particles concentrated around the hero section
+      const heroH = hero?.offsetHeight || 0;
+      const extraHeroParts = heroH ? Math.round(N * 0.3) : 0;
+      for (let i=0; i<extraHeroParts; i++) {
+        const u = Math.random();
+        const r = u < .5 ? (5 + Math.random()*8)
+                : (u < .85 ? (12 + Math.random()*12)
+                : (22 + Math.random()*20));
+        heroParticlesState.parts.push({
+          x: Math.random()*W,
+          y: Math.random()*heroH,
+          r,
+          vx: (Math.random()*.35 - .175),
+          vy: (Math.random()*.35 - .175),
+          hue: palette[Math.floor(Math.random()*palette.length)],
+          alpha: (isSmallScreen ? .08 : .12) + Math.random()*(isSmallScreen ? .22 : .24),
+          drift: Math.random()*Math.PI*2,
+          spin: .0015 + Math.random()*.0035
+        });
+      }
       const step = (t)=>{
         const ctx = heroParticlesState.ctx; if (!ctx) return;
         const now = t || performance.now();
