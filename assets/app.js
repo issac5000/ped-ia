@@ -239,6 +239,10 @@ try {
       stopSectionParticles();
       startHeroParticles();
       stopLogoParticles();
+      // On mobile, also overlay the page with floating bubbles at low opacity
+      if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+        startRouteParticles();
+      }
     } else {
       stopHeroParticles();
       stopSectionParticles();

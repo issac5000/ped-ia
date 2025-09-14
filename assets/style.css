@@ -586,6 +586,9 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
     opacity:.35 !important;
     mix-blend-mode: normal !important;
   }
+  section[data-route="/"] > .route-canvas{
+    opacity:.08 !important;
+  }
 }
 
 /* Hide homepage hero bubbles canvas only on smaller mobiles */
