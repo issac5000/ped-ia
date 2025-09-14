@@ -297,7 +297,7 @@ section[data-route="/settings"] #form-settings textarea{
 .hero-image:hover{opacity:1}
 
 /* === HERO v2 — full refresh === */
-.hero-v2{ position:relative; border:1px solid var(--border); border-radius:26px; padding:28px; margin:8px 0 24px; overflow:hidden;
+  .hero-v2{ position:relative; border:1px solid var(--border); border-radius:26px; padding:28px; margin:8px 0 24px; overflow:visible;
   background:linear-gradient(135deg, rgba(255,225,200,.14), rgba(183,211,255,.12));
   box-shadow:0 20px 50px rgba(0,0,0,.45); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
 .hero-v2-grid{ display:grid; grid-template-columns:1.1fr .9fr; align-items:center; gap:18px; position:relative; z-index:1 }
