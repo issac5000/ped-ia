@@ -591,9 +591,16 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
   }
 }
 
-/* Hide homepage hero bubbles canvas only on smaller mobiles */
+/* Mobile homepage: keep bubble canvases above cards */
 @media(max-width:768px){
-  section[data-route="/"] .hero-canvas{ display:none !important; }
+  section[data-route="/"] .hero-canvas{
+    display:block !important;
+    z-index:1;
+  }
+  section[data-route="/"] > .route-canvas,
+  section[data-route="/"] .section-canvas{
+    z-index:1;
+  }
 }
 /* Ensure main content and footer sit above the fixed canvas */
 #app{position:relative; z-index:3}
