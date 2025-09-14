@@ -232,6 +232,8 @@ try {
     setTimeout(setupScrollAnimations, 0);
     // Particles: apply bubbles across full home page (route-level canvas)
       if (path === '/') {
+        // Accueil: binder la newsletter
+        try { setupNewsletter(); } catch {}
         stopHeroParticles();
         stopSectionParticles();
         // Keep a single route-wide canvas for home too
@@ -1141,6 +1143,48 @@ try {
         form.dataset.busy = '0'; if (btn) btn.disabled = false;
       }
     }); form && (form.dataset.bound='1');
+  }
+
+  // Newsletter (démo: enregistrement local + feedback)
+  function setupNewsletter(){
+    const form = document.getElementById('form-newsletter');
+    if (!form || form.dataset.bound) return;
+    const emailInput = form.querySelector('input[type="email"]');
+    const status = document.getElementById('newsletter-status');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!emailInput) return;
+      // Honeypot anti‑bot
+      const fd = new FormData(form);
+      const trap = (fd.get('website')||'').toString().trim();
+      if (trap) { return; }
+      // Validation
+      const email = (fd.get('email')||'').toString().trim();
+      if (!email) {
+        if (status){ status.textContent = 'Veuillez renseigner votre email.'; status.classList.add('error'); }
+        emailInput.focus();
+        return;
+      }
+      if (emailInput && emailInput.checkValidity && !emailInput.checkValidity()){
+        if (status){ status.textContent = 'Adresse e‑mail invalide.'; status.classList.add('error'); }
+        emailInput.focus();
+        return;
+      }
+      if (status){ status.textContent = ''; status.classList.remove('error'); }
+      if (form.dataset.busy==='1') return; form.dataset.busy='1';
+      const btn = form.querySelector('button[type="submit"],input[type="submit"]'); if (btn) btn.disabled = true;
+      try {
+        // Démo locale: on stocke en localStorage puis feedback
+        const list = store.get('pedia_newsletter', []);
+        list.push({ email, createdAt: Date.now() });
+        store.set('pedia_newsletter', list);
+        form.reset();
+        if (status){ status.textContent = 'Merci ! Vous êtes bien inscrit(e) à la newsletter.'; status.classList.remove('error'); }
+      } finally {
+        form.dataset.busy='0'; if (btn) btn.disabled = false;
+      }
+    });
+    form.dataset.bound='1';
   }
 
   // --- AI page handlers ---

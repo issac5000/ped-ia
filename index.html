@@ -13,7 +13,7 @@
     <link rel="preload" href="/assets/fonts/inter-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
     <!-- Google Fonts removed; using self-hosted Inter -->
     <link rel="preload" href="/logotexte.png" as="image" fetchpriority="high" />
-    <link rel="stylesheet" href="assets/style.css?v=6" />
+    <link rel="stylesheet" href="assets/style.css?v=7" />
   </head>
   <body class="no-js">
     <header class="site-header">
@@ -50,19 +50,22 @@
     <main id="app" class="container">
       <!-- Accueil -->
       <section data-route="/" class="route">
-        <div class="hero">
-          <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
-          <div class="hero-content">
-            <div class="hero-copy">
-              <h1 class="hero-title">Votre copilote parental, clair et rassurant</h1>
-              <p class="lead">Suivez l’évolution de vos enfants avec votre pédiatre virtuel à portée de mains 24h/24</p>
-              <div class="hero-actions">
-                <a href="#/signup" class="btn btn-primary">Créer le profil de mon enfant</a>
-                <a href="#/ai" class="btn btn-primary">Voir les outils</a>
+        <!-- New HERO v2 (original saved in variants/hero-original.html) -->
+        <div class="hero-v2">
+          <div class="hero-v2-grid">
+            <div class="hero-v2-copy">
+              <h1 class="hero-v2-title">Un copilote parental <span class="accent-orange">simple</span>,<br><span class="accent-orange">clair</span> et <span class="accent-orange">rassurant</span></h1>
+              <p class="hero-v2-sub">Suivez croissance, sommeil et jalons, et recevez des conseils personnalisés — le tout avec une interface douce et apaisante.</p>
+              <div class="hero-v2-actions">
+                <a href="#/signup" class="btn btn-primary">Commencer gratuitement</a>
+                <a href="#/ai" class="btn btn-secondary">Découvrir les outils</a>
               </div>
             </div>
-            <div class="hero-visual" aria-hidden="true">
-              <img src="/logo.png" alt="Logo" class="hero-image" loading="eager" decoding="async" fetchpriority="high" />
+            <div class="hero-v2-art" aria-hidden="true">
+              <img src="/logo.png" alt="Synap'Kids" class="hero-v2-logo" loading="eager" decoding="async" fetchpriority="high" />
+              <div class="orb orb1"></div>
+              <div class="orb orb2"></div>
+              <div class="orb orb3"></div>
             </div>
           </div>
         </div>
@@ -189,7 +192,36 @@
           </div>
         </div>
 
-        
+        <div class="section">
+          <h2 class="section-title">S’inscrire à la newsletter</h2>
+          <p class="section-subtitle">Recevez les dernières nouvelles et conseils directement dans votre boîte mail.</p>
+          <div class="cta-inner newsletter-cta">
+            <div class="nl-left">
+              <div class="nl-head">
+                <div class="nl-icon" aria-hidden="true">✉️</div>
+                <h3 class="nl-title">Newsletter Synap'Kids</h3>
+              </div>
+              <p class="nl-text">Conseils pédiatrie, nouveautés produit et contenus utiles — sans spam.</p>
+              <div class="nl-chips">
+                <span class="chip">1–2 emails/mois</span>
+                <span class="chip">Désinscription en 1 clic</span>
+                <span class="chip">Pas de spam</span>
+              </div>
+            </div>
+            <form id="form-newsletter" class="newsletter-form" autocomplete="on" novalidate>
+              <label for="newsletter-email" class="sr-only">Adresse e‑mail</label>
+              <div class="nl-input">
+                <input id="newsletter-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="Votre email" required aria-describedby="newsletter-help" />
+                <input type="text" name="website" tabindex="-1" aria-hidden="true" class="sr-only" autocomplete="off" />
+                <button class="btn btn-primary" type="submit" data-loading="Inscription…">S'inscrire</button>
+              </div>
+              <div id="newsletter-status" class="form-status" aria-live="polite"></div>
+            </form>
+          </div>
+        </div>
+
+
+
       </section>
 
       <!-- Auth: Connexion / Création de compte -->
