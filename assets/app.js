@@ -605,24 +605,29 @@ try {
   };
 
   // Soft pastel particles in hero
-  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null, extra: 0 };
+  let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null, extra: 0, route: null, hero: null };
   function startHeroParticles(){
     try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const sec = document.querySelector('section[data-route="/"] .hero-v2') || document.querySelector('section[data-route="/"] .hero');
+      const route = document.querySelector('section[data-route="/"]');
+      if (!route) return;
+      const hero = route.querySelector('.hero-v2') || route.querySelector('.hero');
       const cvs = document.getElementById('hero-canvas');
-      if (!sec || !cvs) return;
-      const rect = sec.getBoundingClientRect();
-      const extra = 80; // allow particles to float outside the hero card
+      if (!cvs) return;
+      // Move canvas to the route so bubbles can roam across the whole page
+      route.prepend(cvs);
+      const width = route.clientWidth;
+      const height = route.scrollHeight;
+      const extra = 80; // allow particles to float outside the page bounds
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       cvs.style.left = `${-extra/2}px`;
       cvs.style.top = `${-extra/2}px`;
       cvs.style.right = 'auto';
       cvs.style.bottom = 'auto';
-      cvs.style.width = `${rect.width + extra}px`;
-      cvs.style.height = `${rect.height + extra}px`;
-      cvs.width = Math.floor((rect.width + extra) * dpr);
-      cvs.height = Math.floor((rect.height + extra) * dpr);
+      cvs.style.width = `${width + extra}px`;
+      cvs.style.height = `${height + extra}px`;
+      cvs.width = Math.floor((width + extra) * dpr);
+      cvs.height = Math.floor((height + extra) * dpr);
       const ctx = cvs.getContext('2d');
       ctx.scale(dpr, dpr);
       ctx.translate(extra/2, extra/2);
@@ -630,6 +635,8 @@ try {
       heroParticlesState.ctx = ctx;
       heroParticlesState.parts = [];
       heroParticlesState.extra = extra;
+      heroParticlesState.route = route;
+      heroParticlesState.hero = hero;
       // Palette from CSS variables
       const cs = getComputedStyle(document.documentElement);
       const palette = [
@@ -638,7 +645,7 @@ try {
         cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
         '#ffd9e6'
       ];
-      const W = rect.width, H = rect.height;
+      const W = width, H = height;
       const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
       // Adjust particle count on low-power or small screens
       const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -671,7 +678,9 @@ try {
         // Skip drawing when tab is hidden to save battery/CPU
         if (document.hidden) { heroParticlesState.lastT = now; heroParticlesState.raf = requestAnimationFrame(step); return; }
         heroParticlesState.lastT = now;
-        const W = sec.clientWidth, H = sec.clientHeight;
+        const route = heroParticlesState.route;
+        const W = route ? route.clientWidth : 0;
+        const H = route ? route.scrollHeight : 0;
         const extra = heroParticlesState.extra || 0;
         // Clear
         ctx.clearRect(-extra/2,-extra/2,W+extra,H+extra);
@@ -693,21 +702,24 @@ try {
       heroParticlesState.raf = requestAnimationFrame(step);
       // Resize handler
       const onR = ()=>{
-        const rect = sec.getBoundingClientRect();
+        const route = heroParticlesState.route;
+        if (!route) return;
+        const width = route.clientWidth;
+        const height = route.scrollHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         const extra = heroParticlesState.extra || 0;
-        cvs.style.width = `${rect.width + extra}px`;
-        cvs.style.height = `${rect.height + extra}px`;
-        cvs.width = Math.floor((rect.width + extra) * dpr);
-        cvs.height = Math.floor((rect.height + extra) * dpr);
+        cvs.style.width = `${width + extra}px`;
+        cvs.style.height = `${height + extra}px`;
+        cvs.width = Math.floor((width + extra) * dpr);
+        cvs.height = Math.floor((height + extra) * dpr);
         heroParticlesState.ctx?.setTransform(dpr,0,0,dpr,0,0);
         heroParticlesState.ctx?.translate(extra/2, extra/2);
       };
       window.addEventListener('resize', onR);
       heroParticlesState.resize = onR;
-      if (window.ResizeObserver && window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+      if (window.ResizeObserver) {
         const ro = new ResizeObserver(onR);
-        ro.observe(sec);
+        ro.observe(route);
         heroParticlesState.observer = ro;
       }
     } catch {}
@@ -720,9 +732,9 @@ try {
       heroParticlesState.resize = null;
       if (heroParticlesState.observer) { heroParticlesState.observer.disconnect(); heroParticlesState.observer = null; }
       if (heroParticlesState.ctx){
-        const sec = document.querySelector('section[data-route="/"] .hero-v2') || document.querySelector('section[data-route="/"] .hero');
+        const route = heroParticlesState.route;
         const extra = heroParticlesState.extra || 0;
-        if (sec) heroParticlesState.ctx.clearRect(-extra/2,-extra/2,sec.clientWidth+extra,sec.clientHeight+extra);
+        if (route) heroParticlesState.ctx.clearRect(-extra/2,-extra/2,route.clientWidth+extra,route.scrollHeight+extra);
       }
       if (heroParticlesState.canvas){
         heroParticlesState.canvas.style.left = '';
@@ -731,9 +743,14 @@ try {
         heroParticlesState.canvas.style.bottom = '';
         heroParticlesState.canvas.style.width = '';
         heroParticlesState.canvas.style.height = '';
+        if (heroParticlesState.hero){
+          heroParticlesState.hero.prepend(heroParticlesState.canvas);
+        }
       }
       heroParticlesState.ctx = null; heroParticlesState.parts = [];
       heroParticlesState.extra = 0;
+      heroParticlesState.route = null;
+      heroParticlesState.hero = null;
     } catch {}
   }
 
