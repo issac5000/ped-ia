@@ -573,21 +573,29 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 
 /* Canvas for section particles */
 /* Canvas layers: use normal blend by default so they remain visible on dark backgrounds */
-.section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.45; mix-blend-mode:normal}
-.route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.45; mix-blend-mode:normal}
+.section-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.7; mix-blend-mode:normal}
+.route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.7; mix-blend-mode:normal}
 .logo-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.6; mix-blend-mode:screen}
 /* Dashboard full-viewport canvas (fixed, no stretch) */
-.route-canvas-fixed{position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:0; opacity:.6; mix-blend-mode:screen}
+.route-canvas-fixed{position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:0; opacity:.8; mix-blend-mode:screen}
+
+section[data-route="/"] .section-canvas,
+section[data-route="/"] .route-canvas{
+  opacity:.45;
+}
 /* On mobile, reduce canvas opacity and disable blend to avoid brightening under glass */
 @media(max-width:900px){
   .section-canvas,
   .route-canvas,
   .route-canvas-fixed{
-    opacity:.35 !important;
+    opacity:.5 !important;
     mix-blend-mode: normal !important;
   }
   section[data-route="/"] > .route-canvas{
     opacity:.08 !important;
+  }
+  section[data-route="/"] .section-canvas{
+    opacity:.35 !important;
   }
 }
 
