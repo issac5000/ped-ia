@@ -593,11 +593,11 @@ section[data-route="/ai"] .card-header h3{
 }
 section[data-route="/ai"] .card-header p{ text-align:center; }
 .testimonials{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:16px}
-.testimonial{position:relative; overflow:hidden; background:linear-gradient(180deg,#ffffff,#f7f9ff); border:1px solid var(--border); border-radius:22px; padding:18px 18px 14px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease}
-.testimonial::before{content:"\201C"; position:absolute; top:-6px; left:12px; font-size:64px; line-height:1; background:linear-gradient(92deg, var(--orange-strong), var(--blue-strong)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; opacity:.18; pointer-events:none}
-.testimonial:hover{transform:translateY(-3px); box-shadow:0 14px 34px rgba(30,50,100,.18); border-color:#d8e0f2; background:#ffffff}
-.testimonial p{margin:0 0 8px; font-style:italic; font-size:15px; color:var(--text); opacity:.95}
-.testimonial .who{color:var(--muted); font-size:12px; font-weight:600}
+.testimonial{position:relative;overflow:hidden;border-radius:22px;padding:18px 18px 14px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,.02));box-shadow:0 4px 16px rgba(0,0,0,.45);transition:transform .18s ease,box-shadow .25s ease,border-color .18s ease,background .25s ease}
+.testimonial::before{content:"\201C";position:absolute;top:-6px;left:12px;font-size:64px;line-height:1;background:linear-gradient(92deg,var(--orange-strong),var(--blue-strong));-webkit-background-clip:text;-webkit-text-fill-color:transparent;opacity:.25;pointer-events:none}
+.testimonial:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.18);background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.04));box-shadow:0 8px 24px rgba(0,0,0,.6)}
+.testimonial p{margin:0 0 8px;font-style:italic;font-size:15px;color:var(--text);opacity:.95}
+.testimonial .who{color:var(--muted);font-size:12px;font-weight:600}
 .faq{display:flex; flex-direction:column; gap:16px}
 .faq-item{border:none; border-radius:20px; background:linear-gradient(120deg, rgba(142,125,255,.25), rgba(53,223,207,.2)); box-shadow:var(--shadow); overflow:hidden; backdrop-filter:blur(6px); color:var(--text)}
 .faq-item > summary{padding:20px 24px; font-weight:600; cursor:pointer; list-style:none; position:relative}
@@ -732,7 +732,6 @@ body.force-mobile .nav-toggle{
 .qitem, .qitem:hover,
 .topic, .topic:hover,
 .faq-item,
-.testimonial, .testimonial:hover,
 .pillar, .pillar:hover,
 .hero-stats .stat{
   background: transparent !important;
