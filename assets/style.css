@@ -327,7 +327,10 @@ section[data-route="/settings"] #form-settings textarea{
 
 .hero-v2-logo-mobile{ display:none; }
 @media(max-width:900px){
-  .hero-v2{ margin:8px 0 12px; }
+  .hero-v2{
+    margin:8px auto 12px;
+    width:calc(100% - 8px);
+  }
   .hero-v2-art{ display:none; }
   .hero-v2-logo-mobile{ display:block; width:clamp(180px, 60vw, 320px); height:auto; margin:0 auto 8px; }
   .hero-v2-logo-mobile + .section{ padding-top:16px; }
