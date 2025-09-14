@@ -849,11 +849,16 @@ section[data-route="/community"] .btn-danger:hover{
 .blog-card-content{padding:16px;}
 .blog-card-content h3{margin:0 0 4px; color:var(--blue-strong);}
 .blog-card-content p{margin:0; color:var(--muted); font-size:14px;}
+@media(min-width:900px){
+  .blog-list{display:flex; justify-content:center;}
+  .blog-card{max-width:320px;}
+}
 
 /* Article styles */
-.article-cover{display:block; max-width:600px; margin:0 auto 32px; border-radius:16px;}
-.article-content{gap:32px;}
+.article-cover{display:block; width:100%; max-width:600px; height:auto; margin:0 auto 32px; border-radius:16px;}
+.article-content{gap:32px; margin-bottom:32px;}
 .article-content section + section{padding-top:24px; border-top:1px solid var(--border);}
+.article-content + .card{margin-top:32px;}
 #toc{max-width:600px; margin:0 auto 32px;}
 #toc ul{list-style:none; padding:0; margin:0; display:grid; gap:8px; counter-reset:item;}
 #toc li{counter-increment:item;}
