@@ -733,7 +733,6 @@ try {
         const N = Math.max(14, Math.min(40, Math.round(area/52000)));
         const parts = [];
         const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
-        const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
         for (let i=0;i<N;i++){
           const u = Math.random();
           const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));

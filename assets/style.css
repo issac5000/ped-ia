@@ -578,14 +578,16 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
     opacity:.35 !important;
     mix-blend-mode: normal !important;
   }
-  /* Hide homepage hero bubbles canvas on mobile only */
-  .hero-canvas{ display:none !important; }
+}
+
+/* Hide homepage hero bubbles canvas only on smaller mobiles */
+@media(max-width:768px){
+  section[data-route="/"] .hero-canvas{ display:none !important; }
 }
 /* Ensure main content and footer sit above the fixed canvas */
 #app{position:relative; z-index:3}
 .site-footer{position:relative; z-index:1}
 .route.active{ display:block !important }
-section[data-route="/"]{ display:block !important }
 .section.alt{background:transparent; border-top:none; border-bottom:none}
 .section-title{margin:0 0 8px; font-size:clamp(24px, 3.4vw, 32px); text-align:center; font-weight:800}
 .section-subtitle{margin:0 0 24px; color:var(--muted); text-align:center}
