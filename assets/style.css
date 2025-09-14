@@ -567,6 +567,14 @@ section[data-route="/dashboard"] .chart-card{
 .hero + .section{padding-top:44px}
 @media(max-width:900px){.hero + .section{padding-top:8px}}
 
+/* Mobile: center home sections and reduce width to avoid side cutoff */
+@media (max-width:900px){
+  section[data-route="/"] > .section{
+    width: calc(100% - 8px);
+    margin-inline: auto;
+  }
+}
+
 /* Alternance de fond des sections sur la page d'accueil (full-bleed)
    Commence à partir de "Fonctionnalités clés" (1ère .section)
    Étend le fond jusqu'aux bords de la fenêtre via ::before en 100vw */
