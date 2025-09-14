@@ -327,7 +327,8 @@ section[data-route="/settings"] #form-settings textarea{
 @media(max-width:900px){
   .hero-v2{ margin:8px 0 12px; }
   .hero-v2-art{ display:none; }
-  .hero-v2-logo-mobile{ display:block; width:clamp(180px, 60vw, 320px); height:auto; margin:0 auto 24px; }
+  .hero-v2-logo-mobile{ display:block; width:clamp(180px, 60vw, 320px); height:auto; margin:0 auto 8px; }
+  .hero-v2-logo-mobile + .section{ padding-top:16px; }
 }
 
 .mockup{position:relative; width:min(520px, 92%); border-radius:20px; padding:12px; background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06)); border:1px solid rgba(255,255,255,.25); box-shadow:0 20px 50px rgba(0,0,0,.45); backdrop-filter:blur(14px) saturate(150%)}
