@@ -907,8 +907,7 @@ body.force-mobile .nav-toggle{
   position: relative;
   z-index: 200;
 }
-/* Only show login + hamburger in header; hide others */
-body.force-mobile .auth-actions > *:not(#btn-login):not(#nav-toggle){ display:none !important }
+/* Show all auth actions; visibility controlled via [hidden] by JS */
 
 /* Always use overlay nav pattern on all viewports (independent of .force-mobile) */
 .main-nav{
