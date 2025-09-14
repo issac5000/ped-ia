@@ -837,6 +837,12 @@ section[data-route="/community"] .btn-danger:hover{
 .topic .flex-between{ display:flex; align-items:center; justify-content:space-between; gap:8px }
 .topic .hstack{ display:flex; align-items:center; gap:8px }
 
+@media (max-width: 600px){
+  .btn-message{ flex-shrink:0 }
+  .topic .flex-between{ flex-wrap:wrap }
+  .topic .hstack{ flex-wrap:wrap }
+}
+
 /* Footer links (À propos, Contact, Mentions légales, Confidentialité) in orange and bold */
 .site-footer .fs-right .fs-link{ color: var(--orange-strong) !important; font-weight:700; }
 .site-footer .fs-right .fs-link:hover{ color: var(--orange-strong) !important; text-decoration: underline; }
