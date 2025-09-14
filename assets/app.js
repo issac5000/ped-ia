@@ -245,6 +245,8 @@ try {
         startSectionParticles();
         startCardParticles();
       } else {
+        // Desktop: apply bubble canvas across the entire homepage
+        startRouteParticles();
         stopCardParticles();
       }
     } else {
