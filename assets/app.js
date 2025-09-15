@@ -2788,6 +2788,7 @@ try {
           sex: c.sex,
           dob: c.dob,
           photo: c.photo_url,
+          milestones: Array.isArray(c.milestones) ? c.milestones : [],
           context: {
             allergies: c.context_allergies,
             history: c.context_history,
@@ -2810,6 +2811,7 @@ try {
       const uid = (store.get(K.user)||{}).primaryChildId;
       child = localChildren.find(c=>c.id===currentEditId) || localChildren.find(c=>c.id===uid) || localChildren[0];
     }
+    if (child && !Array.isArray(child.milestones)) child.milestones = [];
     if (editBox) {
       if (!child) {
         editBox.innerHTML = '<div class="muted">Sélectionnez un enfant pour modifier son profil.</div>';
@@ -2898,6 +2900,10 @@ try {
             <label>Heure du coucher (approx.)
               <input type="time" name="sleep_bedtime" value="${child.context.sleep?.bedtime||''}" />
             </label>
+            <button class="btn btn-secondary" type="button" id="btn-edit-milestones">Ouvrir les jalons</button>
+            <div id="edit-milestones" class="stack" hidden>
+              ${milestonesInputsHtml(child.milestones)}
+            </div>
             <div class="hstack">
               <button class="btn btn-primary" type="submit">Mettre à jour</button>
               <button class="btn btn-secondary" type="button" id="btn-cancel-edit">Annuler</button>
@@ -2911,6 +2917,16 @@ try {
             renderSettings();
           });
           select.dataset.bound = '1';
+        }
+        const msBtn = document.getElementById('btn-edit-milestones');
+        const msBox = document.getElementById('edit-milestones');
+        if (msBtn && msBox && !msBtn.dataset.bound) {
+          msBtn.addEventListener('click', () => {
+            const willShow = msBox.hidden;
+            msBox.hidden = !willShow;
+            msBtn.textContent = willShow ? 'Fermer les jalons' : 'Ouvrir les jalons';
+          });
+          msBtn.dataset.bound = '1';
         }
         // Bind submit
         const f = document.getElementById('form-child-edit');
@@ -2931,6 +2947,10 @@ try {
           const sex = fd.get('sex').toString();
           const newDob = fd.get('dob').toString();
           const ageMNow = ageInMonths(newDob);
+          const msInputs = Array.from(f.querySelectorAll('#edit-milestones input[name="milestones[]"]'));
+          const milestones = msInputs
+            .sort((a,b)=> (Number(a.dataset.index||0) - Number(b.dataset.index||0)))
+            .map(inp => !!inp.checked);
           // Prepare update history snapshots
           const prevSnap = makeUpdateSnapshot(child);
           const payload = {
@@ -2938,6 +2958,7 @@ try {
             sex,
             dob: newDob,
             photo_url: photoDataUrl,
+            milestones,
             context_allergies: fd.get('allergies').toString(),
             context_history: fd.get('history').toString(),
             context_care: fd.get('care').toString(),
@@ -2954,6 +2975,7 @@ try {
             id,
             firstName,
             dob: newDob,
+            milestones,
             context: {
               allergies: payload.context_allergies,
               history: payload.context_history,
@@ -3040,6 +3062,7 @@ try {
               bedtime: payload.sleep_bedtime,
             },
           };
+          c.milestones = milestones;
           // Optional new measures
           const eh2 = parseFloat(fd.get('height'));
           const ew2 = parseFloat(fd.get('weight'));
@@ -3162,12 +3185,31 @@ try {
   }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
 
+  function milestonesInputsHtml(values = []) {
+    const groups = [
+      { title: '0 – 12 mois', start: 0, end: 9 },
+      { title: '12 – 24 mois', start: 10, end: 19 },
+      { title: '24 – 36 mois', start: 20, end: 29 },
+    ];
+    return groups.map(g => {
+      const items = [];
+      for (let i = g.start; i <= g.end; i++) {
+        const q = DEV_QUESTIONS[i];
+        const id = `ms_edit_${i}`;
+        const checked = values[i] ? 'checked' : '';
+        items.push(`<div class="qitem"><input type="checkbox" id="${id}" name="milestones[]" data-index="${i}" ${checked}/><label for="${id}">${escapeHtml(q.label)}</label></div>`);
+      }
+      return `<section class="dev-group"><h4>${g.title}</h4><div class="qgrid">${items.join('')}</div></section>`;
+    }).join('');
+  }
+
   // --- Update history helpers ---
   function makeUpdateSnapshot(childLike) {
     if (!childLike) return {};
     return {
       firstName: childLike.firstName || '',
       dob: childLike.dob || '',
+      milestones: Array.isArray(childLike.milestones) ? childLike.milestones.slice() : [],
       context: {
         allergies: childLike.context?.allergies || '',
         history: childLike.context?.history || '',
@@ -3261,6 +3303,18 @@ try {
       if ((pS.wakeDuration||'') !== (nS.wakeDuration||'')) sleepChanges.push(`éveils ${pS.wakeDuration||'—'} → ${nS.wakeDuration||'—'}`);
       if ((pS.bedtime||'') !== (nS.bedtime||'')) sleepChanges.push(`coucher ${pS.bedtime||'—'} → ${nS.bedtime||'—'}`);
       if (sleepChanges.length) parts.push(`Sommeil: ${sleepChanges.join(' • ')}`);
+      const prevMs = Array.isArray(prev.milestones) ? prev.milestones : [];
+      const nextMs = Array.isArray(next.milestones) ? next.milestones : [];
+      const msChanges = [];
+      for (let i = 0; i < DEV_QUESTIONS.length; i++) {
+        const a = !!prevMs[i];
+        const b = !!nextMs[i];
+        if (a !== b) {
+          const label = escapeHtml(DEV_QUESTIONS[i]?.label || '');
+          msChanges.push(`${b ? '+' : '-'} ${label}`);
+        }
+      }
+      if (msChanges.length) parts.push(`Jalons: ${msChanges.join(', ')}`);
       return parts.join(' ; ');
     } catch { return ''; }
   }
