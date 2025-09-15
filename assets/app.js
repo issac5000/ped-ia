@@ -618,23 +618,23 @@ try {
       const hero = route.querySelector('.hero-v2') || route.querySelector('.hero');
       const cvs = document.getElementById('hero-canvas');
       if (!cvs) return;
-      // Move canvas to the route so bubbles can roam across the whole page
-      route.prepend(cvs);
-      const width = route.clientWidth;
-      const height = route.clientHeight;
-      const extra = 80; // allow particles to float outside the page bounds
+      // Keep canvas scoped to the hero only to avoid affecting page scroll
+      if (cvs.parentElement !== hero && hero) hero.prepend(cvs);
+      const width = hero ? hero.clientWidth : route.clientWidth;
+      const height = hero ? hero.clientHeight : route.clientHeight;
+      const extra = 0; // no extra area; keep within hero bounds
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-      cvs.style.left = `${-extra/2}px`;
-      cvs.style.top = `${-extra/2}px`;
-      cvs.style.right = 'auto';
-      cvs.style.bottom = 'auto';
-      cvs.style.width = `${width + extra}px`;
-      cvs.style.height = `${height + extra}px`;
+      // Reset sizing to match hero area
+      cvs.style.left = '';
+      cvs.style.top = '';
+      cvs.style.right = '';
+      cvs.style.bottom = '';
+      cvs.style.width = '100%';
+      cvs.style.height = '100%';
       cvs.width = Math.floor((width + extra) * dpr);
       cvs.height = Math.floor((height + extra) * dpr);
       const ctx = cvs.getContext('2d');
-      ctx.scale(dpr, dpr);
-      ctx.translate(extra/2, extra/2);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
       heroParticlesState.canvas = cvs;
       heroParticlesState.ctx = ctx;
       heroParticlesState.parts = [];
@@ -702,12 +702,12 @@ try {
         // Skip drawing when tab is hidden to save battery/CPU
         if (document.hidden) { heroParticlesState.lastT = now; heroParticlesState.raf = requestAnimationFrame(step); return; }
         heroParticlesState.lastT = now;
-        const route = heroParticlesState.route;
-        const W = route ? route.clientWidth : 0;
-        const H = route ? route.clientHeight : 0;
+        const hero = heroParticlesState.hero;
+        const W = hero ? hero.clientWidth : 0;
+        const H = hero ? hero.clientHeight : 0;
         const extra = heroParticlesState.extra || 0;
         // Clear
-        ctx.clearRect(-extra/2,-extra/2,W+extra,H+extra);
+        ctx.clearRect(0,0,W+extra,H+extra);
         // Draw parts
         for (const p of heroParticlesState.parts){
           p.drift += p.spin*dt;
@@ -726,24 +726,21 @@ try {
       heroParticlesState.raf = requestAnimationFrame(step);
       // Resize handler
       const onR = ()=>{
-        const route = heroParticlesState.route;
-        if (!route) return;
-        const width = route.clientWidth;
-        const height = route.clientHeight;
+        const hero = heroParticlesState.hero;
+        if (!hero) return;
+        const width = hero.clientWidth;
+        const height = hero.clientHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         const extra = heroParticlesState.extra || 0;
-        cvs.style.width = `${width + extra}px`;
-        cvs.style.height = `${height + extra}px`;
         cvs.width = Math.floor((width + extra) * dpr);
         cvs.height = Math.floor((height + extra) * dpr);
         heroParticlesState.ctx?.setTransform(dpr,0,0,dpr,0,0);
-        heroParticlesState.ctx?.translate(extra/2, extra/2);
       };
       window.addEventListener('resize', onR);
       heroParticlesState.resize = onR;
-      if (window.ResizeObserver) {
+      if (window.ResizeObserver && hero) {
         const ro = new ResizeObserver(onR);
-        ro.observe(route);
+        ro.observe(hero);
         heroParticlesState.observer = ro;
       }
     } catch {}
@@ -785,10 +782,12 @@ try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       const route = document.querySelector('.route.active');
       if (!route) return;
-      const isDashboard = route.getAttribute('data-route') === '/dashboard';
+      const routePath = route.getAttribute('data-route') || '';
+      const isDashboard = routePath === '/dashboard';
+      const isHome = routePath === '/';
       const cvs = document.createElement('canvas');
       // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page
-      if (isDashboard) {
+      if (isDashboard || isHome) {
         cvs.className = 'route-canvas route-canvas-fixed';
         // Prevent canvas from blocking UI elements
         cvs.style.pointerEvents = 'none';
@@ -798,8 +797,8 @@ try {
         cvs.style.pointerEvents = 'none';
         route.prepend(cvs);
       }
-      const width = isDashboard ? window.innerWidth : route.clientWidth;
-      const height = isDashboard ? window.innerHeight : route.scrollHeight;
+      const width = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
+      const height = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       cvs.width = Math.floor(width * dpr);
       cvs.height = Math.floor(height * dpr);
@@ -837,8 +836,8 @@ try {
         const now = t || performance.now();
         const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
         routeParticles.lastT = now;
-        const W = isDashboard ? window.innerWidth : route.clientWidth;
-        const H = isDashboard ? window.innerHeight : route.scrollHeight;
+        const W = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
+        const H = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
         const dpr = routeParticles.dpr;
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,W,H);
@@ -856,8 +855,8 @@ try {
         };
         routeParticles.raf = requestAnimationFrame(step);
       const onR = ()=>{
-        const width = isDashboard ? window.innerWidth : route.clientWidth;
-        const height = isDashboard ? window.innerHeight : route.scrollHeight;
+        const width = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
+        const height = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         cvs.width = Math.floor(width * dpr);
         cvs.height = Math.floor(height * dpr);
