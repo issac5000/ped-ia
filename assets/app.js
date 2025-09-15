@@ -2357,6 +2357,11 @@ try {
     const rid = (renderCommunity._rid = (renderCommunity._rid || 0) + 1);
     const list = $('#forum-list');
     list.innerHTML = '';
+    const refreshBtn = $('#btn-refresh-community');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+      refreshBtn.dataset.bound = '1';
+      refreshBtn.addEventListener('click', () => renderCommunity());
+    }
     // Category filter handlers
     const cats = $('#forum-cats');
     if (cats && !cats.dataset.bound) {
@@ -2627,6 +2632,11 @@ try {
     const form = $('#form-settings');
     form.role.value = user?.role || 'maman';
     form.pseudo.value = user?.pseudo || '';
+    const refreshBtn = $('#btn-refresh-settings');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+      refreshBtn.dataset.bound = '1';
+      refreshBtn.addEventListener('click', () => renderSettings());
+    }
     // Privacy & profile load
     (async () => {
       if (useRemote()) {
