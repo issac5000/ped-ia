@@ -2044,6 +2044,12 @@ try {
       const weight = parseFloat(fd.get('weight'));
       const sleep = parseFloat(fd.get('sleep'));
       const teeth = parseInt(fd.get('teeth'));
+      const summaryParts = [];
+      if (Number.isFinite(height)) summaryParts.push(`Taille: ${height} cm`);
+      if (Number.isFinite(weight)) summaryParts.push(`Poids: ${weight} kg`);
+      if (Number.isFinite(teeth)) summaryParts.push(`Dents: ${teeth}`);
+      if (Number.isFinite(sleep)) summaryParts.push(`Sommeil: ${sleep} h`);
+      const summary = summaryParts.join(' ; ');
       try {
         let handled = false;
         if (useRemote()) {
@@ -2107,6 +2113,7 @@ try {
             const results = await Promise.allSettled(promises);
             console.log('DEBUG: après Promise.allSettled', results);
             console.log('Step 5: Promise.all resolved for measures');
+            await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
             console.log('Step UI: before renderDashboard', document.querySelector('#app'));
             renderDashboard();
             handled = true;
@@ -2132,6 +2139,7 @@ try {
           if (Number.isFinite(sleep)) c.growth.sleep.push({ month, hours: sleep });
           if (Number.isFinite(teeth)) c.growth.teeth.push({ month, count: teeth });
           store.set(K.children, children);
+          await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
           renderDashboard();
         }
       } finally {
@@ -3221,6 +3229,9 @@ try {
       if ((prev.firstName||'') !== (next.firstName||'')) parts.push(`Prénom: ${escapeHtml(prev.firstName||'—')} → ${escapeHtml(next.firstName||'—')}`);
       if ((prev.dob||'') !== (next.dob||'')) parts.push(`Naissance: ${prev.dob||'—'} → ${next.dob||'—'}`);
       if ((prev.context?.allergies||'') !== (next.context?.allergies||'')) parts.push(`Allergies: ${escapeHtml(prev.context?.allergies||'—')} → ${escapeHtml(next.context?.allergies||'—')}`);
+      if ((prev.context?.history||'') !== (next.context?.history||'')) parts.push(`Antécédents: ${escapeHtml(prev.context?.history||'—')} → ${escapeHtml(next.context?.history||'—')}`);
+      if ((prev.context?.care||'') !== (next.context?.care||'')) parts.push(`Mode de garde: ${escapeHtml(prev.context?.care||'—')} → ${escapeHtml(next.context?.care||'—')}`);
+      if ((prev.context?.languages||'') !== (next.context?.languages||'')) parts.push(`Langues: ${escapeHtml(prev.context?.languages||'—')} → ${escapeHtml(next.context?.languages||'—')}`);
       if ((prev.context?.feedingType||'') !== (next.context?.feedingType||'')) parts.push(`Alimentation: ${labelFeedingType(prev.context?.feedingType||'')} → ${labelFeedingType(next.context?.feedingType||'')}`);
       if ((prev.context?.eatingStyle||'') !== (next.context?.eatingStyle||'')) parts.push(`Appétit: ${labelEatingStyle(prev.context?.eatingStyle||'')} → ${labelEatingStyle(next.context?.eatingStyle||'')}`);
       const pS = prev.context?.sleep || {}; const nS = next.context?.sleep || {};
