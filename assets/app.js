@@ -2590,7 +2590,7 @@ try {
   // (Comparateur retiré — les courbes sont dans le Dashboard)
 
   // Settings
-  function renderSettings() {
+  async function renderSettings() {
     // Render instance guard to avoid async races that duplicate rows
     const rid = (renderSettings._rid = (renderSettings._rid || 0) + 1);
     const user = store.get(K.user);
@@ -2660,33 +2660,35 @@ try {
     const list = $('#children-list');
     list.innerHTML = '';
     let children = [];
-    (async () => {
-      if (useRemote()) {
-        try {
-          const uid = authSession?.user?.id;
-          if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
-          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
-          children = rows || [];
-        } catch { children = []; }
-      } else {
-        children = store.get(K.children, []);
-      }
-      // If another render started, abort appending to avoid duplicates
-      if (rid !== renderSettings._rid) return;
-      children.forEach(c => {
-        const firstName = c.first_name || c.firstName;
-        const dob = c.dob;
-        const row = document.createElement('div');
-        row.className = 'hstack';
-        row.innerHTML = `
-          <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
-          <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
-          <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
-          <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
-        `;
-        list.appendChild(row);
-      });
-    })();
+    if (useRemote()) {
+      try {
+        const uid = authSession?.user?.id;
+        if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
+        const { data: rows } = await supabase
+          .from('children')
+          .select('*')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: true });
+        children = rows || [];
+      } catch { children = []; }
+    } else {
+      children = store.get(K.children, []);
+    }
+    // If another render started, abort appending to avoid duplicates
+    if (rid !== renderSettings._rid) return;
+    children.forEach(c => {
+      const firstName = c.first_name || c.firstName;
+      const dob = c.dob;
+      const row = document.createElement('div');
+      row.className = 'hstack';
+      row.innerHTML = `
+        <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
+        <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
+        <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
+        <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
+      `;
+      list.appendChild(row);
+    });
     if (!list.dataset.bound) {
       list.addEventListener('click', async (e)=>{
         const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
