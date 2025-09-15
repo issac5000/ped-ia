@@ -2021,7 +2021,7 @@ try {
               details = escapeHtml(u.update_content || '');
             }
             const typeLabel = u.update_type ? ` — ${escapeHtml(u.update_type)}` : '';
-            const comment = u.ai_comment ? `<div class=\\"muted\\">${escapeHtml(u.ai_comment)}</div>` : '';
+            const comment = u.ai_comment ? `<div class=\\"muted\\"><strong><em>${escapeHtml(u.ai_comment)}</em></strong></div>` : '';
             return `<div><div class=\\"muted\\">${when}${typeLabel}</div><div>${details}</div>${comment}</div>`;
           }).join('')}</div>`
         : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
