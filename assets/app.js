@@ -1890,7 +1890,7 @@ try {
     // Placeholder while fetching remote
     if (useRemote()) {
       if (rid !== renderDashboard._rid) return;
-      dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Actualiser</button></div>`;
+      dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Forcer le chargement</button></div>`;
       $('#btn-refresh-profile')?.addEventListener('click', () => location.reload());
     }
     const renderForChild = async (child) => {
