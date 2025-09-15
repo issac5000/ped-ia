@@ -108,11 +108,33 @@ section{opacity:.8}
   body.no-js .main-nav{display:none}
 }
 
-.site-footer{border-top:1px solid rgba(255,255,255,.12); margin-top:56px; background:#000000; color:#e9edff}
-.site-footer .container{padding:24px 0}
+.site-footer{border-top:1px solid rgba(255,255,255,.12); margin-top:56px; background:#070b13; color:#e9edff}
+.site-footer .container{padding:28px 0}
 .site-footer .brand-synap{color:var(--blue-strong); font-weight:700}
 .site-footer .brand-kids{color:var(--orange-strong); font-weight:700}
-/* New simple footer (no patch-styled links) */
+
+/* NEW multi-column footer inspired by the screenshot */
+.footer-top{display:grid; grid-template-columns:1.2fr 1fr 1fr 1fr; gap:24px; align-items:flex-start}
+@media(max-width:900px){ .footer-top{ grid-template-columns:1fr 1fr; gap:18px } }
+@media(max-width:560px){ .footer-top{ grid-template-columns:1fr; } }
+
+.footer-brand{background:linear-gradient(135deg, rgba(183,211,255,.12), rgba(255,225,200,.10)); border:1px solid rgba(255,255,255,.14); border-radius:16px; padding:14px}
+.footer-brand .brand{ text-decoration:none; }
+.footer-brand p{ margin:.4rem 0 1rem; color:#c5cceb }
+.footer-socials{ display:flex; gap:10px }
+.footer-social{ display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:12px; color:#e9edff; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.06); text-decoration:none }
+.footer-social:hover{ filter:brightness(1.1) }
+
+.footer-col h4{ margin:0 0 10px; font-weight:700; font-size:15px; color:#e9edff }
+.footer-links{ list-style:none; padding:0; margin:0; display:grid; gap:8px }
+.footer-links a{ color:#c5cceb; text-decoration:none }
+.footer-links a:hover{ color:#ffffff; text-decoration:underline }
+
+.footer-bottom{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid rgba(255,255,255,.1); margin-top:22px; padding-top:14px; color:#aab3d1 }
+.footer-bottom a{ color:#c5cceb; text-decoration:none }
+.footer-bottom a:hover{ text-decoration:underline; color:#ffffff }
+
+/* Backward compatibility: old simple footer styles still present if needed */
 .footer-simple{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap}
 .fs-left{display:flex; align-items:center; gap:10px}
 .fs-tag{margin:0; color:var(--muted)}
@@ -121,6 +143,83 @@ section{opacity:.8}
 .fs-link:hover{text-decoration:underline}
 .fs-year{color:#aab3d1}
 .footer-simple + .footer-simple{margin-top:8px}
+
+/* Home footer — softer, glassy panel with brand gradient accents */
+.home-footer{ background:linear-gradient(180deg, rgba(10,14,20,.18), rgba(10,14,20,.28)); border-top:none; position:relative; overflow:visible }
+.home-footer .container{ padding:84px 0 24px; position:relative; z-index:1 }
+@media(max-width:900px){ .home-footer .container{ padding:96px 0 24px } }
+@media(max-width:600px){ .home-footer .container{ padding:110px 0 26px } }
+/* Remove card look on home footer */
+.home-footer .footer-panel{ padding:0; margin:0; border:0; background:transparent; box-shadow:none; backdrop-filter:none }
+.home-footer .footer-top{ gap:24px; column-gap:32px; row-gap:18px; align-items:flex-start; grid-template-columns:1.4fr repeat(4, 1fr); justify-items:start }
+.home-footer .footer-brand{ background:transparent; border:0; display:flex; flex-direction:column; align-items:flex-start; gap:10px }
+.home-footer .footer-brand p{ color:#ffffff; margin:10px 0 12px; font-size:16px; line-height:1.6; max-width:480px }
+.home-footer .footer-logo{ display:block; width:auto; height:auto !important; max-width:100%; max-height:250px; opacity:.98 }
+@media (max-width: 900px){ .home-footer .footer-logo{ max-height:200px } }
+@media (max-width: 600px){ .home-footer .footer-logo{ max-height:150px } }
+
+
+.home-footer .footer-socials{ gap:14px }
+.home-footer .footer-social{ width:44px; height:44px; font-size:18px }
+.home-footer .footer-col h4{
+  background:linear-gradient(90deg, var(--orange-strong), var(--blue-strong));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:0 1px 5px rgba(255,203,164,.16), 0 1px 10px rgba(78,124,216,.12);
+  font-size:16px;
+}
+.home-footer .footer-links{ gap:10px; line-height:1.5 }
+.home-footer .footer-links a{ color:#ffffff; opacity:.96; font-weight:500; font-size:15px }
+.home-footer .footer-links a:hover{ color:#ffffff; opacity:1 }
+.home-footer .footer-bottom{ border-top-color:rgba(255,255,255,.12); margin-top:16px; padding-top:12px; justify-content:center; text-align:center }
+.home-footer .footer-bottom, .home-footer .footer-bottom a{ color:#ffffff }
+.home-footer .footer-bottom a:hover{ color:#ffffff }
+.home-footer .footer-social{ background:rgba(255,255,255,.10); border-color:rgba(255,255,255,.18) }
+
+/* Ensure responsive grid overrides for home footer */
+@media(max-width:900px){
+  .home-footer .footer-top{ grid-template-columns:1fr 1fr; column-gap:22px; row-gap:14px }
+  .home-footer .footer-col h4{ font-size:15px }
+  .home-footer .footer-links a{ font-size:15px }
+  /* Hide brand (logo + tagline) on tablets too */
+  .home-footer .footer-brand{ display:none !important }
+  /* Give a bit more breathing room from the first wave */
+  .home-footer .container{ padding-top:126px }
+}
+@media(max-width:560px){
+  .home-footer .footer-top{ grid-template-columns:1fr; row-gap:8px }
+  /* Reorder to put Liens utiles first, then the logo (brand), then other columns */
+  .home-footer .footer-top .footer-col{ order:3 }
+  .home-footer .footer-top .footer-col:first-of-type{ order:1 }
+  /* Hide the brand/logo entirely on small screens */
+  .home-footer .footer-brand{ display:none !important }
+  .home-footer .footer-brand p{ display:none }
+  .home-footer .footer-logo{ margin:4px 0 6px 0 }
+  /* Hide the 'Contenus' column on small screens */
+  .home-footer .footer-col[aria-label="Contenus"]{ display:none !important }
+  .home-footer .footer-links{ gap:8px }
+  .home-footer .footer-links a{ display:inline-block; padding:2px 0; font-size:16px; line-height:1.6 }
+  .home-footer .container{ padding-top:148px; padding-bottom:28px }
+  /* Make waves fill to bottom and overlap tighter */
+  .footer-bg{ top:-140px }
+  .footer-bg svg{ width:140%; height:240%; margin-left:-20%; transform:none }
+}
+
+/* Background that paints the footer with a wavy top edge */
+.footer-bg{ position:absolute; left:0; right:0; bottom:0; top:-120px; pointer-events:none; z-index:0 }
+.footer-bg svg{ display:block; width:120%; height:100%; margin-left:-10% }
+.footer-bg .layer{ --wy:0px; transform-origin:center; animation:waveSway 6s ease-in-out infinite }
+.footer-bg .layer:nth-child(2){ animation-duration:9s; animation-delay:-2.5s }
+.footer-bg .layer:nth-child(3){ animation-duration:12s; animation-delay:-5s }
+.footer-bg .layer:nth-child(1){ --wy:0px }
+.footer-bg .layer:nth-child(2){ --wy:0px }
+.footer-bg .layer:nth-child(3){ --wy:0px }
+.footer-bg .layer:nth-child(4){ --wy:0px }
+/* stronger motion — horizontal only to keep bottom stable */
+@keyframes waveSway{ 0%,100%{ transform:translate(0, var(--wy)) } 50%{ transform:translate(-96px, var(--wy)) } }
+/* Reverse direction layers for interleaving */
+.footer-bg .layer.rev{ animation-name:waveSwayRev }
+@keyframes waveSwayRev{ 0%,100%{ transform:translate(0, var(--wy)) } 50%{ transform:translate(96px, var(--wy)) } }
+/* removed duplicate weaker keyframes */
 
 /* Sub‑header tagline */
 .masthead{background:transparent; border-bottom:none; backdrop-filter:none; position:static; top:auto; z-index:auto; margin:0}
