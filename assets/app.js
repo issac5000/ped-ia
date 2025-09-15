@@ -2714,20 +2714,18 @@ try {
       row.innerHTML = `
         <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
         <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
-        <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
         <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
       `;
       list.appendChild(row);
     });
     if (!list.dataset.bound) {
       list.addEventListener('click', async (e)=>{
-        const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
+        const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-del]') : null;
         if (!target) return;
         if (list.dataset.busy === '1') return; // prevent concurrent actions
         list.dataset.busy = '1';
         target.disabled = true;
         const idE = target.getAttribute('data-edit');
-        const idP = target.getAttribute('data-primary');
         const idD = target.getAttribute('data-del');
         if (idE) {
           const editBox = document.getElementById('child-edit');
@@ -2735,20 +2733,6 @@ try {
           renderSettings();
           list.dataset.busy = '0';
           return;
-        }
-        if (idP) {
-          if (useRemote()) {
-            try {
-              const uid = authSession?.user?.id;
-              if (!uid) { console.warn('Aucun user_id disponible pour children (set primary)'); throw new Error('Pas de user_id'); }
-              await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
-              await supabase.from('children').update({ is_primary: true }).eq('id', idP);
-              renderSettings();
-              return;
-            } catch {}
-          }
-          store.set(K.user, { ...user, primaryChildId: idP });
-          renderSettings();
         }
         if (idD) {
           if (!confirm('Supprimer ce profil enfant ?')) return;
