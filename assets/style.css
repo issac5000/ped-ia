@@ -1097,8 +1097,27 @@ input, select, textarea{
 }
 input::placeholder, textarea::placeholder{ color:rgba(255,255,255,.55) }
 
-/* Header status text */
-.login-status{ color: var(--ok) !important }
+/* Header online status: breathing green dot */
+.login-status{
+  display:inline-block;
+  width:10px; height:10px;
+  border-radius:50%;
+  background: var(--ok);
+  position: relative;
+  margin-left:8px;
+  vertical-align: middle;
+  box-shadow:0 0 0 0 rgba(45,192,122,.6);
+  animation: login-pulse 1.8s ease-out infinite;
+}
+.login-status::after{
+  content:"";
+  position:absolute; inset:-4px;
+  border-radius:50%;
+  border:2px solid rgba(45,192,122,.35);
+  animation: login-breathe 1.8s ease-out infinite;
+}
+@keyframes login-pulse{ 0%{ box-shadow:0 0 0 0 rgba(45,192,122,.6) } 70%{ box-shadow:0 0 0 6px rgba(45,192,122,0) } 100%{ box-shadow:0 0 0 0 rgba(45,192,122,0) } }
+@keyframes login-breathe{ 0%{ transform: scale(.85); opacity:.7 } 70%{ transform: scale(1.6); opacity:0 } 100%{ transform: scale(1.6); opacity:0 } }
 
 /* Footer links white */
 .fs-link{ color:#ffffff }
