@@ -179,6 +179,7 @@ try {
   }
 
   // Routing
+  let __activePath = null; // track last active path to avoid unwanted scroll resets
   function setActiveRoute(hash) {
     const path = (hash.replace('#', '') || '/');
     console.log('DEBUG: entrée dans setActiveRoute avec path =', path);
@@ -199,8 +200,10 @@ try {
       if (pl) pl.hidden = (path === '/' || path === '');
     } catch {}
     updateHeaderAuth();
-    // Align scroll behavior with static pages (instant top reset)
-    window.scrollTo(0, 0);
+    // Align scroll behavior with static pages: only reset on real route change
+    if (__activePath !== path) {
+      window.scrollTo(0, 0);
+    }
     // Guard routes
     const authed = !!authSession?.user;
     const needAuth = ['/dashboard','/community','/ai','/settings','/onboarding'];
@@ -258,6 +261,7 @@ try {
       startRouteParticles();
       startLogoParticles();
     }
+    __activePath = path;
     console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
 
