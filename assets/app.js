@@ -2028,8 +2028,16 @@ try {
         btn.className = 'btn btn-secondary';
         btn.textContent = 'Tout afficher';
         btn.addEventListener('click', () => {
-          items.forEach(el => { el.style.display = ''; });
-          btn.remove();
+          const expanded = btn.dataset.expanded === '1';
+          if (!expanded) {
+            items.forEach(el => { el.style.display = ''; });
+            btn.textContent = 'Réduire';
+            btn.dataset.expanded = '1';
+          } else {
+            items.forEach((el, idx) => { if (idx >= 2) el.style.display = 'none'; });
+            btn.textContent = 'Tout afficher';
+            btn.dataset.expanded = '0';
+          }
         });
         hist.appendChild(btn);
       }
