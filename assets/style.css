@@ -186,18 +186,24 @@ section{opacity:.8}
   .home-footer .container{ padding-top:126px }
 }
 @media(max-width:560px){
-  .home-footer .footer-top{ grid-template-columns:1fr; row-gap:8px }
+  .home-footer .footer-top{ grid-template-columns:1fr; row-gap:8px; justify-items:center }
   /* Reorder to put Liens utiles first, then the logo (brand), then other columns */
   .home-footer .footer-top .footer-col{ order:3 }
   .home-footer .footer-top .footer-col:first-of-type{ order:1 }
-  /* Hide the brand/logo entirely on small screens */
-  .home-footer .footer-brand{ display:none !important }
+  /* Show the brand/logo above "Liens utiles" and center it */
+  .home-footer .footer-brand{ display:flex !important; order:0; align-items:center; justify-content:center; text-align:center; margin:0 0 2px 0 }
   .home-footer .footer-brand p{ display:none }
-  .home-footer .footer-logo{ margin:4px 0 6px 0 }
-  /* Hide the 'Contenus' column on small screens */
+  .home-footer .footer-logo {
+    margin: 0 auto 2px;
+    height: 150px !important; /* taille bien visible mais pas abusée */
+    max-height: none;
+    width: auto;
+  }
+    /* Hide the 'Contenus' column on small screens */
   .home-footer .footer-col[aria-label="Contenus"]{ display:none !important }
+  .home-footer .footer-col, .home-footer .footer-col h4, .home-footer .footer-links{ text-align:center }
   .home-footer .footer-links{ gap:8px }
-  .home-footer .footer-links a{ display:inline-block; padding:2px 0; font-size:16px; line-height:1.6 }
+  .home-footer .footer-links a{ display:inline-block; padding:2px 0; font-size:16px; line-height:1.6; margin:0 auto }
   .home-footer .container{ padding-top:148px; padding-bottom:28px }
   /* Make waves fill to bottom and overlap tighter */
   .footer-bg{ top:-140px }
