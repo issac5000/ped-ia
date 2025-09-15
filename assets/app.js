@@ -2013,7 +2013,15 @@ try {
         updates.length ?
         `<div class="stack">${updates.map(u => {
             const when = new Date(u.created_at).toLocaleString();
-            return `<div><div class=\"muted\">${when}</div><div>${escapeHtml(u.update_content || '')}</div></div>`;
+            let details = '';
+            try {
+              const parsed = JSON.parse(u.update_content || '');
+              details = escapeHtml(parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {}));
+            } catch {
+              details = escapeHtml(u.update_content || '');
+            }
+            const typeLabel = u.update_type ? ` — ${escapeHtml(u.update_type)}` : '';
+            return `<div><div class=\"muted\">${when}${typeLabel}</div><div>${details}</div></div>`;
           }).join('')}</div>`
         : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
       );
@@ -2980,7 +2988,7 @@ try {
               }
               // Log update history via Supabase
               const summary = summarizeUpdate(prevSnap, nextSnap);
-              await logChildUpdate(id, 'profile', summary);
+              await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
               alert('Profil enfant mis à jour.');
               renderSettings();
               return;
@@ -3017,7 +3025,7 @@ try {
           if (Number.isFinite(et2)) c.growth.teeth.push({ month: ageMNow, count: et2 });
           store.set(K.children, childrenAll);
           const summary = summarizeUpdate(prevSnap, nextSnap);
-          await logChildUpdate(id, 'profile', summary);
+          await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
           alert('Profil enfant mis à jour.');
           renderSettings();
         } finally {
@@ -3157,9 +3165,10 @@ try {
   async function logChildUpdate(childId, updateType, updateContent) {
     if (!childId || !useRemote()) return;
     try {
+      const content = typeof updateContent === 'string' ? updateContent : JSON.stringify(updateContent);
       await supabase
         .from('child_updates')
-        .insert([{ child_id: childId, update_type: updateType, update_content: updateContent }]);
+        .insert([{ child_id: childId, update_type: updateType, update_content: content }]);
     } catch (e) {
       console.warn('Supabase child_updates insert failed', e);
     }
