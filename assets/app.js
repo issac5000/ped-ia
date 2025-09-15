@@ -2021,7 +2021,8 @@ try {
               details = escapeHtml(u.update_content || '');
             }
             const typeLabel = u.update_type ? ` — ${escapeHtml(u.update_type)}` : '';
-            return `<div><div class=\"muted\">${when}${typeLabel}</div><div>${details}</div></div>`;
+            const comment = u.ai_comment ? `<div class=\\"muted\\">${escapeHtml(u.ai_comment)}</div>` : '';
+            return `<div><div class=\\"muted\\">${when}${typeLabel}</div><div>${details}</div>${comment}</div>`;
           }).join('')}</div>`
         : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
       );
@@ -3162,13 +3163,37 @@ try {
     };
   }
 
+  async function generateAiComment(content) {
+    try {
+      const res = await fetch('/api/ai/comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      if (!res.ok) return '';
+      const j = await res.json();
+      return j.text || '';
+    } catch {
+      return '';
+    }
+  }
+
   async function logChildUpdate(childId, updateType, updateContent) {
     if (!childId || !useRemote()) return;
     try {
       const content = typeof updateContent === 'string' ? updateContent : JSON.stringify(updateContent);
-      await supabase
+      const { data, error } = await supabase
         .from('child_updates')
-        .insert([{ child_id: childId, update_type: updateType, update_content: content }]);
+        .insert([{ child_id: childId, update_type: updateType, update_content: content }])
+        .select('id');
+      if (error) throw error;
+      const id = Array.isArray(data) && data.length ? data[0].id : null;
+      if (id) {
+        const comment = await generateAiComment(content);
+        if (comment) {
+          await supabase.from('child_updates').update({ ai_comment: comment }).eq('id', id);
+        }
+      }
     } catch (e) {
       console.warn('Supabase child_updates insert failed', e);
     }
