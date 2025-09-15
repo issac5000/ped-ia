@@ -200,7 +200,8 @@ try {
       if (pl) pl.hidden = (path === '/' || path === '');
     } catch {}
     updateHeaderAuth();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Align scroll behavior with static pages (instant top reset)
+    window.scrollTo(0, 0);
     // Guard routes
     const authed = !!authSession?.user;
     const needAuth = ['/dashboard','/community','/ai','/settings','/onboarding'];
