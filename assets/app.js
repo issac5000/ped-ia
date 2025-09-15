@@ -48,8 +48,7 @@ console.log('DEBUG: app.js chargé');
     privacy: 'pedia_privacy',
     session: 'pedia_session',
     messages: 'pedia_messages',
-    notifs: 'pedia_notifs',
-    childUpdates: 'pedia_child_updates'
+    notifs: 'pedia_notifs'
   };
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
@@ -2006,16 +2005,15 @@ try {
 
     // Append updates history block
     try {
-      const updates = (await getChildUpdates(child.id)).slice().reverse(); // latest first
+      const updates = await getChildUpdates(child.id);
       const hist = document.createElement('div');
       hist.className = 'card stack';
       hist.style.marginTop = '20px';
       hist.innerHTML = `<h3>Historique des mises à jour</h3>` + (
         updates.length ?
         `<div class="stack">${updates.map(u => {
-            const when = new Date(u.at).toLocaleString();
-            const sum = summarizeUpdate(u.prev||{}, u.next||{});
-            return `<div><div class=\"muted\">${when}</div><div>${sum || '—'}</div></div>`;
+            const when = new Date(u.created_at).toLocaleString();
+            return `<div><div class=\"muted\">${when}</div><div>${escapeHtml(u.update_content || '')}</div></div>`;
           }).join('')}</div>`
         : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
       );
@@ -2980,8 +2978,9 @@ try {
                 const results = await Promise.all(promises);
                 console.log('DEBUG: après Promise.all (settings optional measures)', results);
               }
-              // Log update history locally + remote
-              await logChildUpdate(id, prevSnap, nextSnap);
+              // Log update history via Supabase
+              const summary = summarizeUpdate(prevSnap, nextSnap);
+              await logChildUpdate(id, 'profile', summary);
               alert('Profil enfant mis à jour.');
               renderSettings();
               return;
@@ -3017,7 +3016,8 @@ try {
           if (Number.isFinite(ew2)) c.growth.measurements.push({ month: ageMNow, weight: ew2 });
           if (Number.isFinite(et2)) c.growth.teeth.push({ month: ageMNow, count: et2 });
           store.set(K.children, childrenAll);
-          await logChildUpdate(id, prevSnap, nextSnap);
+          const summary = summarizeUpdate(prevSnap, nextSnap);
+          await logChildUpdate(id, 'profile', summary);
           alert('Profil enfant mis à jour.');
           renderSettings();
         } finally {
@@ -3154,52 +3154,31 @@ try {
     };
   }
 
-  async function logChildUpdate(childId, prev, next) {
-    if (!childId) return;
-    const entry = { at: Date.now(), prev, next };
-    // Remote persistence
-    if (useRemote()) {
-      try {
-        const payload = {
-          child_id: childId,
-          at: new Date(entry.at).toISOString(),
-          prev: entry.prev,
-          next: entry.next,
-        };
-        await supabase.from('child_update_history').insert([payload]);
-      } catch (e) {
-        console.warn('Supabase child_update_history insert failed', e);
-      }
+  async function logChildUpdate(childId, updateType, updateContent) {
+    if (!childId || !useRemote()) return;
+    try {
+      await supabase
+        .from('child_updates')
+        .insert([{ child_id: childId, update_type: updateType, update_content: updateContent }]);
+    } catch (e) {
+      console.warn('Supabase child_updates insert failed', e);
     }
-    // Local log
-    const map = store.get(K.childUpdates, {});
-    const list = Array.isArray(map[childId]) ? map[childId] : [];
-    list.push(entry);
-    map[childId] = list.slice(-50); // keep last 50 updates
-    store.set(K.childUpdates, map);
   }
 
   async function getChildUpdates(childId) {
-    if (useRemote()) {
-      try {
-        const { data: rows } = await supabase
-          .from('child_update_history')
-          .select('at,prev,next')
-          .eq('child_id', childId)
-          .order('at', { ascending: true });
-        if (Array.isArray(rows)) {
-          return rows.map(r => ({
-            at: new Date(r.at).getTime(),
-            prev: r.prev || {},
-            next: r.next || {},
-          }));
-        }
-      } catch (e) {
-        console.warn('Supabase child_update_history select failed', e);
-      }
+    if (!useRemote()) return [];
+    try {
+      const { data, error } = await supabase
+        .from('child_updates')
+        .select('*')
+        .eq('child_id', childId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.warn('Supabase child_updates select failed', e);
+      return [];
     }
-    const map = store.get(K.childUpdates, {});
-    return Array.isArray(map[childId]) ? map[childId] : [];
   }
 
   function summarizeUpdate(prev, next) {
