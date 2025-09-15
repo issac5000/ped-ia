@@ -2372,7 +2372,7 @@ try {
     const refreshBtn = $('#btn-refresh-community');
     if (refreshBtn && !refreshBtn.dataset.bound) {
       refreshBtn.dataset.bound = '1';
-      refreshBtn.addEventListener('click', () => renderCommunity());
+      refreshBtn.addEventListener('click', () => location.reload());
     }
     // Category filter handlers
     const cats = $('#forum-cats');
@@ -2647,7 +2647,7 @@ try {
     const refreshBtn = $('#btn-refresh-settings');
     if (refreshBtn && !refreshBtn.dataset.bound) {
       refreshBtn.dataset.bound = '1';
-      refreshBtn.addEventListener('click', () => renderSettings());
+      refreshBtn.addEventListener('click', () => location.reload());
     }
     // Privacy & profile load
     (async () => {
