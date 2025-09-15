@@ -1863,7 +1863,7 @@ try {
   }
 
   // Dashboard
-  function renderDashboard() {
+  async function renderDashboard() {
     let child = null; let all = [];
     try { console.log('Step UI: entering renderDashboard', document.querySelector('#app')); } catch {}
     console.log('DEBUG: entrée dans renderDashboard()');
@@ -1905,7 +1905,7 @@ try {
       dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Actualiser</button></div>`;
       $('#btn-refresh-profile')?.addEventListener('click', () => location.reload());
     }
-    const renderForChild = (child) => {
+    const renderForChild = async (child) => {
       const ageM = ageInMonths(child.dob);
       const ageTxt = formatAge(child.dob);
       try { console.log('DEBUG: juste avant rendu central — renderForChild', { childId: child?.id, firstName: child?.firstName }); } catch {}
@@ -2006,7 +2006,7 @@ try {
 
     // Append updates history block
     try {
-      const updates = getChildUpdates(child.id).slice().reverse(); // latest first
+      const updates = (await getChildUpdates(child.id)).slice().reverse(); // latest first
       const hist = document.createElement('div');
       hist.className = 'card stack';
       hist.style.marginTop = '20px';
@@ -2185,7 +2185,7 @@ try {
     };
 
     if (!useRemote()) {
-      renderForChild(child);
+      await renderForChild(child);
     } else {
       (async () => {
         let remoteChild = null;
@@ -2205,7 +2205,7 @@ try {
             const selId = (slimLocal.find(s=>s.isPrimary) || slimLocal[0]).id;
             renderChildSwitcher(dom.parentElement || dom, slimLocal, selId, () => renderDashboard());
             const child = all.find(c => c.id === selId) || all[0];
-            renderForChild(child);
+            await renderForChild(child);
             return;
           }
           const { data: rows, error: rowsErr } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
@@ -2275,7 +2275,7 @@ try {
           dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
           return;
         }
-        renderForChild(remoteChild);
+        await renderForChild(remoteChild);
         if (gmErr) {
           ['chart-height', 'chart-weight', 'chart-bmi'].forEach(id => {
             const host = document.getElementById(id)?.parentElement;
@@ -2966,8 +2966,8 @@ try {
                 const results = await Promise.all(promises);
                 console.log('DEBUG: après Promise.all (settings optional measures)', results);
               }
-              // Log update history locally (even in remote mode)
-              logChildUpdate(id, prevSnap, nextSnap);
+              // Log update history locally + remote
+              await logChildUpdate(id, prevSnap, nextSnap);
               alert('Profil enfant mis à jour.');
               renderSettings();
               return;
@@ -3003,7 +3003,7 @@ try {
           if (Number.isFinite(ew2)) c.growth.measurements.push({ month: ageMNow, weight: ew2 });
           if (Number.isFinite(et2)) c.growth.teeth.push({ month: ageMNow, count: et2 });
           store.set(K.children, childrenAll);
-          logChildUpdate(id, prevSnap, nextSnap);
+          await logChildUpdate(id, prevSnap, nextSnap);
           alert('Profil enfant mis à jour.');
           renderSettings();
         } finally {
@@ -3140,16 +3140,50 @@ try {
     };
   }
 
-  function logChildUpdate(childId, prev, next) {
+  async function logChildUpdate(childId, prev, next) {
     if (!childId) return;
+    const entry = { at: Date.now(), prev, next };
+    // Remote persistence
+    if (useRemote()) {
+      try {
+        const payload = {
+          child_id: childId,
+          at: new Date(entry.at).toISOString(),
+          prev: entry.prev,
+          next: entry.next,
+        };
+        await supabase.from('child_update_history').insert([payload]);
+      } catch (e) {
+        console.warn('Supabase child_update_history insert failed', e);
+      }
+    }
+    // Local log
     const map = store.get(K.childUpdates, {});
     const list = Array.isArray(map[childId]) ? map[childId] : [];
-    list.push({ at: Date.now(), prev, next });
+    list.push(entry);
     map[childId] = list.slice(-50); // keep last 50 updates
     store.set(K.childUpdates, map);
   }
 
-  function getChildUpdates(childId) {
+  async function getChildUpdates(childId) {
+    if (useRemote()) {
+      try {
+        const { data: rows } = await supabase
+          .from('child_update_history')
+          .select('at,prev,next')
+          .eq('child_id', childId)
+          .order('at', { ascending: true });
+        if (Array.isArray(rows)) {
+          return rows.map(r => ({
+            at: new Date(r.at).getTime(),
+            prev: r.prev || {},
+            next: r.next || {},
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase child_update_history select failed', e);
+      }
+    }
     const map = store.get(K.childUpdates, {});
     return Array.isArray(map[childId]) ? map[childId] : [];
   }
