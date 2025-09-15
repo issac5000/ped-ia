@@ -1168,3 +1168,45 @@ section[data-route="/community"] .btn-danger:hover{
 @keyframes loading-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Beta ticker under hero */
+.beta-ticker{
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100vw;
+  margin-left: calc(50% - 50vw); /* full-bleed */
+  background: rgba(255,255,255,.75);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+  backdrop-filter: saturate(140%) blur(6px);
+  color: #111111;
+  border: 1px solid rgba(255,255,255,.28);
+  border-top: 0;
+  border-radius: 0; /* coins inférieurs non arrondis */
+  height: 28px;
+  overflow: hidden;
+  margin: 0 0 16px; /* collé en haut */
+}
+.beta-ticker__track{
+  display: flex;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+  animation: beta-ticker-marquee 60s linear infinite;
+  font-size: 13px;
+}
+.beta-ticker__content{
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  padding-right: 24px;
+}
+.beta-ticker__text{ color:#111111 }
+.beta-ticker__sep{ color:#bbb }
+@keyframes beta-ticker-marquee{
+  0%{ transform: translateX(0); }
+  100%{ transform: translateX(-50%); }
+}
+@media(prefers-reduced-motion: reduce){
+  .beta-ticker__track{ animation: none; }
+}
