@@ -618,7 +618,7 @@ try {
       // Move canvas to the route so bubbles can roam across the whole page
       route.prepend(cvs);
       const width = route.clientWidth;
-      const height = route.scrollHeight;
+      const height = route.clientHeight;
       const extra = 80; // allow particles to float outside the page bounds
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       cvs.style.left = `${-extra/2}px`;
@@ -701,7 +701,7 @@ try {
         heroParticlesState.lastT = now;
         const route = heroParticlesState.route;
         const W = route ? route.clientWidth : 0;
-        const H = route ? route.scrollHeight : 0;
+        const H = route ? route.clientHeight : 0;
         const extra = heroParticlesState.extra || 0;
         // Clear
         ctx.clearRect(-extra/2,-extra/2,W+extra,H+extra);
@@ -726,7 +726,7 @@ try {
         const route = heroParticlesState.route;
         if (!route) return;
         const width = route.clientWidth;
-        const height = route.scrollHeight;
+        const height = route.clientHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         const extra = heroParticlesState.extra || 0;
         cvs.style.width = `${width + extra}px`;
@@ -755,7 +755,7 @@ try {
       if (heroParticlesState.ctx){
         const route = heroParticlesState.route;
         const extra = heroParticlesState.extra || 0;
-        if (route) heroParticlesState.ctx.clearRect(-extra/2,-extra/2,route.clientWidth+extra,route.scrollHeight+extra);
+        if (route) heroParticlesState.ctx.clearRect(-extra/2,-extra/2,route.clientWidth+extra,route.clientHeight+extra);
       }
       if (heroParticlesState.canvas){
         heroParticlesState.canvas.style.left = '';
