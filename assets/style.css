@@ -309,6 +309,7 @@ section[data-route="/settings"] #form-settings textarea{
   background:linear-gradient(90deg, var(--orange-strong), var(--blue-strong));
   background-clip:text; -webkit-background-clip:text; -webkit-text-fill-color:transparent;
   text-shadow:0 1px 5px rgba(255,203,164,.22), 0 1px 10px rgba(78,124,216,.18); }
+.hero-v2-title::after{ content:""; display:block; height:2px; width:44%; margin:6px 0 0; border-radius:999px; background:linear-gradient(90deg, var(--orange-strong), var(--blue-strong)); opacity:.85 }
 .hero-v2-title .accent-orange{
   background:none !important;
   -webkit-text-fill-color: var(--orange-strong) !important;
@@ -323,9 +324,9 @@ section[data-route="/settings"] #form-settings textarea{
 .hero-v2-logo{ position:absolute; inset:0; margin:auto; width:clamp(180px, 30vw, 400px); height:auto; z-index:2; opacity:.98; filter: drop-shadow(0 10px 28px rgba(0,0,0,.45));
   animation: float 6s ease-in-out infinite; transform-style:preserve-3d; transition: transform .3s ease, filter .3s ease; }
 .hero-v2-logo:hover{ transform: translateY(-2px) rotateY(8deg) scale(1.02); filter: drop-shadow(0 14px 36px rgba(0,0,0,.55)); }
-.hero-v2 .orb{ position:absolute; border-radius:50%; filter:blur(10px); opacity:.9; mix-blend-mode:screen; animation:float 8s ease-in-out infinite }
+.hero-v2 .orb{ position:absolute; border-radius:50%; filter:blur(10px); opacity:.55; mix-blend-mode:screen; animation:float 8s ease-in-out infinite }
 .hero-v2 .orb1{ width:200px; height:200px; right:10%; top:10%; background:radial-gradient(circle at 30% 30%, var(--orange-strong), transparent 60%) }
-.hero-v2 .orb2{ width:260px; height:260px; right:22%; bottom:-10%; background:radial-gradient(circle at 60% 40%, var(--blue-strong), transparent 60%); animation-delay:.6s }
+.hero-v2 .orb2{ width:260px; height:260px; right:22%; bottom:-10%; background:radial-gradient(circle at 60% 40%, #ff6f7d, transparent 60%); animation-delay:.6s }
 .hero-v2 .orb3{ width:140px; height:140px; right:-6%; top:36%; background:radial-gradient(circle at 40% 40%, var(--blue-pastel), transparent 60%); animation-delay:1.2s }
 
 .hero-v2-logo-mobile{ display:none; }
@@ -335,11 +336,22 @@ section[data-route="/settings"] #form-settings textarea{
     width:calc(100% - 8px);
   }
   .hero-v2-art{ display:none; }
-  .hero-v2-logo-mobile{ display:block; width:clamp(180px, 60vw, 320px); height:auto; margin:0 auto 8px; }
-  .hero-v2-logo-mobile + .section{ padding-top:16px; }
+  /* Mobile logo presentation — halos + ligne seulement */
+  .hero-v2-logo-mobile-wrap{
+    position:relative; display:grid; place-items:center;
+    width:min(520px, 92%);
+    margin:0 auto 8px; padding:10px 0 8px;
+    border-radius:0; border:none; background:transparent; box-shadow:none; overflow:visible;
+  }
+  .hero-v2-logo-mobile-wrap::before{ content:""; position:absolute; left:14%; bottom:-4%; width:72%; height:72%; background:radial-gradient(circle at 30% 30%, #ff6f7d, transparent 60%); filter:blur(14px); opacity:.30; pointer-events:none }
+  .hero-v2-logo-mobile-wrap::after{ content:""; position:absolute; right:8%; top:-6%; width:58%; height:58%; background:radial-gradient(circle at 60% 60%, var(--blue-pastel), transparent 60%); filter:blur(14px); opacity:.24; pointer-events:none }
+  .hero-v2-logo-mobile{ position:relative; z-index:1; display:block; width:clamp(180px, 60vw, 320px); height:auto; margin:0 auto; filter: drop-shadow(0 8px 18px rgba(0,0,0,.35)); animation:none }
+  .logo-divider{ height:2px; width:42%; margin:2px auto 0; border-radius:999px; background:linear-gradient(90deg, var(--orange-strong), var(--blue-strong)); opacity:.85 }
+  .hero-v2-logo-mobile-wrap + .section{ padding-top:16px; }
   /* Center hero content on mobile */
   .hero-v2-copy{ text-align:center; margin-left:auto; margin-right:auto; }
   .hero-v2-title{ text-align:center; }
+  .hero-v2-title::after{ margin:6px auto 0; width:36%; }
   .hero-v2-sub{ margin:0 auto 14px; }
   .hero-v2-actions{ justify-content:center; }
   .hero-v2-highlights{ justify-content:center; }
