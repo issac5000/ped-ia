@@ -2657,90 +2657,35 @@ try {
       } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     };
 
-    const list = $('#children-list');
-    list.innerHTML = '';
-    let children = [];
-    (async () => {
-      if (useRemote()) {
-        try {
-          const uid = authSession?.user?.id;
-          if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
-          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
-          children = rows || [];
-        } catch { children = []; }
-      } else {
-        children = store.get(K.children, []);
-      }
-      // If another render started, abort appending to avoid duplicates
-      if (rid !== renderSettings._rid) return;
-      children.forEach(c => {
-        const firstName = c.first_name || c.firstName;
-        const dob = c.dob;
-        const row = document.createElement('div');
-        row.className = 'hstack';
-        row.innerHTML = `
-          <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
-          <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
-          <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
-          <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
-        `;
-        list.appendChild(row);
-      });
-    })();
-    if (!list.dataset.bound) {
-      list.addEventListener('click', async (e)=>{
-        const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
-        if (!target) return;
-        if (list.dataset.busy === '1') return; // prevent concurrent actions
-        list.dataset.busy = '1';
-        target.disabled = true;
-        const idE = target.getAttribute('data-edit');
-        const idP = target.getAttribute('data-primary');
-        const idD = target.getAttribute('data-del');
-        if (idE) {
-          const editBox = document.getElementById('child-edit');
-          editBox?.setAttribute('data-edit-id', idE);
-          renderSettings();
-          list.dataset.busy = '0';
-          return;
-        }
-        if (idP) {
-          if (useRemote()) {
-            try {
-              const uid = authSession?.user?.id;
-              if (!uid) { console.warn('Aucun user_id disponible pour children (set primary)'); throw new Error('Pas de user_id'); }
-              await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
-              await supabase.from('children').update({ is_primary: true }).eq('id', idP);
-              renderSettings();
-              return;
-            } catch {}
-          }
-          store.set(K.user, { ...user, primaryChildId: idP });
-          renderSettings();
-        }
-        if (idD) {
-          if (!confirm('Supprimer ce profil enfant ?')) return;
-          if (useRemote()) {
-            try {
-              const uid = authSession?.user?.id;
-              if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
-              await supabase.from('children').delete().eq('id', idD);
-              renderSettings();
-              return;
-            } catch {}
-          }
-          let children = store.get(K.children, []);
-          children = children.filter(c=>c.id!==idD);
-          store.set(K.children, children);
-          const u = { ...user, childIds: (user.childIds||[]).filter(x=>x!==idD) };
-          if (u.primaryChildId===idD) u.primaryChildId = u.childIds[0] ?? null;
-          store.set(K.user, u);
-          renderSettings();
-        }
-        list.dataset.busy = '0';
-      });
-      list.dataset.bound = '1';
+  const list = $('#children-list');
+  list.innerHTML = '';
+  let children = [];
+  (async () => {
+    if (useRemote()) {
+      try {
+        const uid = authSession?.user?.id;
+        if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
+        const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+        children = rows || [];
+      } catch { children = []; }
+    } else {
+      children = store.get(K.children, []);
     }
+    // If another render started, abort appending to avoid duplicates
+    if (rid !== renderSettings._rid) return;
+    children.forEach(c => {
+      const firstName = c.first_name || c.firstName;
+      const dob = c.dob;
+      const row = document.createElement('div');
+      row.className = 'hstack';
+      row.innerHTML = `
+        <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
+        <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
+        <button class="btn btn-secondary" data-primary="${c.id}">Définir comme principal</button>
+        <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
+      `;
+      list.appendChild(row);
+    });
 
     // Child edit form render
     const editBox = document.getElementById('child-edit');
@@ -2774,9 +2719,8 @@ try {
         };
       }
     } else {
-      const localChildren = store.get(K.children, []);
       const uid = (store.get(K.user)||{}).primaryChildId;
-      child = localChildren.find(c=>c.id===currentEditId) || localChildren.find(c=>c.id===uid) || localChildren[0];
+      child = children.find(c=>c.id===currentEditId) || children.find(c=>c.id===uid) || children[0];
     }
     if (editBox) {
       if (!child) {
@@ -3018,10 +2962,65 @@ try {
         });
       }
     }
+  })();
+  if (!list.dataset.bound) {
+    list.addEventListener('click', async (e)=>{
+      const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-primary],button[data-del]') : null;
+        if (!target) return;
+        if (list.dataset.busy === '1') return; // prevent concurrent actions
+        list.dataset.busy = '1';
+        target.disabled = true;
+        const idE = target.getAttribute('data-edit');
+        const idP = target.getAttribute('data-primary');
+        const idD = target.getAttribute('data-del');
+        if (idE) {
+          const editBox = document.getElementById('child-edit');
+          editBox?.setAttribute('data-edit-id', idE);
+          renderSettings();
+          list.dataset.busy = '0';
+          return;
+        }
+        if (idP) {
+          if (useRemote()) {
+            try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour children (set primary)'); throw new Error('Pas de user_id'); }
+              await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
+              await supabase.from('children').update({ is_primary: true }).eq('id', idP);
+              renderSettings();
+              return;
+            } catch {}
+          }
+          store.set(K.user, { ...user, primaryChildId: idP });
+          renderSettings();
+        }
+        if (idD) {
+          if (!confirm('Supprimer ce profil enfant ?')) return;
+          if (useRemote()) {
+            try {
+              const uid = authSession?.user?.id;
+              if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
+              await supabase.from('children').delete().eq('id', idD);
+              renderSettings();
+              return;
+            } catch {}
+          }
+          let children = store.get(K.children, []);
+          children = children.filter(c=>c.id!==idD);
+          store.set(K.children, children);
+          const u = { ...user, childIds: (user.childIds||[]).filter(x=>x!==idD) };
+          if (u.primaryChildId===idD) u.primaryChildId = u.childIds[0] ?? null;
+          store.set(K.user, u);
+          renderSettings();
+        }
+        list.dataset.busy = '0';
+      });
+      list.dataset.bound = '1';
+    }
 
-    const btnExport = $('#btn-export');
-    if (btnExport) btnExport.onclick = () => {
-      const data = {
+  const btnExport = $('#btn-export');
+  if (btnExport) btnExport.onclick = () => {
+    const data = {
         user: store.get(K.user),
         children: store.get(K.children, []),
         forum: store.get(K.forum, {topics:[]}),
