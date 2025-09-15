@@ -1863,6 +1863,7 @@ try {
 
   // Dashboard
   async function renderDashboard() {
+    const rid = (renderDashboard._rid = (renderDashboard._rid || 0) + 1);
     let child = null; let all = [];
     try { console.log('Step UI: entering renderDashboard', document.querySelector('#app')); } catch {}
     console.log('DEBUG: entrée dans renderDashboard()');
@@ -1896,11 +1897,13 @@ try {
       if (slimLocal.length) renderChildSwitcher(dom.parentElement || dom, slimLocal, (slimLocal.find(s=>s.isPrimary)||slimLocal[0]).id, () => renderDashboard());
     }
     if (!useRemote() && !child) {
+      if (rid !== renderDashboard._rid) return;
       dom.innerHTML = `<div class="card stack"><p>Aucun profil enfant. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`;
       return;
     }
     // Placeholder while fetching remote
     if (useRemote()) {
+      if (rid !== renderDashboard._rid) return;
       dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Actualiser</button></div>`;
       $('#btn-refresh-profile')?.addEventListener('click', () => location.reload());
     }
@@ -1908,12 +1911,14 @@ try {
       const ageM = ageInMonths(child.dob);
       const ageTxt = formatAge(child.dob);
       try { console.log('DEBUG: juste avant rendu central — renderForChild', { childId: child?.id, firstName: child?.firstName }); } catch {}
+      if (rid !== renderDashboard._rid) return;
     // Compute latest health snapshot values
     const msAll = normalizeMeasures(child.growth.measurements);
     const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
     const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
     const lastTeeth = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
     const lastSleepHours = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
+    if (rid !== renderDashboard._rid) return;
     dom.innerHTML = `
       <div class="grid-2">
         <div class="card stack">
@@ -1998,6 +2003,7 @@ try {
     // Append updates history block
     try {
       const updates = await getChildUpdates(child.id);
+      if (rid !== renderDashboard._rid) return;
       const hist = document.createElement('div');
       hist.className = 'card stack';
       hist.style.marginTop = '20px';
@@ -2041,6 +2047,7 @@ try {
         });
         hist.appendChild(btn);
       }
+      if (rid !== renderDashboard._rid) return;
       dom.appendChild(hist);
     } catch {}
 
@@ -2054,6 +2061,7 @@ try {
           ${renderAdvice(ageM)}
         </div>
     `;
+    if (rid !== renderDashboard._rid) return;
     dom.appendChild(adviceWrap);
 
     // Handle measure form (removed UI; guard if present)
@@ -2196,6 +2204,7 @@ try {
     const bmiData = ms.filter(m=>Number.isFinite(m.bmi))
                       .map(m=>({month:m.month, value: m.bmi}));
     const safeRender = (id, data, curve, unit) => {
+      if (rid !== renderDashboard._rid) return;
       try {
         renderWhoChart(id, data, curve, unit);
       } catch (e) {
@@ -2212,10 +2221,13 @@ try {
     safeRender('chart-height', heightData, curves.LENGTH_FOR_AGE, 'cm');
     safeRender('chart-weight', weightData, curves.WEIGHT_FOR_AGE, 'kg');
     safeRender('chart-bmi', bmiData, curves.BMI_FOR_AGE, 'IMC');
-    drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
+    if (rid === renderDashboard._rid) {
+      drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
+    }
 
     // Plain-language chart notes for parents
     try {
+      if (rid !== renderDashboard._rid) return;
       const latestT = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
       const noteT = document.createElement('div'); noteT.className='chart-note';
       if (latestT) noteT.textContent = `Dernier relevé: ${latestT.count} dent(s). Le calendrier d’éruption varie beaucoup — comparez surtout avec les observations précédentes.`;
@@ -2240,11 +2252,13 @@ try {
             const u = store.get(K.user) || {};
             const all = store.get(K.children, []);
             if (!all.length) {
+              if (rid !== renderDashboard._rid) return;
               dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
               return;
             }
             const slimLocal = all.map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
             const selId = (slimLocal.find(s=>s.isPrimary) || slimLocal[0]).id;
+            if (rid !== renderDashboard._rid) return;
             renderChildSwitcher(dom.parentElement || dom, slimLocal, selId, () => renderDashboard());
             const child = all.find(c => c.id === selId) || all[0];
             await renderForChild(child);
@@ -2253,12 +2267,14 @@ try {
           const { data: rows, error: rowsErr } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
           if (rowsErr) throw rowsErr;
           if (!rows || !rows.length) {
+            if (rid !== renderDashboard._rid) return;
             dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
             return;
           }
           // Render switcher from remote children
           const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
           const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
+          if (rid !== renderDashboard._rid) return;
           renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
           const primary = rows.find(r=>r.is_primary) || rows[0];
           remoteChild = {
@@ -2314,10 +2330,13 @@ try {
           (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
           (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
         } catch (e) {
+          if (rid !== renderDashboard._rid) return;
           dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
           return;
         }
+        if (rid !== renderDashboard._rid) return;
         await renderForChild(remoteChild);
+        if (rid !== renderDashboard._rid) return;
         if (gmErr) {
           ['chart-height', 'chart-weight', 'chart-bmi'].forEach(id => {
             const host = document.getElementById(id)?.parentElement;
