@@ -337,6 +337,12 @@ section[data-route="/settings"] #form-settings textarea{
   .hero-v2-art{ display:none; }
   .hero-v2-logo-mobile{ display:block; width:clamp(180px, 60vw, 320px); height:auto; margin:0 auto 8px; }
   .hero-v2-logo-mobile + .section{ padding-top:16px; }
+  /* Center hero content on mobile */
+  .hero-v2-copy{ text-align:center; margin-left:auto; margin-right:auto; }
+  .hero-v2-title{ text-align:center; }
+  .hero-v2-sub{ margin:0 auto 14px; }
+  .hero-v2-actions{ justify-content:center; }
+  .hero-v2-highlights{ justify-content:center; }
 }
 
 .mockup{position:relative; width:min(520px, 92%); border-radius:20px; padding:12px; background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06)); border:1px solid rgba(255,255,255,.25); box-shadow:0 20px 50px rgba(0,0,0,.45); backdrop-filter:blur(14px) saturate(150%)}
@@ -1176,11 +1182,11 @@ section[data-route="/community"] .btn-danger:hover{
   align-items: center;
   width: 100vw;
   margin-left: calc(50% - 50vw); /* full-bleed */
-  background: rgba(255,255,255,.75);
+  background: #000000;
   -webkit-backdrop-filter: saturate(140%) blur(6px);
   backdrop-filter: saturate(140%) blur(6px);
-  color: #111111;
-  border: 1px solid rgba(255,255,255,.28);
+  color: #ffffff;
+  border: 1px solid rgba(255,255,255,.18);
   border-top: 0;
   border-radius: 0; /* coins inférieurs non arrondis */
   height: 28px;
@@ -1201,8 +1207,8 @@ section[data-route="/community"] .btn-danger:hover{
   gap: 24px;
   padding-right: 24px;
 }
-.beta-ticker__text{ color:#111111 }
-.beta-ticker__sep{ color:#bbb }
+.beta-ticker__text{ color:#ffffff }
+.beta-ticker__sep{ color:rgba(255,255,255,.6) }
 @keyframes beta-ticker-marquee{
   0%{ transform: translateX(0); }
   100%{ transform: translateX(-50%); }
