@@ -2785,7 +2785,11 @@ try {
         editBox.innerHTML = '<div class="muted">Sélectionnez un enfant pour modifier son profil.</div>';
       } else {
         editBox.innerHTML = `
-          <h3>Mettre à jour le profil enfant</h3>
+          <label>Enfant
+            <select id="child-select">
+              ${children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.first_name||c.firstName||'—')}</option>`).join('')}
+            </select>
+          </label>
           <form id="form-child-edit" class="form-grid" autocomplete="on">
             <input type="hidden" name="id" value="${child.id}" />
             <label>Prénom<input type="text" name="firstName" value="${escapeHtml(child.firstName)}" required /></label>
@@ -2870,6 +2874,14 @@ try {
             </div>
           </form>
         `;
+        const select = document.getElementById('child-select');
+        if (select && !select.dataset.bound) {
+          select.addEventListener('change', () => {
+            editBox.setAttribute('data-edit-id', select.value);
+            renderSettings();
+          });
+          select.dataset.bound = '1';
+        }
         // Bind submit
         const f = document.getElementById('form-child-edit');
         if (f && !f.dataset.bound) f.addEventListener('submit', async (e) => {
