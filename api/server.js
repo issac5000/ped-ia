@@ -175,6 +175,22 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
   return { text };
 }
 
+async function aiComment(body){
+  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const content = String(body.content || '').slice(0, 2000);
+  const system = `Tu es Ped’IA, un assistant bienveillant pour parents. Rédige un commentaire clair, positif et bref (moins de 50 mots) sur la mise à jour fournie.`;
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
+      {role:'system', content: system}, {role:'user', content}
+    ]})
+  });
+  if (!r.ok){ const t=await r.text(); throw new Error(`OpenAI error ${r.status}: ${t}`); }
+  const j = await r.json();
+  const text = j.choices?.[0]?.message?.content?.trim() || '';
+  return { text };
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   // CORS preflight
@@ -210,6 +226,16 @@ const server = createServer(async (req, res) => {
     try {
       const body = await parseJson(req);
       const out = await aiStory(body);
+      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ai/comment') {
+    try {
+      const body = await parseJson(req);
+      const out = await aiComment(body);
       return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
