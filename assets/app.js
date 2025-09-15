@@ -2026,6 +2026,21 @@ try {
           }).join('')}</div>`
         : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
       );
+      if (updates.length > 2) {
+        const stack = hist.querySelector('.stack');
+        const items = Array.from(stack.children);
+        items.forEach((el, idx) => {
+          if (idx >= 2) el.style.display = 'none';
+        });
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary';
+        btn.textContent = 'Tout afficher';
+        btn.addEventListener('click', () => {
+          items.forEach(el => { el.style.display = ''; });
+          btn.remove();
+        });
+        hist.appendChild(btn);
+      }
       dom.appendChild(hist);
     } catch {}
 
