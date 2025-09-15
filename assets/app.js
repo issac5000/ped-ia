@@ -2009,7 +2009,7 @@ try {
       const hist = document.createElement('div');
       hist.className = 'card stack';
       hist.style.marginTop = '20px';
-      hist.innerHTML = `<h3>Historique des mises à jour</h3>` + (
+      hist.innerHTML = `<h3>historique de l’évolution</h3>` + (
         updates.length ?
         `<div class="stack">${updates.map(u => {
             const when = new Date(u.created_at).toLocaleString();
