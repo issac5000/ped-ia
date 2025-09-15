@@ -1788,11 +1788,6 @@ try {
         if (btn) { btn.disabled = true; btn.textContent = 'Chargement...'; }
         try {
           const fd = new FormData(form);
-          const file = fd.get('photo');
-          let photoDataUrl = null;
-          if (file instanceof File && file.size > 0) {
-            photoDataUrl = await fileToDataUrl(file);
-          }
           const dobStr = fd.get('dob').toString();
           const ageMAtCreation = ageInMonths(dobStr);
           const // read 30 booleans in displayed order (include false)
@@ -1806,7 +1801,7 @@ try {
             firstName: fd.get('firstName').toString().trim(),
             sex: fd.get('sex').toString(),
             dob: dobStr,
-            photo: photoDataUrl,
+            photo: null,
             context: {
               allergies: fd.get('allergies').toString(),
               history: fd.get('history').toString(),
@@ -1850,15 +1845,6 @@ try {
         }
       });
     }
-  }
-
-  function fileToDataUrl(file) {
-    return new Promise((res, rej) => {
-      const reader = new FileReader();
-      reader.onload = () => res(reader.result.toString());
-      reader.onerror = rej;
-      reader.readAsDataURL(file);
-    });
   }
 
   // Dashboard
@@ -2863,7 +2849,6 @@ try {
               <label>Poids (kg)<input type="number" step="0.01" name="weight" /></label>
             </div>
             <label>Dents (nb)<input type="number" step="1" name="teeth" /></label>
-            <label>Photo/avatar<input type="file" name="photo" accept="image/*" /></label>
             <h4>Contexte</h4>
             <label>Allergies<input type="text" name="allergies" value="${escapeHtml(child.context.allergies||'')}" /></label>
             <label>Antécédents<input type="text" name="history" value="${escapeHtml(child.context.history||'')}" /></label>
@@ -2963,11 +2948,7 @@ try {
           try {
           const fd = new FormData(f);
           const id = fd.get('id').toString();
-          let photoDataUrl = child?.photo || null;
-          const file = fd.get('photo');
-          if (file instanceof File && file.size > 0) {
-            try { photoDataUrl = await fileToDataUrl(file); } catch {}
-          }
+          const photoUrl = child?.photo || null;
           const firstName = fd.get('firstName').toString().trim();
           const sex = fd.get('sex').toString();
           const newDob = fd.get('dob').toString();
@@ -2982,7 +2963,7 @@ try {
             first_name: firstName,
             sex,
             dob: newDob,
-            photo_url: photoDataUrl,
+            photo_url: photoUrl,
             milestones,
             context_allergies: fd.get('allergies').toString(),
             context_history: fd.get('history').toString(),
@@ -3071,7 +3052,7 @@ try {
           const childrenAll = store.get(K.children, []);
           const c = childrenAll.find(x=>x.id===id);
           if (!c) return;
-          c.firstName = firstName; c.sex = sex; c.dob = newDob; c.photo = photoDataUrl;
+          c.firstName = firstName; c.sex = sex; c.dob = newDob; c.photo = photoUrl;
           c.context = {
             allergies: payload.context_allergies,
             history: payload.context_history,
