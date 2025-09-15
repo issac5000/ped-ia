@@ -1991,14 +1991,6 @@ try {
         </div>
       </div>
 
-      <div class="grid-2" style="margin-top:12px">
-        <div class="card stack">
-          <h3>Conseils IA (indicatifs)</h3>
-          ${renderAdvice(ageM)}
-        </div>
-      </div>
-
-      
     `;
 
     // Profil santé section removed per request
@@ -2043,6 +2035,18 @@ try {
       }
       dom.appendChild(hist);
     } catch {}
+
+    // Append advice block after history
+    const adviceWrap = document.createElement('div');
+    adviceWrap.className = 'grid-2';
+    adviceWrap.style.marginTop = '12px';
+    adviceWrap.innerHTML = `
+        <div class="card stack">
+          <h3>Conseils IA (indicatifs)</h3>
+          ${renderAdvice(ageM)}
+        </div>
+    `;
+    dom.appendChild(adviceWrap);
 
     // Handle measure form (removed UI; guard if present)
     const formMeasure = $('#form-measure');
