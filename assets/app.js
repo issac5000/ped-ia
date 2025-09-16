@@ -3167,6 +3167,31 @@ try {
         const allowMessages = !!fd.get('allowMessages');
         if (useRemote()) {
           try {
+            if (isAnonProfile()) {
+              const code = (activeProfile?.code_unique || '').toString().trim().toUpperCase();
+              if (!code) { console.warn('Code unique manquant pour la mise à jour anonyme'); throw new Error('Code unique manquant'); }
+              const response = await fetch('/api/profiles/update-anon', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code_unique: code, full_name: pseudo })
+              });
+              let payload = null;
+              try { payload = await response.json(); } catch { payload = null; }
+              if (!response.ok || !payload?.profile) {
+                const msg = payload?.error || 'Mise à jour du profil impossible pour le moment.';
+                const err = new Error(msg);
+                if (payload?.details) err.details = payload.details;
+                throw err;
+              }
+              const profile = payload.profile || {};
+              const updatedPseudo = typeof profile.full_name === 'string' ? profile.full_name : pseudo;
+              setActiveProfile({ ...profile, isAnonymous: true });
+              store.set(K.user, { ...user, role, pseudo: updatedPseudo });
+              store.set(K.privacy, { showStats, allowMessages });
+              form.pseudo.value = updatedPseudo || '';
+              alert('Paramètres enregistrés');
+              return;
+            }
             const uid = getActiveProfileId();
             if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (upsert)'); throw new Error('Pas de user_id'); }
             await Promise.all([
@@ -3174,9 +3199,12 @@ try {
               supabase.from('profiles').upsert([{ id: uid, full_name: pseudo }])
             ]);
             store.set(K.user, { ...user, role, pseudo });
+            store.set(K.privacy, { showStats, allowMessages });
             alert('Paramètres enregistrés');
             return;
-          } catch {}
+          } catch (err) {
+            console.error('renderSettings remote save failed', err);
+          }
         }
         store.set(K.user, { ...user, role, pseudo });
         store.set(K.privacy, { showStats, allowMessages });
