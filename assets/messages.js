@@ -14,6 +14,7 @@ const K = {
 };
 
 let supabase, session, user;
+let supabaseInitPromise = null;
 let myInitial = '';
 let parents = [];
 let lastMessages = new Map();
@@ -21,6 +22,7 @@ let activeParent = null;
 let currentMessages = [];
 let messagesChannel = null;
 let navBtn, mainNav, navBackdrop;
+let headerSetupDone = false;
 // Notifications
 let notifChannels = [];
 let notifCount = 0;
@@ -29,6 +31,7 @@ let anonNotifTimer = null;
 
 let isAnon = false;
 let anonProfile = null;
+let loginUIBound = false;
 
 // Normalize all user IDs to strings to avoid type mismatches
 const idStr = id => String(id);
@@ -48,7 +51,225 @@ function updateHeaderAuth(){
   $('#login-status').hidden = !logged;
 }
 
+async function ensureSupabase(){
+  if (supabase) return true;
+  if (!supabaseInitPromise) {
+    supabaseInitPromise = (async () => {
+      const env = await fetch('/api/env').then(r=>r.json());
+      if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      return createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true } });
+    })();
+  }
+  try {
+    supabase = await supabaseInitPromise;
+    return true;
+  } catch (e) {
+    console.error('ensureSupabase failed', e);
+    supabase = null;
+    return false;
+  } finally {
+    supabaseInitPromise = null;
+  }
+}
+
+function presentLoginGate(){
+  const shell = $('#messages-shell');
+  if (shell) shell.hidden = true;
+  const gate = $('#login-gate');
+  if (gate) {
+    gate.hidden = false;
+    gate.classList.add('active');
+  }
+  stopAnonNotifPolling();
+  if (messagesChannel) {
+    try { supabase?.removeChannel(messagesChannel); } catch (e) {}
+    messagesChannel = null;
+  }
+  if (notifChannels.length) {
+    try { for (const ch of notifChannels) supabase?.removeChannel(ch); } catch (e) {}
+    notifChannels = [];
+  }
+}
+
+function presentMessagesUI(){
+  const gate = $('#login-gate');
+  if (gate) {
+    gate.classList.remove('active');
+    gate.hidden = true;
+  }
+  const shell = $('#messages-shell');
+  if (shell) shell.hidden = false;
+}
+
+async function createAnonymousProfile(){
+  const status = $('#anon-create-status');
+  const btn = $('#btn-create-anon');
+  if (btn?.dataset.busy === '1') return;
+  if (status) {
+    status.classList.remove('error');
+    status.textContent = '';
+  }
+  try {
+    if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+    const response = await fetch('/api/profiles/create-anon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch (e) { payload = null; }
+    if (!response.ok || !payload?.profile) {
+      const msg = payload?.error || 'Création impossible pour le moment.';
+      const err = new Error(msg);
+      if (payload?.details) err.details = payload.details;
+      throw err;
+    }
+    const data = payload.profile;
+    if (status) {
+      status.classList.remove('error');
+      status.innerHTML = `Ton code unique&nbsp;: <strong>${data.code_unique}</strong>.<br>Garde-le précieusement et saisis-le juste en dessous dans «&nbsp;Se connecter avec un code&nbsp;».`;
+    }
+    const input = $('#anon-code-input');
+    if (input) {
+      input.value = data.code_unique || '';
+      try { input.focus(); input.select(); } catch (e) {}
+    }
+  } catch (e) {
+    console.error('createAnonymousProfile failed', e);
+    if (status) {
+      status.classList.add('error');
+      const msg = (e && typeof e.message === 'string' && e.message.trim()) ? e.message : 'Création impossible pour le moment.';
+      status.textContent = msg;
+    }
+  } finally {
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+  }
+}
+
+async function loginWithCode(){
+  const input = $('#anon-code-input');
+  const status = $('#anon-login-status');
+  const btn = $('#btn-login-code');
+  if (btn?.dataset.busy === '1') return;
+  const rawCode = (input?.value || '').trim();
+  const code = rawCode.toUpperCase();
+  if (input) input.value = code;
+  status?.classList.remove('error');
+  if (!code) {
+    if (status) {
+      status.classList.add('error');
+      status.textContent = 'Saisis ton code unique pour continuer.';
+    }
+    input?.focus();
+    return;
+  }
+  if (status) status.textContent = '';
+  const ok = await ensureSupabase();
+  if (!ok) {
+    if (status) {
+      status.classList.add('error');
+      status.textContent = 'Service indisponible pour le moment.';
+    }
+    return;
+  }
+  try {
+    if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, code_unique, full_name, user_id')
+      .eq('code_unique', code)
+      .single();
+    if (error) {
+      if (status && (error.code === 'PGRST116' || (error.message || '').includes('Row not found'))) {
+        status.classList.add('error');
+        status.textContent = 'Code invalide.';
+        return;
+      }
+      throw error;
+    }
+    if (!data) {
+      if (status) {
+        status.classList.add('error');
+        status.textContent = 'Code invalide.';
+      }
+      return;
+    }
+    const fullName = data.full_name || '';
+    const normalizedCode = String(data.code_unique || code).trim().toUpperCase();
+    const profileId = idStr(data.id);
+    store.set(K.session, {
+      type: 'anon',
+      code: normalizedCode,
+      id: profileId,
+      fullName,
+      loggedIn: true
+    });
+    try {
+      const current = store.get(K.user) || {};
+      if (fullName && fullName !== current.pseudo) {
+        store.set(K.user, { ...current, pseudo: fullName });
+      }
+    } catch (e) {}
+    if (status) {
+      status.classList.remove('error');
+      status.textContent = '';
+    }
+    if (input) input.value = '';
+    window.location.reload();
+  } catch (e) {
+    console.error('loginWithCode failed', e);
+    if (status) {
+      status.classList.add('error');
+      status.textContent = 'Connexion impossible pour le moment.';
+    }
+  } finally {
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+  }
+}
+
+function setupLoginUI(){
+  if (loginUIBound) return;
+  loginUIBound = true;
+  document.addEventListener('click', async (e) => {
+    const gate = $('#login-gate');
+    if (!gate) return;
+    const btn = e.target instanceof Element ? e.target.closest('.btn-google-login') : null;
+    if (!btn || !gate.contains(btn)) return;
+    e.preventDefault();
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    btn.setAttribute('aria-disabled', 'true');
+    try {
+      const ok = await ensureSupabase();
+      if (!ok) throw new Error('Service indisponible');
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.href } });
+    } catch (err) {
+      alert('Connexion Google indisponible');
+    } finally {
+      btn.removeAttribute('aria-disabled');
+      delete btn.dataset.busy;
+    }
+  });
+  $('#btn-create-anon')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    createAnonymousProfile();
+  });
+  $('#btn-login-code')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    loginWithCode();
+  });
+  $('#anon-code-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loginWithCode();
+    }
+  });
+}
+
 function setupHeader(){
+  if (headerSetupDone) return;
+  headerSetupDone = true;
   const redirectToLogin = () => {
     const targetHash = '#/login';
     if (location.hash === targetHash) return;
@@ -497,12 +718,22 @@ function startLogoParticles(){
   } catch(e){}
 }
 
+function preparePageChrome(){
+  setupHeader();
+  setupLoginUI();
+  updateHeaderAuth();
+  evaluateHeaderFit();
+  const pageLogo = document.getElementById('page-logo');
+  if (pageLogo) pageLogo.hidden = false;
+  if (!routeParticles.cvs) startRouteParticles();
+  if (!logoParticles.cvs) startLogoParticles();
+}
+
+
 async function init(){
   try {
-    const env = await fetch('/api/env').then(r=>r.json());
-    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-    supabase = createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true } });
-    // Handle OAuth return (?code=...) to ensure session is established on this page too
+    const ok = await ensureSupabase();
+    if (!ok) throw new Error('Supabase indisponible');
     try {
       const urlNow = new URL(window.location.href);
       if (urlNow.searchParams.get('code')) {
@@ -511,7 +742,7 @@ async function init(){
         history.replaceState({}, '', urlNow.toString());
       }
     } catch (e) { console.warn('OAuth code exchange failed', e); }
-    const { data: { session:s } } = await supabase.auth.getSession();
+    const { data: { session: s } } = await supabase.auth.getSession();
     if(!s){
       const saved = store.get(K.session);
       if (saved?.type === 'anon' && saved?.code && saved?.id) {
@@ -537,12 +768,14 @@ async function init(){
         }
         if (!myInitial) myInitial = 'A';
       } else {
-        alert('Veuillez vous connecter.'); window.location.href='/'; return;
+        isAnon = false;
+        anonProfile = null;
+        user = null;
+        session = null;
       }
     } else {
       session = s;
       user = s.user;
-      // force user ID to string to avoid type mismatches with DB numeric ids
       user.id = idStr(user.id);
       try {
         const { data: prof } = await supabase
@@ -562,67 +795,75 @@ async function init(){
       if (first) myInitial = first.toUpperCase();
       if (!myInitial) myInitial = 'P';
     }
-    setupHeader();
-    updateHeaderAuth();
-    evaluateHeaderFit();
-    document.getElementById('page-logo').hidden = false;
-    startRouteParticles();
-    startLogoParticles();
+    preparePageChrome();
+    updateBadgeFromStore();
+    if (!isLoggedIn()) {
+      presentLoginGate();
+      return;
+    }
+    presentMessagesUI();
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
     updateBadgeFromStore();
     setupRealtimeNotifications();
     fetchMissedMessages();
-    // Replay unseen toasts at most once per tab session
     try {
       const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
       if (!booted) { replayUnseen(); sessionStorage.setItem('pedia_notif_booted', '1'); }
     } catch (e) { /* ignore */ }
-    // Also fetch missed community replies where I participated (guarded once per session)
     if (!isAnon) {
       try {
         const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
         if (!booted) {
-        const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
-        const sinceRep = getNotifLastSince('reply') || sinceDefault;
-        const [{ data: topics }, { data: myReps }] = await Promise.all([
-          supabase.from('forum_topics').select('id').eq('user_id', user.id).limit(200),
-          supabase.from('forum_replies').select('topic_id').eq('user_id', user.id).limit(500)
-        ]);
-        const topicIdSet = new Set([...(topics||[]).map(t=>t.id), ...(myReps||[]).map(r=>r.topic_id)]);
-        const topicIds = Array.from(topicIdSet);
-        if (topicIds.length) {
-          const { data: reps } = await supabase
-            .from('forum_replies')
-            .select('id,topic_id,user_id,created_at')
-            .in('topic_id', topicIds)
-            .neq('user_id', user.id)
-            .gt('created_at', sinceRep)
-            .order('created_at', { ascending:true })
-            .limit(100);
-          if (reps && reps.length) {
-            const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
-            let names = new Map();
-            try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
-            let titleMap = new Map();
-            try { const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id)))); titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')])); } catch (e) {}
-            for (const r of reps) {
-              const who = names.get(String(r.user_id)) || 'Un parent';
-              const title = titleMap.get(r.topic_id) || '';
-              const notifId = `reply:${r.id}`;
-              addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
-              if (isNotifUnseen(notifId)) {
-                showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+          const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
+          const sinceRep = getNotifLastSince('reply') || sinceDefault;
+          const [{ data: topics }, { data: myReps }] = await Promise.all([
+            supabase.from('forum_topics').select('id').eq('user_id', user.id).limit(200),
+            supabase.from('forum_replies').select('topic_id').eq('user_id', user.id).limit(500)
+          ]);
+          const topicIdSet = new Set([...(topics||[]).map(t=>t.id), ...(myReps||[]).map(r=>r.topic_id)]);
+          const topicIds = Array.from(topicIdSet);
+          if (topicIds.length) {
+            const { data: reps } = await supabase
+              .from('forum_replies')
+              .select('id,topic_id,user_id,created_at')
+              .in('topic_id', topicIds)
+              .neq('user_id', user.id)
+              .gt('created_at', sinceRep)
+              .order('created_at', { ascending:true })
+              .limit(100);
+            if (reps && reps.length) {
+              const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
+              let names = new Map();
+              try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
+              let titleMap = new Map();
+              try { const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id)))); titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')])); } catch (e) {}
+              for (const r of reps) {
+                const who = names.get(String(r.user_id)) || 'Un parent';
+                const title = titleMap.get(r.topic_id) || '';
+                const notifId = `reply:${r.id}`;
+                addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
+                if (isNotifUnseen(notifId)) {
+                  showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+                }
               }
+              updateBadges();
             }
-            updateBadges();
           }
-        }
         }
       } catch (e) {}
     }
-  } catch (e){ console.error('Init error', e); }
+  } catch (e) {
+    console.error('Init error', e);
+    isAnon = false;
+    anonProfile = null;
+    session = null;
+    user = null;
+    preparePageChrome();
+    updateBadgeFromStore();
+    presentLoginGate();
+  }
 }
 
 async function loadConversations(){

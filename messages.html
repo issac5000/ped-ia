@@ -64,29 +64,82 @@
   </div>
   <div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
   <main class="container">
-    <div class="page-header">
-      <h2>Discussion privée</h2>
-      <p class="page-subtitle">Pour plus d’intimités</p>
-    </div>
-    <div class="chat-area">
-      <aside class="parent-list card">
-        <ul id="parents-list"></ul>
-      </aside>
-      <section id="chat-placeholder" class="chat-placeholder card">
-        <div class="stack" style="margin:auto">
-          <p class="muted">Sélectionnez une conversation pour commencer</p>
-        </div>
-      </section>
-      <section class="chat-window card">
-        <div id="conversation" class="chat-messages"></div>
-        <form id="message-form" class="chat-input" autocomplete="off">
-          <div class="chat-row">
-            <textarea id="message-input" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
-            <button class="btn btn-primary chat-send" type="submit">Envoyer</button>
+    <div id="messages-shell" hidden>
+      <div class="page-header">
+        <h2>Discussion privée</h2>
+        <p class="page-subtitle">Pour plus d’intimités</p>
+      </div>
+      <div class="chat-area">
+        <aside class="parent-list card">
+          <ul id="parents-list"></ul>
+        </aside>
+        <section id="chat-placeholder" class="chat-placeholder card">
+          <div class="stack" style="margin:auto">
+            <p class="muted">Sélectionnez une conversation pour commencer</p>
           </div>
-        </form>
-      </section>
+        </section>
+        <section class="chat-window card">
+          <div id="conversation" class="chat-messages"></div>
+          <form id="message-form" class="chat-input" autocomplete="off">
+            <div class="chat-row">
+              <textarea id="message-input" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
+              <button class="btn btn-primary chat-send" type="submit">Envoyer</button>
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
+    <section id="login-gate" class="route" data-route="/login" hidden aria-labelledby="login-gate-title">
+      <div class="page-header login-header">
+        <h2 id="login-gate-title">Connexion à Synap'Kids</h2>
+        <p class="page-subtitle">Connectez-vous pour consulter vos messages privés.</p>
+      </div>
+      <div class="login-panels">
+        <article class="login-panel login-panel--google">
+          <div class="login-panel__header">
+            <span class="login-pill">Synchronisé</span>
+            <h3>Se connecter avec Google</h3>
+            <p class="login-panel__text">Retrouvez vos conversations instantanément sur tous vos appareils.</p>
+          </div>
+          <button class="btn btn-primary btn-google-login login-panel__action" type="button">
+            <span class="login-panel__icon" aria-hidden="true">G</span>
+            <span>Continuer avec Google</span>
+          </button>
+          <ul class="login-panel__list" aria-label="Avantages de la connexion Google">
+            <li>Synchronisation automatique et sauvegarde Supabase.</li>
+            <li>Accès rapide sans nouveau mot de passe.</li>
+          </ul>
+          <p class="login-panel__note">Nous respectons votre confidentialité : seul votre identifiant Google est utilisé pour vous authentifier.</p>
+        </article>
+        <article class="login-panel login-panel--anon">
+          <div class="login-panel__header">
+            <span class="login-pill login-pill--outline">Sans adresse e-mail</span>
+            <h3>Connexion anonyme</h3>
+            <p class="login-panel__text">Générez un code confidentiel pour accéder à vos messages en toute discrétion.</p>
+          </div>
+          <button class="btn btn-secondary login-panel__action" type="button" id="btn-create-anon">Créer un code anonyme</button>
+          <div id="anon-create-status" class="form-status" aria-live="polite"></div>
+          <div class="login-panel__divider" role="separator"><span>Déjà un code&nbsp;?</span></div>
+          <label class="login-code-label" for="anon-code-input">Entrez votre code unique</label>
+          <div class="login-code-row">
+            <div class="login-code-field">
+              <span class="login-code-field__label" aria-hidden="true">CODE</span>
+              <input
+                id="anon-code-input"
+                class="login-code-input"
+                type="text"
+                inputmode="text"
+                autocomplete="one-time-code"
+                placeholder="Ex : A1B2-C3D4-E5F6"
+              />
+            </div>
+            <button class="btn btn-secondary" type="button" id="btn-login-code">Se connecter</button>
+          </div>
+          <p class="login-panel__hint">Conservez ce code en lieu sûr : il vous permet de retrouver vos conversations depuis n’importe quel appareil.</p>
+          <div id="anon-login-status" class="form-status" aria-live="polite"></div>
+        </article>
+      </div>
+    </section>
   </main>
   <footer class="site-footer home-footer">
     <div class="footer-bg" aria-hidden="true">
