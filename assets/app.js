@@ -53,15 +53,18 @@ console.log('DEBUG: app.js chargé');
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Load Supabase env and client
-  let supabase = null; 
+  let supabase = null;
   let authSession = null;
+  let activeProfile = null;
   // Keep notification channels to clean up on logout
   let notifChannels = [];
   // Reveal observer (initialized later in setupScrollAnimations)
   let revealObserver = null;
 
+  const getActiveProfileId = () => activeProfile?.id || null;
+  const isProfileLoggedIn = () => !!getActiveProfileId();
   // ✅ Fix: useRemote défini dès le départ
-  const useRemote = () => !!supabase && !!authSession?.user;
+  const useRemote = () => !!supabase && isProfileLoggedIn();
 
   try {
     const env = await fetch('/api/env').then(r => r.json());
@@ -119,15 +122,23 @@ try {
       // Récupérer la session en cours (utile si pas d'user direct)
       const { data: { session } } = await supabase.auth.getSession();
       authSession = session || authSession;
-      if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
+      if (authSession?.user && !isProfileLoggedIn()) {
+        await ensureProfile(authSession.user);
+        await syncUserFromSupabase();
+      }
+      if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       }
       supabase.auth.onAuthStateChange(async (_event, session) => {
         authSession = session || null;
-        if (session?.user) await ensureProfile(session.user);
-        if (session?.user) await syncUserFromSupabase();
+        if (session?.user) {
+          await ensureProfile(session.user);
+          await syncUserFromSupabase();
+        } else {
+          setActiveProfile(null);
+        }
         updateHeaderAuth();
-        if (authSession?.user && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
+        if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
           location.hash = '#/dashboard';
         } else {
           setActiveRoute(location.hash);
@@ -150,7 +161,7 @@ try {
       if (location.hash) {
         setActiveRoute(location.hash);
       } else {
-        location.hash = authSession?.user ? '#/dashboard' : '#/';
+        location.hash = isProfileLoggedIn() ? '#/dashboard' : '#/';
       }
       // Bind notifications for existing session and replay once on open
       if (authSession?.user) {
@@ -205,7 +216,7 @@ try {
       window.scrollTo(0, 0);
     }
     // Guard routes
-    const authed = !!authSession?.user;
+    const authed = isProfileLoggedIn();
     const needAuth = ['/dashboard','/community','/ai','/settings','/onboarding'];
     console.log('DEBUG: test guard needAuth', { path, authed, needAuth });
     if (needAuth.includes(path) && !authed) {
@@ -431,7 +442,7 @@ try {
   async function fetchMissedNotifications(){
     try {
       if (!useRemote()) return;
-      const uid = authSession?.user?.id; if (!uid) return;
+      const uid = getActiveProfileId(); if (!uid) return;
       const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
       const sinceMsg = getNotifLastSince('msg') || sinceDefault;
       const sinceRep = getNotifLastSince('reply') || sinceDefault;
@@ -510,7 +521,7 @@ try {
   function setupRealtimeNotifications(){
     try {
       if (!useRemote()) return;
-      const uid = authSession?.user?.id; if (!uid) return;
+      const uid = getActiveProfileId(); if (!uid) return;
       // Cleanup previous
       try { for (const ch of notifChannels) supabase.removeChannel(ch); } catch {}
       notifChannels = [];
@@ -1174,9 +1185,25 @@ try {
 
   // Header auth buttons
   function updateHeaderAuth() {
-    $('#btn-login').hidden = !!authSession?.user;
-    $('#btn-logout').hidden = !authSession?.user;
-    $('#login-status').hidden = !authSession?.user;
+    const logged = isProfileLoggedIn();
+    $('#btn-login').hidden = logged;
+    $('#btn-logout').hidden = !logged;
+    $('#login-status').hidden = !logged;
+  }
+
+  function setActiveProfile(profile) {
+    if (profile && profile.id) {
+      activeProfile = {
+        id: profile.id,
+        full_name: profile.full_name || '',
+        code_unique: profile.code_unique || null,
+        user_id: profile.user_id ?? null,
+        isAnonymous: profile.isAnonymous ?? false,
+      };
+    } else {
+      activeProfile = null;
+    }
+    updateHeaderAuth();
   }
 
   // Ensure a row exists in profiles for the authenticated user without overwriting custom pseudo
@@ -1206,15 +1233,20 @@ try {
   // Keep local user pseudo in sync with Supabase profile
   async function syncUserFromSupabase() {
     try {
-      if (!useRemote()) return;
-      const uid = authSession?.user?.id;
+      if (!supabase) return;
+      const uid = authSession?.user?.id || getActiveProfileId();
       if (!uid) return;
       const { data: prof, error } = await supabase
         .from('profiles')
-        .select('full_name')
+        .select('id, full_name, code_unique')
         .eq('id', uid)
         .maybeSingle();
       if (error) throw error;
+      if (prof) {
+        setActiveProfile({ ...prof, isAnonymous: false });
+      } else {
+        setActiveProfile({ id: uid, isAnonymous: false });
+      }
       const current = store.get(K.user) || {};
       const pseudo = prof?.full_name || current.pseudo || '';
       if (pseudo !== current.pseudo) {
@@ -1224,21 +1256,124 @@ try {
       if (DEBUG_AUTH) console.warn('syncUserFromSupabase failed', e);
     }
   }
+  async function ensureSupabaseClient() {
+    if (supabase) return true;
+    try {
+      const env = await fetch('/api/env').then(r => r.json());
+      if (DEBUG_AUTH) console.log('ENV (ensure client)', env);
+      if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      supabase = createClient(env.url, env.anonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      return true;
+    } catch (e) {
+      console.warn('ensureSupabaseClient failed', e);
+      return false;
+    }
+  }
+
   async function signInGoogle(){
     if (DEBUG_AUTH) console.log('signInGoogle clicked');
     try {
-      if (!supabase) {
-        const env = await fetch('/api/env').then(r=>r.json());
-        if (DEBUG_AUTH) console.log('ENV (on click)', env);
-        if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
-        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-        supabase = createClient(env.url, env.anonKey, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-        });
-      }
+      const ok = await ensureSupabaseClient();
+      if (!ok) throw new Error('Supabase indisponible');
       await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
     } catch (e) { alert('Connexion Google indisponible'); }
   }
+  async function createAnonymousProfile() {
+    const status = $('#anon-create-status');
+    const btn = $('#btn-create-anon');
+    if (btn?.dataset.busy === '1') return;
+    status?.classList.remove('error');
+    if (status) status.textContent = '';
+    const ok = await ensureSupabaseClient();
+    if (!ok) {
+      if (status) { status.classList.add('error'); status.textContent = 'Service indisponible pour le moment.'; }
+      return;
+    }
+    try {
+      if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({})
+        .select('id, code_unique, full_name')
+        .single();
+      if (error || !data) throw error || new Error('Profil introuvable');
+      setActiveProfile({ ...data, isAnonymous: true });
+      authSession = null;
+      const current = store.get(K.user) || {};
+      const pseudo = data.full_name || '';
+      if (pseudo !== current.pseudo) {
+        store.set(K.user, { ...current, pseudo });
+      }
+      if (status) {
+        status.classList.remove('error');
+        status.textContent = `Voici ton code unique : ${data.code_unique}. Garde-le précieusement pour te reconnecter sur n’importe quel appareil.`;
+      }
+      location.hash = '#/dashboard';
+    } catch (e) {
+      console.error('createAnonymousProfile failed', e);
+      if (status) { status.classList.add('error'); status.textContent = 'Création impossible pour le moment.'; }
+    } finally {
+      if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+    }
+  }
+
+  async function loginWithCode() {
+    const input = $('#anon-code-input');
+    const status = $('#anon-login-status');
+    const btn = $('#btn-login-code');
+    if (btn?.dataset.busy === '1') return;
+    const code = (input?.value || '').trim();
+    status?.classList.remove('error');
+    if (!code) {
+      if (status) { status.classList.add('error'); status.textContent = 'Saisis ton code unique pour continuer.'; }
+      input?.focus();
+      return;
+    }
+    if (status) status.textContent = '';
+    const ok = await ensureSupabaseClient();
+    if (!ok) {
+      if (status) { status.classList.add('error'); status.textContent = 'Service indisponible pour le moment.'; }
+      return;
+    }
+    try {
+      if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, code_unique, full_name, user_id')
+        .eq('code_unique', code)
+        .single();
+      if (error) {
+        if (status && (error.code === 'PGRST116' || (error.message || '').includes('Row not found'))) {
+          status.classList.add('error'); status.textContent = 'Code invalide.';
+          return;
+        }
+        throw error;
+      }
+      if (!data) {
+        if (status) { status.classList.add('error'); status.textContent = 'Code invalide.'; }
+        return;
+      }
+      setActiveProfile({ ...data, isAnonymous: !data.user_id });
+      authSession = null;
+      const current = store.get(K.user) || {};
+      const pseudo = data.full_name || '';
+      if (pseudo !== current.pseudo) {
+        store.set(K.user, { ...current, pseudo });
+      }
+      if (status) { status.classList.remove('error'); status.textContent = ''; }
+      if (input) input.value = '';
+      location.hash = '#/dashboard';
+    } catch (e) {
+      console.error('loginWithCode failed', e);
+      if (status) { status.classList.add('error'); status.textContent = 'Connexion impossible pour le moment.'; }
+    } finally {
+      if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+    }
+  }
+
   $('#btn-login').addEventListener('click', async (e) => {
     e.preventDefault();
     const btn = e.currentTarget;
@@ -1258,9 +1393,30 @@ try {
       signInGoogle();
     }
   });
+  $('#btn-create-anon')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    createAnonymousProfile();
+  });
+
+  $('#btn-login-code')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    loginWithCode();
+  });
+
+  $('#anon-code-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loginWithCode();
+    }
+  });
+
   $('#btn-logout').addEventListener('click', async (e) => {
     const btn = e.currentTarget; if (btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled = true;
-    try { await supabase?.auth.signOut(); } catch {}
+    try { if (authSession?.user) { await supabase?.auth.signOut(); } } catch {}
+    setActiveProfile(null);
+    authSession = null;
+    try { if (supabase) { for (const ch of notifChannels) await supabase.removeChannel(ch); } } catch {}
+    notifChannels = [];
     alert('Déconnecté.');
     updateHeaderAuth();
     location.hash = '#/login';
@@ -1412,7 +1568,7 @@ try {
       console.log('DEBUG: entrée dans loadChild()');
       if (useRemote()) {
         try {
-          const uid = authSession?.user?.id;
+          const uid = authSession?.user?.id || getActiveProfileId();
           if (!uid) {
             console.warn("Aucun user_id disponible pour la requête children (loadChild) — fallback local");
             const user = store.get(K.user);
@@ -1464,7 +1620,7 @@ try {
       if (!id) return null;
       if (useRemote()) {
         try {
-          const uid = authSession?.user?.id;
+          const uid = getActiveProfileId();
           if (!uid) {
             console.warn("Aucun user_id disponible pour la requête children (loadChildById) — fallback local");
             const children = store.get(K.children, []);
@@ -1721,7 +1877,7 @@ try {
     if (form && !form.dataset.bound) {
       // Function to send child profile to Supabase
       async function saveChildProfile(child) {
-        const uid = authSession.user.id;
+        const uid = getActiveProfileId();
         // Insert child
         const payload = {
           user_id: uid,
@@ -1858,7 +2014,7 @@ try {
     console.log('DEBUG: entrée dans renderDashboard()');
     if (useRemote()) {
       // Remote load
-      const uid = authSession.user.id;
+      const uid = getActiveProfileId();
       // Load children, pick primary if any else first
       // We assume a boolean is_primary column exists
       // Fallback to first row if none primary
@@ -2078,7 +2234,7 @@ try {
         let handled = false;
         if (useRemote()) {
           try {
-            const uid = authSession?.user?.id;
+            const uid = getActiveProfileId();
             if (!uid) {
               console.warn('Aucun user_id disponible pour growth_measurements/growth_sleep/growth_teeth (form-measure)');
               throw new Error('Pas de user_id');
@@ -2235,7 +2391,7 @@ try {
         let gmErr = null;
         let gmCount = 0;
         try {
-          const uid = authSession?.user?.id;
+          const uid = getActiveProfileId();
           if (!uid) {
             console.warn('Aucun user_id disponible pour la requête children (renderDashboard) — fallback local');
             const u = store.get(K.user) || {};
@@ -2402,10 +2558,11 @@ try {
       empty.textContent = 'Aucun sujet pour le moment. Lancez la discussion !';
       list.appendChild(empty);
     };
-    const renderTopics = (topics, replies, authorsMap) => {
-      if (!topics.length) return showEmpty();
-      if (rid !== renderCommunity._rid) return;
-      topics.slice().forEach(t => {
+      const renderTopics = (topics, replies, authorsMap) => {
+        const activeId = getActiveProfileId();
+        if (!topics.length) return showEmpty();
+        if (rid !== renderCommunity._rid) return;
+        topics.slice().forEach(t => {
         // Extract category from title prefix like [Sommeil] Titre
         let title = t.title || '';
         let cat = 'Divers';
@@ -2422,23 +2579,23 @@ try {
         const toggleLabel = isOpen ? 'Réduire la publication' : 'Afficher les commentaires';
         const toggleCount = rs.length ? ` (${rs.length})` : '';
         const isMobile = document.body.classList.contains('force-mobile');
-        el.innerHTML = `
-          <div class="flex-between">
-            <h3 style="margin:0">${escapeHtml(title)}</h3>
-            <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span><a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a><button class="btn btn-secondary" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}">${toggleLabel}${toggleCount}</button></div>
-          </div>
-          <div class="topic-body" data-body="${tid}" style="${isOpen?'':'display:none'}">
-            <p style="margin-top:8px">${escapeHtml(t.content)}</p>
-            <div class="stack">
-              ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">${isMobile ? '💬' : '💬 Message privé'}</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+          el.innerHTML = `
+            <div class="flex-between">
+              <h3 style="margin:0">${escapeHtml(title)}</h3>
+              <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span><a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a><button class="btn btn-secondary" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}">${toggleLabel}${toggleCount}</button></div>
             </div>
-            <form data-id="${tid}" class="form-reply form-grid" style="margin-top:8px">
-              <label>Réponse<textarea name="content" rows="2" required></textarea></label>
-              <button class="btn btn-secondary" type="submit">Répondre</button>
-            </form>
-            ${ (authSession?.user?.id && t.user_id===authSession.user.id) ? `<button class="btn btn-danger" data-del-topic="${tid}" style="margin-top:8px">Supprimer le sujet</button>`:''}
-          </div>
-        `;
+            <div class="topic-body" data-body="${tid}" style="${isOpen?'':'display:none'}">
+              <p style="margin-top:8px">${escapeHtml(t.content)}</p>
+              <div class="stack">
+                ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">${isMobile ? '💬' : '💬 Message privé'}</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+              </div>
+              <form data-id="${tid}" class="form-reply form-grid" style="margin-top:8px">
+                <label>Réponse<textarea name="content" rows="2" required></textarea></label>
+                <button class="btn btn-secondary" type="submit">Répondre</button>
+              </form>
+              ${ (activeId && String(t.user_id) === String(activeId)) ? `<button class="btn btn-danger" data-del-topic="${tid}" style="margin-top:8px">Supprimer le sujet</button>`:''}
+            </div>
+          `;
         list.appendChild(el);
       });
       $$('.form-reply').forEach(f => {
@@ -2457,7 +2614,7 @@ try {
             if (!content) return;
             if (useRemote()) {
               try {
-                const uid = authSession?.user?.id;
+                const uid = getActiveProfileId();
                 if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
                 await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
                 renderCommunity();
@@ -2501,7 +2658,7 @@ try {
           if (!confirm('Supprimer ce sujet ?')) { btn.dataset.busy='0'; btn.disabled=false; return; }
           if (useRemote()) {
             try {
-              const uid = authSession?.user?.id;
+              const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
               await supabase.from('forum_topics').delete().eq('id', id);
               renderCommunity();
@@ -2520,7 +2677,7 @@ try {
     if (useRemote()) {
       (async () => {
         try {
-          const uid = authSession?.user?.id;
+          const uid = getActiveProfileId();
           if (!uid) {
             console.warn('Aucun user_id disponible pour forum_topics/forum_replies/profiles (fetch)');
             const forum = store.get(K.forum, { topics: [] });
@@ -2606,7 +2763,7 @@ try {
           if (category && category !== 'Divers' && !/^\[.*\]/.test(title)) title = `[${category}] ${title}`;
           if (useRemote()) {
             try {
-              const uid = authSession?.user?.id;
+              const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (new topic)'); throw new Error('Pas de user_id'); }
               const payload = {
                 id: crypto.randomUUID(),
@@ -2661,7 +2818,7 @@ try {
     (async () => {
       if (useRemote()) {
         try {
-          const uid = authSession?.user?.id;
+          const uid = getActiveProfileId();
           if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (fetch)'); throw new Error('Pas de user_id'); }
           const [priv, prof] = await Promise.all([
             supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle(),
@@ -2700,7 +2857,7 @@ try {
         const allowMessages = !!fd.get('allowMessages');
         if (useRemote()) {
           try {
-            const uid = authSession?.user?.id;
+            const uid = getActiveProfileId();
             if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (upsert)'); throw new Error('Pas de user_id'); }
             await Promise.all([
               supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]),
@@ -2722,7 +2879,7 @@ try {
     let children = [];
     if (useRemote()) {
       try {
-        const uid = authSession?.user?.id;
+        const uid = getActiveProfileId();
         if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
         const { data: rows } = await supabase
           .from('children')
@@ -2768,7 +2925,7 @@ try {
           if (!confirm('Supprimer ce profil enfant ?')) return;
           if (useRemote()) {
             try {
-              const uid = authSession?.user?.id;
+              const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
               await supabase.from('children').delete().eq('id', idD);
               renderSettings();
@@ -3003,7 +3160,7 @@ try {
           });
           if (useRemote()) {
             try {
-              const uid = authSession?.user?.id;
+              const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour children (update)'); throw new Error('Pas de user_id'); }
               await supabase.from('children').update(payload).eq('id', id);
               // Optional new measures
@@ -3332,7 +3489,7 @@ try {
   async function listChildrenSlim() {
     if (useRemote()) {
       try {
-        const uid = authSession?.user?.id;
+        const uid = getActiveProfileId();
         if (!uid) {
           console.warn('Aucun user_id disponible pour children (listChildrenSlim)');
           throw new Error('Pas de user_id');
@@ -3354,7 +3511,7 @@ try {
     if (!id) return;
     if (useRemote()) {
       try {
-        const uid = authSession?.user?.id;
+        const uid = getActiveProfileId();
         if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
         await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
         await supabase.from('children').update({ is_primary: true }).eq('id', id);

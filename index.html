@@ -268,11 +268,24 @@
       <section data-route="/login" class="route">
         <div class="page-header">
           <h2>Se connecter</h2>
-          <p class="page-subtitle">Accédez à votre espace avec Google.</p>
+          <p class="page-subtitle">Accédez à votre espace avec Google ou grâce à un code anonyme.</p>
         </div>
         <div class="card stack">
           <button class="btn btn-primary btn-google-login" type="button">Se connecter avec Google</button>
           <div id="auth-debug-login" class="muted"></div>
+        </div>
+        <div class="card stack">
+          <h3>Créer un profil anonyme</h3>
+          <p class="muted">Un code unique sera généré pour accéder à vos données sur n'importe quel appareil.</p>
+          <button class="btn btn-secondary" type="button" id="btn-create-anon">Créer un profil anonyme</button>
+          <div id="anon-create-status" class="form-status" aria-live="polite"></div>
+        </div>
+        <div class="card stack">
+          <h3>Se connecter avec un code</h3>
+          <label for="anon-code-input">Code unique</label>
+          <input id="anon-code-input" type="text" inputmode="text" autocomplete="one-time-code" placeholder="Ex&nbsp;: A1B2C3D4E5F6" />
+          <button class="btn btn-secondary" type="button" id="btn-login-code">Se connecter avec un code</button>
+          <div id="anon-login-status" class="form-status" aria-live="polite"></div>
         </div>
       </section>
 
