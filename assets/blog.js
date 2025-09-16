@@ -2,12 +2,55 @@ document.body.classList.remove('no-js');
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 let supabase=null, authSession=null;
+const SESSION_KEY = 'pedia_session';
+let anonSession=null;
+
+function refreshAnonSession(){
+  try{
+    const raw = localStorage.getItem(SESSION_KEY);
+    if(!raw){ anonSession=null; return anonSession; }
+    const data = JSON.parse(raw);
+    if(data && typeof data === 'object'){
+      if(!data.code && data.code_unique) data.code = data.code_unique;
+      anonSession = data;
+    } else {
+      anonSession = null;
+    }
+  }catch(e){ anonSession=null; }
+  return anonSession;
+}
+
+function clearAnonSession(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+  anonSession=null;
+}
+
+function isAnonLoggedIn(){
+  const sess = anonSession;
+  if(!sess || sess.type !== 'anon') return false;
+  if(sess.loggedIn !== true) return false;
+  const code = typeof sess.code === 'string' ? sess.code.trim() : '';
+  if(!code) return false;
+  if(sess.id == null) return false;
+  return true;
+}
 
 function updateHeaderAuth(){
-  $('#btn-login').hidden = !!authSession?.user;
-  $('#btn-logout').hidden = !authSession?.user;
-  $('#login-status').hidden = !authSession?.user;
+  const logged = !!authSession?.user || isAnonLoggedIn();
+  const status = $('#login-status');
+  $('#btn-login').hidden = logged;
+  $('#btn-logout').hidden = !logged;
+  if(status){
+    status.hidden = !logged;
+    const viaCode = !authSession?.user && isAnonLoggedIn();
+    const label = logged ? (viaCode ? 'Connecté avec un code' : 'Connecté') : 'Déconnecté';
+    status.setAttribute('aria-label', label);
+    status.setAttribute('title', label);
+  }
 }
+
+refreshAnonSession();
+updateHeaderAuth();
 
 async function signInGoogle(){
   try{
@@ -33,9 +76,12 @@ function setupHeader(){
   $('#btn-logout')?.addEventListener('click', async e=>{
     const btn=e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
     try{ await supabase?.auth.signOut(); } catch{}
-    alert('Déconnecté.');
+    clearAnonSession();
     authSession=null;
     updateHeaderAuth();
+    alert('Déconnecté.');
+    delete btn.dataset.busy;
+    btn.disabled=false;
   });
   navBtn?.addEventListener('click', ()=>{
     const isOpen = mainNav?.classList.toggle('open');
@@ -115,6 +161,12 @@ window.addEventListener('resize', ()=>{
   resizeRaf = requestAnimationFrame(onViewportChange);
 });
 window.addEventListener('load', evaluateHeaderFit);
+window.addEventListener('storage', evt=>{
+  if(!evt.key || evt.key === SESSION_KEY){
+    refreshAnonSession();
+    updateHeaderAuth();
+  }
+});
 
 // Soft pastel particles over entire page
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
@@ -245,6 +297,8 @@ function startLogoParticles(){
 
 async function init(){
   setupHeader();
+  refreshAnonSession();
+  updateHeaderAuth();
   evaluateHeaderFit();
   const yEl = document.getElementById('y');
   if(yEl) yEl.textContent = new Date().getFullYear();
