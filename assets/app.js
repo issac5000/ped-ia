@@ -67,6 +67,8 @@ console.log('DEBUG: app.js chargé');
   const useRemote = () => !!supabase && isProfileLoggedIn();
   const isAnonProfile = () => !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
 
+  restoreAnonSession();
+
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
@@ -149,6 +151,34 @@ console.log('DEBUG: app.js chargé');
     return out;
   }
 
+  function mapRowToChild(row) {
+    if (!row || !row.id) return null;
+    return {
+      id: row.id,
+      firstName: row.first_name,
+      sex: row.sex,
+      dob: row.dob,
+      photo: row.photo_url,
+      context: {
+        allergies: row.context_allergies,
+        history: row.context_history,
+        care: row.context_care,
+        languages: row.context_languages,
+        feedingType: row.feeding_type,
+        eatingStyle: row.eating_style,
+        sleep: {
+          falling: row.sleep_falling,
+          sleepsThrough: row.sleep_sleeps_through,
+          nightWakings: row.sleep_night_wakings,
+          wakeDuration: row.sleep_wake_duration,
+          bedtime: row.sleep_bedtime,
+        },
+      },
+      milestones: Array.isArray(row.milestones) ? row.milestones : [],
+      growth: { measurements: [], sleep: [], teeth: [] }
+    };
+  }
+
   try {
     const env = await fetch('/api/env').then(r => r.json());
     if (DEBUG_AUTH) console.log('ENV', env);
@@ -218,7 +248,9 @@ try {
           await ensureProfile(session.user);
           await syncUserFromSupabase();
         } else {
-          setActiveProfile(null);
+          if (!isAnonProfile()) {
+            setActiveProfile(null);
+          }
         }
         updateHeaderAuth();
         if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
@@ -1279,14 +1311,46 @@ try {
       activeProfile = {
         id: profile.id,
         full_name: profile.full_name || '',
-        code_unique: profile.code_unique || null,
+        code_unique: profile.code_unique ? String(profile.code_unique).trim().toUpperCase() : null,
         user_id: profile.user_id ?? null,
         isAnonymous: profile.isAnonymous ?? false,
       };
     } else {
       activeProfile = null;
     }
+    if (activeProfile && activeProfile.isAnonymous && activeProfile.code_unique) {
+      store.set(K.session, {
+        type: 'anon',
+        code: activeProfile.code_unique,
+        id: activeProfile.id,
+        fullName: activeProfile.full_name || '',
+        loggedIn: true
+      });
+    } else {
+      try { store.del(K.session); } catch {}
+    }
     updateHeaderAuth();
+  }
+
+  function restoreAnonSession() {
+    try {
+      const saved = store.get(K.session);
+      if (saved?.type === 'anon' && saved?.code) {
+        setActiveProfile({
+          id: saved.id,
+          full_name: saved.fullName || '',
+          code_unique: saved.code,
+          user_id: null,
+          isAnonymous: true,
+        });
+        const currentHash = location?.hash || '';
+        if (currentHash === '' || currentHash === '#' || currentHash === '#/login' || currentHash === '#/signup') {
+          location.hash = '#/dashboard';
+        }
+        return true;
+      }
+    } catch {}
+    return false;
   }
 
   // Ensure a row exists in profiles for the authenticated user without overwriting custom pseudo
@@ -1423,7 +1487,9 @@ try {
     const status = $('#anon-login-status');
     const btn = $('#btn-login-code');
     if (btn?.dataset.busy === '1') return;
-    const code = (input?.value || '').trim();
+    const rawCode = (input?.value || '').trim();
+    const code = rawCode.toUpperCase();
+    if (input) input.value = code;
     status?.classList.remove('error');
     if (!code) {
       if (status) { status.classList.add('error'); status.textContent = 'Saisis ton code unique pour continuer.'; }
@@ -1641,31 +1707,6 @@ try {
   function setupAIPage(){
     // Resolve current child from Supabase if connected, else from local store
     let currentChild = null;
-    const mapRowToChild = (r) => ({
-      id: r.id,
-      firstName: r.first_name,
-      sex: r.sex,
-      dob: r.dob,
-      photo: r.photo_url,
-      context: {
-        allergies: r.context_allergies,
-        history: r.context_history,
-        care: r.context_care,
-        languages: r.context_languages,
-        feedingType: r.feeding_type,
-        eatingStyle: r.eating_style,
-        sleep: {
-          falling: r.sleep_falling,
-          sleepsThrough: r.sleep_sleeps_through,
-          nightWakings: r.sleep_night_wakings,
-          wakeDuration: r.sleep_wake_duration,
-          bedtime: r.sleep_bedtime,
-        },
-      },
-      milestones: Array.isArray(r.milestones) ? r.milestones : [],
-      growth: { measurements: [], sleep: [], teeth: [] }
-    });
-
     const loadChild = async () => {
       console.log('DEBUG: entrée dans loadChild()');
       if (useRemote()) {
@@ -1684,6 +1725,7 @@ try {
             const data = detail.child;
             if (!data) return null;
             const child = mapRowToChild(data);
+            if (!child) return null;
             const growth = detail.growth || {};
             (growth.measurements || []).forEach(m => {
               const h = Number(m?.height_cm);
@@ -1713,6 +1755,7 @@ try {
           const r = (rows||[]).find(x=>x.is_primary) || (rows||[])[0];
           if (r) {
             const child = mapRowToChild(r);
+            if (!child) return null;
             try {
               console.log('DEBUG: avant Promise.all (AI loadChild growth fetch)', { childId: r.id });
               const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
@@ -1759,6 +1802,7 @@ try {
             const data = detail.child;
             if (!data) return null;
             const ch = mapRowToChild(data);
+            if (!ch) return null;
             const growth = detail.growth || {};
             (growth.measurements || []).forEach(m => {
               const h = Number(m?.height_cm);
@@ -1786,6 +1830,7 @@ try {
           const { data: r } = await supabase.from('children').select('*').eq('id', id).maybeSingle();
           if (!r) return null;
           const ch = mapRowToChild(r);
+          if (!ch) return null;
           try {
               console.log('DEBUG: avant Promise.all (AI loadChildById growth fetch)', { childId: r.id });
               const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
@@ -2581,7 +2626,9 @@ try {
             const detail = await anonChildRequest('get', { childId: primary.id });
             const data = detail.child;
             if (!data) throw new Error('Profil introuvable');
-            remoteChild = mapRowToChild(data);
+            const mapped = mapRowToChild(data);
+            if (!mapped) throw new Error('Profil introuvable');
+            remoteChild = mapped;
             const growth = detail.growth || {};
             (growth.measurements || []).forEach(m => {
               const h = Number(m?.height_cm);
