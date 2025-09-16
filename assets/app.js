@@ -92,6 +92,29 @@ console.log('DEBUG: app.js chargé');
     return json || {};
   }
 
+  async function anonCommunityRequest(action, payload = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) throw new Error('Code unique manquant');
+    const body = { action, code, ...payload };
+    const response = await fetch('/api/anon/community', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text().catch(() => '');
+    let json = null;
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!response.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
+      throw err;
+    }
+    return json || {};
+  }
+
   function buildMeasurementPayloads(entries) {
     const arr = Array.isArray(entries) ? entries : (entries ? [entries] : []);
     const byMonth = new Map();
@@ -2869,6 +2892,11 @@ try {
             if (!content) return;
             if (useRemote()) {
               try {
+                if (isAnonProfile()) {
+                  await anonCommunityRequest('reply', { topicId: id, content });
+                  renderCommunity();
+                  return;
+                }
                 const uid = getActiveProfileId();
                 if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
                 await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
@@ -2913,6 +2941,11 @@ try {
           if (!confirm('Supprimer ce sujet ?')) { btn.dataset.busy='0'; btn.disabled=false; return; }
           if (useRemote()) {
             try {
+              if (isAnonProfile()) {
+                await anonCommunityRequest('delete-topic', { topicId: id });
+                renderCommunity();
+                return;
+              }
               const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
               await supabase.from('forum_topics').delete().eq('id', id);
@@ -2932,6 +2965,23 @@ try {
     if (useRemote()) {
       (async () => {
         try {
+          if (isAnonProfile()) {
+            const res = await anonCommunityRequest('list', {});
+            const topics = Array.isArray(res.topics) ? res.topics : [];
+            const repliesArr = Array.isArray(res.replies) ? res.replies : [];
+            const authorsRaw = res.authors || {};
+            const authorsMap = new Map(Object.entries(authorsRaw).map(([id, name]) => [String(id), name || 'Utilisateur']));
+            const repliesMap = new Map();
+            repliesArr.forEach(r => {
+              if (!r || !r.topic_id) return;
+              const key = String(r.topic_id);
+              const arr = repliesMap.get(key) || [];
+              arr.push(r);
+              repliesMap.set(key, arr);
+            });
+            renderTopics(topics, repliesMap, authorsMap);
+            return;
+          }
           const uid = getActiveProfileId();
           if (!uid) {
             console.warn('Aucun user_id disponible pour forum_topics/forum_replies/profiles (fetch)');
@@ -2960,7 +3010,6 @@ try {
                 const j = await r.json();
                 authorsMap = new Map((j.profiles||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
               } else {
-                // Fallback to direct select (may be restricted by RLS)
                 const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds));
                 authorsMap = new Map((profs||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
               }
@@ -2970,7 +3019,7 @@ try {
             }
           }
           const repliesMap = new Map();
-          (reps||[]).forEach(r=>{ const arr = repliesMap.get(r.topic_id)||[]; arr.push(r); repliesMap.set(r.topic_id, arr); });
+          (reps||[]).forEach(r=>{ const key = String(r.topic_id); const arr = repliesMap.get(key)||[]; arr.push(r); repliesMap.set(key, arr); });
           renderTopics(topics||[], repliesMap, authorsMap);
         } catch (e) { showEmpty(); }
       })();
@@ -3018,6 +3067,12 @@ try {
           if (category && category !== 'Divers' && !/^\[.*\]/.test(title)) title = `[${category}] ${title}`;
           if (useRemote()) {
             try {
+              if (isAnonProfile()) {
+                await anonCommunityRequest('create-topic', { id: crypto.randomUUID(), title, content });
+                dlg.close();
+                renderCommunity();
+                return;
+              }
               const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (new topic)'); throw new Error('Pas de user_id'); }
               const payload = {

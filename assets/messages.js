@@ -2,6 +2,17 @@ document.body.classList.remove('no-js');
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
+  del(k) { localStorage.removeItem(k); },
+};
+
+const K = {
+  session: 'pedia_session',
+  user: 'pedia_user',
+};
+
 let supabase, session, user;
 let myInitial = '';
 let parents = [];
@@ -15,6 +26,9 @@ let notifChannels = [];
 let notifCount = 0;
 let notifyAudioCtx = null;
 
+let isAnon = false;
+let anonProfile = null;
+
 // Normalize all user IDs to strings to avoid type mismatches
 const idStr = id => String(id);
 
@@ -22,18 +36,29 @@ function escapeHTML(str){
   return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 }
 
+function isLoggedIn(){
+  return isAnon || !!session?.user;
+}
+
 function updateHeaderAuth(){
-  $('#btn-login').hidden = !!session?.user;
-  $('#btn-logout').hidden = !session?.user;
-  $('#login-status').hidden = !session?.user;
+  const logged = isLoggedIn();
+  $('#btn-login').hidden = logged;
+  $('#btn-logout').hidden = !logged;
+  $('#login-status').hidden = !logged;
 }
 
 function setupHeader(){
   $('#btn-logout')?.addEventListener('click', async e=>{
     const btn = e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
-    try{ await supabase?.auth.signOut(); } catch(e){}
+    try{
+      if (isAnon) {
+        store.del(K.session);
+      } else {
+        await supabase?.auth.signOut();
+      }
+    } catch(e){}
     alert('Déconnecté.');
-    location.href='/';
+    location.href = isAnon ? '/#/login' : '/';
   });
   navBtn = $('#nav-toggle');
   mainNav = $('#main-nav');
@@ -169,6 +194,27 @@ function unseen(){ return loadNotifs().filter(x=>!x.seen); }
 function updateBadgeFromStore(){ updateBadges(); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
+async function anonMessagesRequest(action, payload = {}) {
+  if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
+  const body = { action, code: anonProfile.code, ...payload };
+  const response = await fetch('/api/anon/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text().catch(() => '');
+  let json = null;
+  if (text) {
+    try { json = JSON.parse(text); } catch {}
+  }
+  if (!response.ok) {
+    const err = new Error(json?.error || 'Service indisponible');
+    if (json?.details) err.details = json.details;
+    throw err;
+  }
+  return json || {};
+}
+
 // Unread helpers per sender
 function hasUnreadFrom(otherId){
   const id = idStr(otherId);
@@ -189,7 +235,7 @@ function getNotifLastSince(kind){ const o=getNotifLast(); return o[kind] || null
 function setNotifLastNow(kind){ const o=getNotifLast(); o[kind]=new Date().toISOString(); setNotifLast(o); }
 async function fetchMissedMessages(){
   try {
-    if (!supabase || !user?.id) return;
+    if (isAnon || !supabase || !user?.id) return;
     const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
     const since = getNotifLastSince('msg') || sinceDefault;
     const { data: msgs } = await supabase
@@ -361,22 +407,55 @@ async function init(){
       }
     } catch (e) { console.warn('OAuth code exchange failed', e); }
     const { data: { session:s } } = await supabase.auth.getSession();
-    if(!s){ alert('Veuillez vous connecter.'); window.location.href='/'; return; }
-    session = s;
-    user = s.user;
-    // force user ID to string to avoid type mismatches with DB numeric ids
-    user.id = idStr(user.id);
-    // Fetch my profile to compute my initial for avatars
-    try {
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user.id)
-        .maybeSingle();
-      const name = (prof?.full_name || '').trim();
-      myInitial = (name ? name[0] : (user.email?.[0] || '')).toUpperCase();
-    } catch (e) {
-      try { myInitial = (user.email?.[0] || '').toUpperCase(); } catch {}
+    if(!s){
+      const saved = store.get(K.session);
+      if (saved?.type === 'anon' && saved?.code && saved?.id) {
+        isAnon = true;
+        anonProfile = {
+          id: idStr(saved.id),
+          code: String(saved.code).trim().toUpperCase(),
+          fullName: saved.fullName || '',
+        };
+        user = { id: idStr(saved.id) };
+        session = null;
+        const initialName = (anonProfile.fullName || '').trim();
+        if (initialName) myInitial = initialName[0].toUpperCase();
+        try {
+          const resSelf = await anonMessagesRequest('profile-self', {});
+          if (resSelf.profile?.full_name) {
+            anonProfile.fullName = resSelf.profile.full_name;
+            const first = (resSelf.profile.full_name || '').trim()[0];
+            if (first) myInitial = first.toUpperCase();
+          }
+        } catch (e) {
+          console.warn('Impossible de récupérer le profil anonyme', e);
+        }
+        if (!myInitial) myInitial = 'A';
+      } else {
+        alert('Veuillez vous connecter.'); window.location.href='/'; return;
+      }
+    } else {
+      session = s;
+      user = s.user;
+      // force user ID to string to avoid type mismatches with DB numeric ids
+      user.id = idStr(user.id);
+      try {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .maybeSingle();
+        const name = (prof?.full_name || '').trim();
+        myInitial = (name ? name[0] : (user.email?.[0] || '')).toUpperCase();
+      } catch (e) {
+        try { myInitial = (user.email?.[0] || '').toUpperCase(); } catch {}
+      }
+    }
+    if (!myInitial) {
+      const pseudo = store.get(K.user)?.pseudo || '';
+      const first = pseudo.trim()[0];
+      if (first) myInitial = first.toUpperCase();
+      if (!myInitial) myInitial = 'P';
     }
     setupHeader();
     updateHeaderAuth();
@@ -387,63 +466,107 @@ async function init(){
     await loadConversations();
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
-    // Bind realtime notifications and update badges
-    setupRealtimeNotifications();
     updateBadgeFromStore();
-    // Always fetch missed messages on entry (avoid gaps after OAuth redirects)
-    fetchMissedMessages();
+    if (!isAnon) {
+      setupRealtimeNotifications();
+      fetchMissedMessages();
+    }
     // Replay unseen toasts at most once per tab session
     try {
       const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
       if (!booted) { replayUnseen(); sessionStorage.setItem('pedia_notif_booted', '1'); }
     } catch (e) { /* ignore */ }
     // Also fetch missed community replies where I participated (guarded once per session)
-    try {
-      const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
-      if (!booted) {
-      const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
-      const sinceRep = getNotifLastSince('reply') || sinceDefault;
-      const [{ data: topics }, { data: myReps }] = await Promise.all([
-        supabase.from('forum_topics').select('id').eq('user_id', user.id).limit(200),
-        supabase.from('forum_replies').select('topic_id').eq('user_id', user.id).limit(500)
-      ]);
-      const topicIdSet = new Set([...(topics||[]).map(t=>t.id), ...(myReps||[]).map(r=>r.topic_id)]);
-      const topicIds = Array.from(topicIdSet);
-      if (topicIds.length) {
-        const { data: reps } = await supabase
-          .from('forum_replies')
-          .select('id,topic_id,user_id,created_at')
-          .in('topic_id', topicIds)
-          .neq('user_id', user.id)
-          .gt('created_at', sinceRep)
-          .order('created_at', { ascending:true })
-          .limit(100);
-        if (reps && reps.length) {
-          const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
-          let names = new Map();
-          try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
-          let titleMap = new Map();
-          try { const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id)))); titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')])); } catch (e) {}
-          for (const r of reps) {
-            const who = names.get(String(r.user_id)) || 'Un parent';
-            const title = titleMap.get(r.topic_id) || '';
-            const notifId = `reply:${r.id}`;
-            addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
-            if (isNotifUnseen(notifId)) {
-              showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+    if (!isAnon) {
+      try {
+        const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
+        if (!booted) {
+        const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
+        const sinceRep = getNotifLastSince('reply') || sinceDefault;
+        const [{ data: topics }, { data: myReps }] = await Promise.all([
+          supabase.from('forum_topics').select('id').eq('user_id', user.id).limit(200),
+          supabase.from('forum_replies').select('topic_id').eq('user_id', user.id).limit(500)
+        ]);
+        const topicIdSet = new Set([...(topics||[]).map(t=>t.id), ...(myReps||[]).map(r=>r.topic_id)]);
+        const topicIds = Array.from(topicIdSet);
+        if (topicIds.length) {
+          const { data: reps } = await supabase
+            .from('forum_replies')
+            .select('id,topic_id,user_id,created_at')
+            .in('topic_id', topicIds)
+            .neq('user_id', user.id)
+            .gt('created_at', sinceRep)
+            .order('created_at', { ascending:true })
+            .limit(100);
+          if (reps && reps.length) {
+            const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
+            let names = new Map();
+            try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
+            let titleMap = new Map();
+            try { const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id)))); titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')])); } catch (e) {}
+            for (const r of reps) {
+              const who = names.get(String(r.user_id)) || 'Un parent';
+              const title = titleMap.get(r.topic_id) || '';
+              const notifId = `reply:${r.id}`;
+              addNotif({ id:notifId, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
+              if (isNotifUnseen(notifId)) {
+                showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
+              }
             }
+            updateBadges();
           }
-          updateBadges();
         }
-      }
-      }
-    } catch (e) {}
+        }
+      } catch (e) {}
+    }
   } catch (e){ console.error('Init error', e); }
 }
 
 async function loadConversations(){
   const list = $('#parents-list');
   list.innerHTML = '<li>Chargement…</li>';
+  if (isAnon) {
+    try {
+      const res = await anonMessagesRequest('list-conversations', {});
+      const convs = Array.isArray(res.conversations) ? res.conversations : [];
+      const profileList = Array.isArray(res.profiles) ? res.profiles : [];
+      if (res.self?.full_name) {
+        anonProfile.fullName = res.self.full_name;
+        const initial = (res.self.full_name || '').trim()[0];
+        if (initial) myInitial = initial.toUpperCase();
+      }
+      const profileMap = new Map(profileList.map(p => [idStr(p.id), p.full_name || 'Parent']));
+      parents = convs.map(conv => {
+        const pid = idStr(conv.otherId);
+        const fullName = profileMap.get(pid) || 'Parent';
+        return { id: pid, full_name: fullName };
+      });
+      profileList.forEach(p => {
+        const pid = idStr(p.id);
+        if (!parents.some(x => x.id === pid)) parents.push({ id: pid, full_name: p.full_name || 'Parent' });
+      });
+      lastMessages = new Map();
+      convs.forEach(conv => {
+        if (!conv) return;
+        const pid = idStr(conv.otherId);
+        const msg = conv.lastMessage;
+        if (msg) {
+          lastMessages.set(pid, {
+            ...msg,
+            sender_id: idStr(msg.sender_id),
+            receiver_id: idStr(msg.receiver_id),
+          });
+        } else {
+          lastMessages.set(pid, null);
+        }
+      });
+      renderParentList();
+    } catch (e) {
+      console.error('loadConversations anon', e);
+      list.innerHTML = '<li>Erreur.</li>';
+    }
+    return;
+  }
   const { data, error } = await supabase
     .from('messages')
     .select('id,sender_id,receiver_id,content,created_at')
@@ -522,6 +645,17 @@ function renderParentList(){
 async function ensureConversation(otherId){
   const id = idStr(otherId);
   if(parents.some(p=>p.id===id)) return;
+  if (isAnon) {
+    let profile = { id, full_name: 'Parent' };
+    try {
+      const res = await anonMessagesRequest('profile', { otherId: id });
+      if (res.profile) profile = { id: idStr(res.profile.id), full_name: res.profile.full_name || 'Parent' };
+    } catch (e) {}
+    parents.push(profile);
+    if (!lastMessages.has(id)) lastMessages.set(id, null);
+    renderParentList();
+    return;
+  }
   let profile = { id, full_name:'Parent' };
   try {
     const { data: { session: s } } = await supabase.auth.getSession();
@@ -552,18 +686,22 @@ async function deleteConversation(otherId){
   const id = idStr(otherId);
   if(!confirm('Supprimer cette conversation ?')) return;
   try {
-    const r = await fetch('/api/messages/delete-conversation', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token || ''}`
-      },
-      body: JSON.stringify({ otherId: id })
-    });
-    if(!r.ok){
-      let info = '';
-      try { const j = await r.json(); info = j?.error ? `${j.error}${j.details?` - ${j.details}`:''}` : (await r.text()); } catch(e){}
-      throw new Error(`HTTP ${r.status}${info?`: ${info}`:''}`);
+    if (isAnon) {
+      await anonMessagesRequest('delete-conversation', { otherId: id });
+    } else {
+      const r = await fetch('/api/messages/delete-conversation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({ otherId: id })
+      });
+      if(!r.ok){
+        let info = '';
+        try { const j = await r.json(); info = j?.error ? `${j.error}${j.details?` - ${j.details}`:''}` : (await r.text()); } catch(e){}
+        throw new Error(`HTTP ${r.status}${info?`: ${info}`:''}`);
+      }
     }
   } catch (e){
     console.error('delete conv', e);
@@ -576,7 +714,7 @@ async function deleteConversation(otherId){
     activeParent=null;
     currentMessages=[];
     $('#conversation').innerHTML='';
-    if(messagesChannel) await supabase.removeChannel(messagesChannel);
+    if(messagesChannel && !isAnon) await supabase.removeChannel(messagesChannel);
     messagesChannel=null;
     const cw = document.querySelector('.chat-window');
     if (cw) cw.classList.remove('open');
@@ -596,7 +734,7 @@ async function openConversation(otherId){
   currentMessages = [];
   $('#conversation').innerHTML='';
   await fetchConversation(id);
-  setupMessageSubscription(id);
+  if (!isAnon) setupMessageSubscription(id);
   const cw = document.querySelector('.chat-window');
   if (cw) cw.classList.add('open');
   const ph = document.getElementById('chat-placeholder');
@@ -605,6 +743,28 @@ async function openConversation(otherId){
 
 async function fetchConversation(otherId){
   const id = idStr(otherId);
+  if (isAnon) {
+    try {
+      const res = await anonMessagesRequest('get-conversation', { otherId: id });
+      const messages = Array.isArray(res.messages) ? res.messages.map(m => ({
+        ...m,
+        sender_id: idStr(m.sender_id),
+        receiver_id: idStr(m.receiver_id),
+      })) : [];
+      currentMessages = messages;
+      if (res.profile) {
+        const fullName = res.profile.full_name || 'Parent';
+        const existing = parents.find(p => p.id === id);
+        if (existing) existing.full_name = fullName;
+        else parents.push({ id, full_name: fullName });
+        activeParent = parents.find(p => p.id === id) || { id, full_name: fullName };
+      }
+      renderMessages();
+    } catch (e) {
+      console.error('fetchConversation anon', e);
+    }
+    return;
+  }
   const { data, error } = await supabase
     .from('messages')
     .select('id,sender_id,receiver_id,content,created_at')
@@ -637,6 +797,30 @@ $('#message-form').addEventListener('submit', async e=>{
   const content = textarea.value.trim();
   if(!content) return;
   textarea.value='';
+  if (isAnon) {
+    try {
+      const res = await anonMessagesRequest('send', { otherId: idStr(activeParent.id), content });
+      const data = res.message || {
+        sender_id: anonProfile?.id,
+        receiver_id: idStr(activeParent.id),
+        content,
+        created_at: new Date().toISOString(),
+      };
+      const msg = {
+        ...data,
+        sender_id: idStr(data.sender_id),
+        receiver_id: idStr(data.receiver_id),
+      };
+      currentMessages.push(msg);
+      renderMessages();
+      lastMessages.set(activeParent.id, msg);
+      renderParentList();
+    } catch (err) {
+      console.error('send message anon', err);
+      alert('Envoi impossible pour le moment.');
+    }
+    return;
+  }
   const { data, error } = await supabase
     .from('messages')
     .insert({ sender_id:user.id, receiver_id:idStr(activeParent.id), content })
@@ -655,6 +839,7 @@ $('#message-form').addEventListener('submit', async e=>{
 });
 
 function setupMessageSubscription(otherId){
+  if (isAnon) { messagesChannel = null; return; }
   const id = idStr(otherId);
   if(messagesChannel) supabase.removeChannel(messagesChannel);
   messagesChannel = supabase
@@ -679,7 +864,7 @@ function setupMessageSubscription(otherId){
 // Realtime notifications (messages to me, replies to topics I own or commented)
 function setupRealtimeNotifications(){
   try {
-    if (!supabase || !user?.id) return;
+    if (isAnon || !supabase || !user?.id) return;
     // cleanup old
     try { for(const ch of notifChannels) supabase.removeChannel(ch); } catch (e) {}
     notifChannels = [];
