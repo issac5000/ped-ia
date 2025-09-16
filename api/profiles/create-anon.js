@@ -1,5 +1,29 @@
+import { randomBytes, randomUUID } from 'crypto';
+
 // Create an anonymous profile using the Supabase service role key.
 // Returns the generated id + code without requiring the user to be authenticated.
+
+const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const CODE_DIGITS = '23456789';
+const MAX_CREATE_ATTEMPTS = 5;
+
+function generateAnonCode() {
+  const bytes = randomBytes(12);
+  let out = '';
+  for (let i = 0; i < 12; i += 1) {
+    const alphabet = i % 2 === 0 ? CODE_LETTERS : CODE_DIGITS;
+    const index = bytes[i] % alphabet.length;
+    out += alphabet[index];
+  }
+  return out;
+}
+
+function shouldRetryDuplicate(status, detailsText) {
+  if (status === 409) return true;
+  if (!detailsText) return false;
+  return /duplicate key value/i.test(detailsText) && /code_unique/i.test(detailsText);
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,47 +54,65 @@ export default async function handler(req, res) {
     }
 
     const fullNameRaw = typeof payload.fullName === 'string' ? payload.fullName.trim() : '';
-    const insertPayload = {};
-    if (fullNameRaw) insertPayload.full_name = fullNameRaw.slice(0, 120);
+    const basePayload = {};
+    if (fullNameRaw) basePayload.full_name = fullNameRaw.slice(0, 120);
 
-    const response = await fetch(`${supaUrl}/rest/v1/profiles`, {
-      method: 'POST',
-      headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(insertPayload)
-    });
+    let lastError = null;
+    for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
+      const insertPayload = {
+        ...basePayload,
+        id: randomUUID(),
+        code_unique: generateAnonCode()
+      };
 
-    const text = await response.text();
-    let json = null;
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
-    }
+      const response = await fetch(`${supaUrl}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(insertPayload)
+      });
 
-    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      let json = null;
+      if (text) {
+        try { json = JSON.parse(text); } catch {}
+      }
+
+      if (response.ok) {
+        const row = Array.isArray(json) ? json?.[0] : json;
+        const id = row?.id || insertPayload.id;
+        const code = row?.code_unique || insertPayload.code_unique;
+        if (!id || !code) {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          return res.status(500).json({ error: 'Invalid response from Supabase' });
+        }
+        const profile = {
+          id,
+          code_unique: code,
+          full_name: row?.full_name || basePayload.full_name || '',
+          user_id: row?.user_id ?? null
+        };
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(200).json({ profile });
+      }
+
+      const detailsText = json ? JSON.stringify(json) : text;
+      if (shouldRetryDuplicate(response.status, detailsText)) {
+        lastError = { status: response.status, details: detailsText };
+        continue;
+      }
+
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(response.status).json({ error: 'Create failed', details: text || undefined });
+      return res.status(response.status).json({ error: 'Create failed', details: detailsText || undefined });
     }
-
-    const row = Array.isArray(json) ? json[0] : json;
-    if (!row?.id || !row?.code_unique) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(500).json({ error: 'Invalid response from Supabase' });
-    }
-
-    const profile = {
-      id: row.id,
-      code_unique: row.code_unique,
-      full_name: row.full_name || '',
-      user_id: row.user_id ?? null
-    };
 
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.status(200).json({ profile });
+    return res.status(lastError?.status || 500).json({ error: 'Create failed', details: lastError?.details });
   } catch (e) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: 'Server error', details: String(e.message || e) });
