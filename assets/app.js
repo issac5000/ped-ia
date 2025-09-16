@@ -1299,7 +1299,11 @@ try {
         .insert({})
         .select('id, code_unique, full_name')
         .single();
-      if (error || !data) throw error || new Error('Profil introuvable');
+      console.log('createAnonymousProfile -> data:', data, 'error:', error);
+      if (error || !data) {
+        console.log('createAnonymousProfile Supabase error:', error);
+        throw error || new Error('Profil introuvable');
+      }
       setActiveProfile({ ...data, isAnonymous: true });
       authSession = null;
       const current = store.get(K.user) || {};
@@ -1313,6 +1317,7 @@ try {
       }
       location.hash = '#/dashboard';
     } catch (e) {
+      console.log('createAnonymousProfile exception:', e);
       console.error('createAnonymousProfile failed', e);
       if (status) { status.classList.add('error'); status.textContent = 'Création impossible pour le moment.'; }
     } finally {
@@ -1345,7 +1350,9 @@ try {
         .select('id, code_unique, full_name, user_id')
         .eq('code_unique', code)
         .single();
+      console.log('loginWithCode -> data:', data, 'error:', error);
       if (error) {
+        console.log('loginWithCode Supabase error:', error);
         if (status && (error.code === 'PGRST116' || (error.message || '').includes('Row not found'))) {
           status.classList.add('error'); status.textContent = 'Code invalide.';
           return;
@@ -1353,6 +1360,7 @@ try {
         throw error;
       }
       if (!data) {
+        console.log('loginWithCode -> no data for code', code);
         if (status) { status.classList.add('error'); status.textContent = 'Code invalide.'; }
         return;
       }
@@ -1367,6 +1375,7 @@ try {
       if (input) input.value = '';
       location.hash = '#/dashboard';
     } catch (e) {
+      console.log('loginWithCode exception:', e);
       console.error('loginWithCode failed', e);
       if (status) { status.classList.add('error'); status.textContent = 'Connexion impossible pour le moment.'; }
     } finally {
