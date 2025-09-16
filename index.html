@@ -299,7 +299,17 @@
             <div class="login-panel__divider" role="separator"><span>Déjà un code&nbsp;?</span></div>
             <label class="login-code-label" for="anon-code-input">Entrez votre code unique</label>
             <div class="login-code-row">
-              <input id="anon-code-input" type="text" inputmode="text" autocomplete="one-time-code" placeholder="Ex : A1B2-C3D4-E5F6" />
+              <div class="login-code-field">
+                <span class="login-code-field__label" aria-hidden="true">CODE</span>
+                <input
+                  id="anon-code-input"
+                  class="login-code-input"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="one-time-code"
+                  placeholder="Ex : A1B2-C3D4-E5F6"
+                />
+              </div>
               <button class="btn btn-secondary" type="button" id="btn-login-code">Se connecter</button>
             </div>
             <p class="login-panel__hint">Conservez ce code en lieu sûr : il permet de retrouver votre espace familial depuis n’importe quel appareil.</p>
