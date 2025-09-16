@@ -59,6 +59,8 @@ console.log('DEBUG: app.js chargé');
   // Keep notification channels to clean up on logout
   let notifChannels = [];
   let anonNotifTimer = null;
+  // Track the last activated route to control scroll resets safely
+  let __activePath = null;
   // Reveal observer (initialized later in setupScrollAnimations)
   let revealObserver = null;
 
@@ -329,9 +331,12 @@ try {
   }
 
   // Routing
-  let __activePath = null; // track last active path to avoid unwanted scroll resets
   function setActiveRoute(hash) {
-    const path = (hash.replace('#', '') || '/');
+    const rawHash = typeof hash === 'string' ? hash : (hash == null ? '' : String(hash));
+    const trimmedHash = rawHash.trim();
+    const normalizedHash = trimmedHash.startsWith('#') ? trimmedHash : (trimmedHash ? `#${trimmedHash}` : '#');
+    const pathCandidate = normalizedHash.slice(1);
+    const path = pathCandidate ? pathCandidate : '/';
     console.log('DEBUG: entrée dans setActiveRoute avec path =', path);
     $$('.route').forEach(s => s.classList.remove('active'));
     const route = $(`section[data-route="${path}"]`);
@@ -350,8 +355,9 @@ try {
       if (pl) pl.hidden = (path === '/' || path === '');
     } catch {}
     updateHeaderAuth();
+    const previousPath = (typeof __activePath === 'string' && __activePath.length > 0) ? __activePath : null;
     // Align scroll behavior with static pages: only reset on real route change
-    if (__activePath !== path) {
+    if (previousPath !== path) {
       window.scrollTo(0, 0);
     }
     // Guard routes
