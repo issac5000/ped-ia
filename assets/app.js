@@ -1294,16 +1294,21 @@ try {
     }
     try {
       if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert({})
-        .select('id, code_unique, full_name')
-        .single();
-      console.log('createAnonymousProfile -> data:', data, 'error:', error);
-      if (error || !data) {
-        console.log('createAnonymousProfile Supabase error:', error);
-        throw error || new Error('Profil introuvable');
+      const response = await fetch('/api/profiles/create-anon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      let payload = null;
+      try { payload = await response.json(); } catch { payload = null; }
+      if (!response.ok || !payload?.profile) {
+        const msg = payload?.error || 'Création impossible pour le moment.';
+        const err = new Error(msg);
+        if (payload?.details) err.details = payload.details;
+        throw err;
       }
+      const data = payload.profile;
+      console.log('createAnonymousProfile -> profile:', data);
       setActiveProfile({ ...data, isAnonymous: true });
       authSession = null;
       const current = store.get(K.user) || {};
@@ -1319,7 +1324,11 @@ try {
     } catch (e) {
       console.log('createAnonymousProfile exception:', e);
       console.error('createAnonymousProfile failed', e);
-      if (status) { status.classList.add('error'); status.textContent = 'Création impossible pour le moment.'; }
+      if (status) {
+        status.classList.add('error');
+        const msg = (e && typeof e.message === 'string' && e.message.trim()) ? e.message : 'Création impossible pour le moment.';
+        status.textContent = msg;
+      }
     } finally {
       if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
     }
