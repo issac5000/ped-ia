@@ -266,26 +266,45 @@
       </section>
 
       <section data-route="/login" class="route">
-        <div class="page-header">
-          <h2>Se connecter</h2>
-          <p class="page-subtitle">Accédez à votre espace avec Google ou grâce à un code anonyme.</p>
+        <div class="page-header login-header">
+          <h2>Connexion à Synap'Kids</h2>
+          <p class="page-subtitle">Choisissez la méthode qui vous convient pour accéder à votre copilote parental.</p>
         </div>
-        <div class="card stack">
-          <button class="btn btn-primary btn-google-login" type="button">Se connecter avec Google</button>
-          <div id="auth-debug-login" class="muted"></div>
-        </div>
-        <div class="card stack">
-          <h3>Créer un profil anonyme</h3>
-          <p class="muted">Un code unique sera généré pour accéder à vos données sur n'importe quel appareil.</p>
-          <button class="btn btn-secondary" type="button" id="btn-create-anon">Créer un profil anonyme</button>
-          <div id="anon-create-status" class="form-status" aria-live="polite"></div>
-        </div>
-        <div class="card stack">
-          <h3>Se connecter avec un code</h3>
-          <label for="anon-code-input">Code unique</label>
-          <input id="anon-code-input" type="text" inputmode="text" autocomplete="one-time-code" placeholder="Ex&nbsp;: A1B2C3D4E5F6" />
-          <button class="btn btn-secondary" type="button" id="btn-login-code">Se connecter avec un code</button>
-          <div id="anon-login-status" class="form-status" aria-live="polite"></div>
+        <div class="login-panels">
+          <article class="card login-card login-card--google">
+            <div class="login-card__header">
+              <span class="login-pill">Synchronisé</span>
+              <h3>Se connecter avec Google</h3>
+              <p class="login-card__text">Retrouvez vos données instantanément sur tous vos appareils grâce à la connexion sécurisée Google.</p>
+            </div>
+            <button class="btn btn-primary btn-google-login login-card__action" type="button">
+              <span class="login-card__icon" aria-hidden="true">G</span>
+              <span>Continuer avec Google</span>
+            </button>
+            <ul class="login-card__list" aria-label="Avantages de la connexion Google">
+              <li>Synchronisation automatique et sauvegarde dans Supabase.</li>
+              <li>Accès rapide sans créer de nouveau mot de passe.</li>
+            </ul>
+            <p class="login-card__note">Nous respectons votre confidentialité : seul votre identifiant Google est utilisé pour vous authentifier.</p>
+            <div id="auth-debug-login" class="muted"></div>
+          </article>
+          <article class="card login-card login-card--anon">
+            <div class="login-card__header">
+              <span class="login-pill login-pill--outline">Sans adresse e-mail</span>
+              <h3>Connexion anonyme</h3>
+              <p class="login-card__text">Générez un code confidentiel pour profiter de l’application sans partager d’informations personnelles.</p>
+            </div>
+            <button class="btn btn-secondary login-card__action" type="button" id="btn-create-anon">Créer un code anonyme</button>
+            <div id="anon-create-status" class="form-status" aria-live="polite"></div>
+            <div class="login-card__divider" role="separator"><span>Déjà un code&nbsp;?</span></div>
+            <label class="login-code-label" for="anon-code-input">Entrez votre code unique</label>
+            <div class="login-code-row">
+              <input id="anon-code-input" type="text" inputmode="text" autocomplete="one-time-code" placeholder="Ex : A1B2-C3D4-E5F6" />
+              <button class="btn btn-secondary" type="button" id="btn-login-code">Se connecter</button>
+            </div>
+            <p class="login-card__hint">Conservez ce code en lieu sûr : il permet de retrouver votre espace familial depuis n’importe quel appareil.</p>
+            <div id="anon-login-status" class="form-status" aria-live="polite"></div>
+          </article>
         </div>
       </section>
 
