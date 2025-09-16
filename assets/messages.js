@@ -25,6 +25,7 @@ let navBtn, mainNav, navBackdrop;
 let notifChannels = [];
 let notifCount = 0;
 let notifyAudioCtx = null;
+let anonNotifTimer = null;
 
 let isAnon = false;
 let anonProfile = null;
@@ -80,6 +81,7 @@ function setupHeader(){
     try{
       if (isAnon) {
         store.del(K.session);
+        stopAnonNotifPolling();
       } else {
         await supabase?.auth.signOut();
       }
@@ -175,7 +177,7 @@ function playNotifySound(){
     osc.connect(gain).connect(ctx.destination); osc.start(now); osc.stop(now+0.22);
   } catch (e) {}
 }
-function showNotification({ title='Notification', text='', actionHref='', actionLabel='Voir' }={}){
+function showNotification({ title='Notification', text='', actionHref='', actionLabel='Voir', onAcknowledge }={}){
   try {
     const host = getToastHost();
     while (host.children.length >= 4) host.removeChild(host.firstElementChild);
@@ -186,7 +188,7 @@ function showNotification({ title='Notification', text='', actionHref='', action
     const link = toast.querySelector('.nt-link');
     if (actionHref) { link.setAttribute('href', actionHref); link.hidden=false; } else { link.hidden=true; }
     const hide = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch (e) { toast.remove(); } };
-    const acknowledge = () => { hide(); };
+    const acknowledge = () => { hide(); try { onAcknowledge && onAcknowledge(); } catch (e) {} };
     toast.querySelector('.nt-close').addEventListener('click', acknowledge);
     link.addEventListener('click', acknowledge);
     host.appendChild(toast);
@@ -215,16 +217,91 @@ function bumpMessagesBadge(){ updateBadges(); }
 const NOTIF_STORE = 'pedia_notifs';
 function loadNotifs(){ try { return JSON.parse(localStorage.getItem(NOTIF_STORE)) || []; } catch (e) { return []; } }
 function saveNotifs(arr){ try { localStorage.setItem(NOTIF_STORE, JSON.stringify(arr)); } catch (e) {} }
-function addNotif(n){ const arr = loadNotifs(); if(!arr.some(x=>x.id===n.id)) { arr.push({ ...n, seen:false }); saveNotifs(arr); } updateBadgeFromStore(); }
+function addNotif(n){ const arr = loadNotifs(); const exists = arr.some(x=>x.id===n.id); if(!exists) { arr.push({ ...n, seen:false }); saveNotifs(arr); } updateBadgeFromStore(); return !exists; }
+function markNotifSeen(id){ const arr = loadNotifs(); const idx = arr.findIndex(x=>x.id===id); if(idx>=0){ arr[idx].seen=true; saveNotifs(arr); updateBadgeFromStore(); } }
 function markAllByTypeSeen(kind){ const arr = loadNotifs().map(x=> x.kind===kind? { ...x, seen:true } : x); saveNotifs(arr); setNotifLastNow(kind); updateBadgeFromStore(); }
 function unseen(){ return loadNotifs().filter(x=>!x.seen); }
 function updateBadgeFromStore(){ updateBadges(); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
+const ANON_NOTIF_INTERVAL_MS = 15000;
+
+async function fetchAnonMissedNotifications(){
+  if (!isAnon || !anonProfile?.code) return;
+  const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
+  const sinceMsg = getNotifLastSince('msg') || sinceDefault;
+  const sinceRep = getNotifLastSince('reply') || sinceDefault;
+  try {
+    const res = await anonMessagesRequest('recent-activity', { since: sinceMsg });
+    const messages = Array.isArray(res?.messages) ? res.messages : [];
+    const senders = res?.senders || {};
+    for (const m of messages) {
+      if (!m || m.id == null) continue;
+      const senderRaw = m.sender_id ?? m.senderId;
+      if (senderRaw == null) continue;
+      const fromId = idStr(senderRaw);
+      const fromName = senders[fromId] || 'Un parent';
+      const notifId = `msg:${m.id}`;
+      const wasNew = addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
+      if (wasNew) {
+        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
+      }
+    }
+  } catch (e) { console.warn('fetchAnonMissedNotifications messages', e); }
+  try {
+    const resRep = await anonCommunityRequest('recent-replies', { since: sinceRep });
+    const replies = Array.isArray(resRep?.replies) ? resRep.replies : [];
+    const authors = resRep?.authors || {};
+    const topics = resRep?.topics || {};
+    for (const r of replies) {
+      if (!r || r.id == null) continue;
+      const topicIdRaw = r.topic_id ?? r.topicId;
+      const topicId = topicIdRaw != null ? String(topicIdRaw) : '';
+      const whoIdRaw = r.user_id ?? r.userId;
+      const whoId = whoIdRaw != null ? String(whoIdRaw) : '';
+      const who = authors[whoId] || 'Un parent';
+      const rawTitle = topics[topicId] || '';
+      const cleanTitle = rawTitle ? rawTitle.replace(/^\[(.*?)\]\s*/, '') : '';
+      const notifId = `reply:${r.id}`;
+      const wasNew = addNotif({ id:notifId, kind:'reply', who, title: cleanTitle, topicId, createdAt:r.created_at });
+      if (wasNew) {
+        const t = cleanTitle ? ` « ${cleanTitle} »` : '';
+        showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${t}`, actionHref:'/#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('reply'); } });
+      }
+    }
+  } catch (e) { console.warn('fetchAnonMissedNotifications replies', e); }
+  updateBadgeFromStore();
+}
+
+function stopAnonNotifPolling(){ if (anonNotifTimer) { clearInterval(anonNotifTimer); anonNotifTimer = null; } }
+async function anonNotifTick(){ try { await fetchAnonMissedNotifications(); } catch (e) { console.warn('anon notification tick failed', e); } }
+function startAnonNotifPolling(){ stopAnonNotifPolling(); anonNotifTick(); anonNotifTimer = setInterval(anonNotifTick, ANON_NOTIF_INTERVAL_MS); }
+
 async function anonMessagesRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
   const body = { action, code: anonProfile.code, ...payload };
   const response = await fetch('/api/anon/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text().catch(() => '');
+  let json = null;
+  if (text) {
+    try { json = JSON.parse(text); } catch {}
+  }
+  if (!response.ok) {
+    const err = new Error(json?.error || 'Service indisponible');
+    if (json?.details) err.details = json.details;
+    throw err;
+  }
+  return json || {};
+}
+
+async function anonCommunityRequest(action, payload = {}) {
+  if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
+  const body = { action, code: anonProfile.code, ...payload };
+  const response = await fetch('/api/anon/community', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -262,7 +339,8 @@ function getNotifLastSince(kind){ const o=getNotifLast(); return o[kind] || null
 function setNotifLastNow(kind){ const o=getNotifLast(); o[kind]=new Date().toISOString(); setNotifLast(o); }
 async function fetchMissedMessages(){
   try {
-    if (isAnon || !supabase || !user?.id) return;
+    if (isAnon) { await fetchAnonMissedNotifications(); return; }
+    if (!supabase || !user?.id) return;
     const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
     const since = getNotifLastSince('msg') || sinceDefault;
     const { data: msgs } = await supabase
@@ -278,11 +356,11 @@ async function fetchMissedMessages(){
       try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', senders); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
       for (const m of msgs) {
         const fromId = idStr(m.sender_id);
-        const fromName = names.get(fromId) || 'Un parent';
+        const fromName = names.get(String(m.sender_id)) || 'Un parent';
         const notifId = `msg:${m.id}`;
-        addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
-        if (isNotifUnseen(notifId)) {
-          showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
+        const wasNew = addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
+        if (wasNew) {
+          showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
         }
       }
       updateBadges();
@@ -494,10 +572,8 @@ async function init(){
     const pre = new URLSearchParams(location.search).get('user');
     if(pre){ await ensureConversation(pre); openConversation(pre); }
     updateBadgeFromStore();
-    if (!isAnon) {
-      setupRealtimeNotifications();
-      fetchMissedMessages();
-    }
+    setupRealtimeNotifications();
+    fetchMissedMessages();
     // Replay unseen toasts at most once per tab session
     try {
       const booted = sessionStorage.getItem('pedia_notif_booted') === '1';
@@ -891,7 +967,9 @@ function setupMessageSubscription(otherId){
 // Realtime notifications (messages to me, replies to topics I own or commented)
 function setupRealtimeNotifications(){
   try {
-    if (isAnon || !supabase || !user?.id) return;
+    stopAnonNotifPolling();
+    if (isAnon) { startAnonNotifPolling(); return; }
+    if (!supabase || !user?.id) return;
     // cleanup old
     try { for(const ch of notifChannels) supabase.removeChannel(ch); } catch (e) {}
     notifChannels = [];
@@ -902,9 +980,11 @@ function setupRealtimeNotifications(){
       const row = payload.new || {}; const fromId = idStr(row.sender_id);
       let fromName = 'Un parent';
       try { const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle(); if (data?.full_name) fromName=data.full_name; } catch (e) {}
-      addNotif({ id:`msg:${row.id}`, kind:'msg', fromId, fromName, createdAt: row.created_at });
-      showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir' });
-      updateBadges();
+      const wasNew = addNotif({ id:`msg:${row.id}`, kind:'msg', fromId, fromName, createdAt: row.created_at });
+      if (wasNew) {
+        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(`msg:${row.id}`); setNotifLastNow('msg'); } });
+        updateBadges();
+      }
       // Refresh conversation list to reflect unread dots
       try { renderParentList(); } catch (e) {}
     })
@@ -930,8 +1010,11 @@ function setupRealtimeNotifications(){
           if (!isParticipant) return;
           let who='Un parent'; try { const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle(); if (prof?.full_name) who=prof.full_name; } catch (e) {}
           const title=(topic.title||'').replace(/^\[(.*?)\]\s*/, '');
-          showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir' });
-          updateBadges();
+          const wasNew = addNotif({ id:`reply:${r.id}`, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
+          if (wasNew) {
+            showNotification({ title:'Nouvelle réponse', text:`${who} a répondu à votre publication${title?` « ${title} »`:''}`, actionHref:'/#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(`reply:${r.id}`); setNotifLastNow('reply'); } });
+            updateBadges();
+          }
         } catch (e) {}
       })
       .subscribe();
