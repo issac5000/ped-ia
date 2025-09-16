@@ -242,6 +242,70 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  if (req.method === 'OPTIONS' && url.pathname === '/api/profiles/create-anon') {
+    return send(res, 204, '', {
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/profiles/create-anon') {
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+      const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+      if (!serviceKey || !supaUrl) {
+        return send(res, 500, JSON.stringify({ error: 'Server misconfigured' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      let body = {};
+      try {
+        body = await parseJson(req);
+      } catch {
+        return send(res, 400, JSON.stringify({ error: 'Invalid JSON body' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+      const fullNameRaw = typeof body.fullName === 'string' ? body.fullName.trim() : '';
+      const payload = {};
+      if (fullNameRaw) payload.full_name = fullNameRaw.slice(0, 120);
+
+      const response = await fetch(`${supaUrl}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await response.text().catch(() => '');
+      let json = null;
+      if (text) {
+        try { json = JSON.parse(text); } catch {}
+      }
+
+      if (!response.ok) {
+        return send(res, response.status, JSON.stringify({ error: 'Create failed', details: text || undefined }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      const row = Array.isArray(json) ? json?.[0] : json;
+      if (!row?.id || !row?.code_unique) {
+        return send(res, 500, JSON.stringify({ error: 'Invalid response from Supabase' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      const profile = {
+        id: row.id,
+        code_unique: row.code_unique,
+        full_name: row.full_name || '',
+        user_id: row.user_id ?? null
+      };
+
+      return send(res, 200, JSON.stringify({ profile }), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      return send(res, 500, JSON.stringify({ error: 'Server error', details: String(e.message || e) }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
   // Delete conversation (local dev server parity with Vercel function)
   if (req.method === 'POST' && url.pathname === '/api/messages/delete-conversation') {
     try {
