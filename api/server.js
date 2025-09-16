@@ -7,6 +7,8 @@ import { readFile, stat } from 'fs/promises';
 import { extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { processAnonChildrenRequest } from '../lib/anon-children.js';
+import { processAnonCommunityRequest } from '../lib/anon-community.js';
+import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -357,6 +359,44 @@ const server = createServer(async (req, res) => {
     try {
       const body = await parseJson(req);
       const result = await processAnonChildrenRequest(body);
+      return send(res, result.status, JSON.stringify(result.body), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      const status = e && Number.isInteger(e.status) ? e.status : 500;
+      const payload = { error: 'Server error', details: String(e?.details || e?.message || e) };
+      return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
+  if (req.method === 'OPTIONS' && url.pathname === '/api/anon/community') {
+    return send(res, 204, '', {
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/anon/community') {
+    try {
+      const body = await parseJson(req);
+      const result = await processAnonCommunityRequest(body);
+      return send(res, result.status, JSON.stringify(result.body), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      const status = e && Number.isInteger(e.status) ? e.status : 500;
+      const payload = { error: 'Server error', details: String(e?.details || e?.message || e) };
+      return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
+  if (req.method === 'OPTIONS' && url.pathname === '/api/anon/messages') {
+    return send(res, 204, '', {
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/anon/messages') {
+    try {
+      const body = await parseJson(req);
+      const result = await processAnonMessagesRequest(body);
       return send(res, result.status, JSON.stringify(result.body), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       const status = e && Number.isInteger(e.status) ? e.status : 500;
