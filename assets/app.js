@@ -1309,18 +1309,19 @@ try {
       }
       const data = payload.profile;
       console.log('createAnonymousProfile -> profile:', data);
-      setActiveProfile({ ...data, isAnonymous: true });
+      // Ne pas connecter automatiquement l’utilisateur : on lui fournit le code et on le laisse se connecter manuellement.
+      setActiveProfile(null);
       authSession = null;
-      const current = store.get(K.user) || {};
-      const pseudo = data.full_name || '';
-      if (pseudo !== current.pseudo) {
-        store.set(K.user, { ...current, pseudo });
-      }
       if (status) {
         status.classList.remove('error');
-        status.textContent = `Voici ton code unique : ${data.code_unique}. Garde-le précieusement pour te reconnecter sur n’importe quel appareil.`;
+        status.innerHTML = `Ton code unique : <strong>${data.code_unique}</strong>.<br>Garde-le précieusement et saisis-le juste en dessous dans « Se connecter avec un code ».`;
       }
-      location.hash = '#/dashboard';
+      const inputCode = $('#anon-code-input');
+      if (inputCode) {
+        inputCode.value = data.code_unique || '';
+        inputCode.focus();
+        try { inputCode.select(); } catch {}
+      }
     } catch (e) {
       console.log('createAnonymousProfile exception:', e);
       console.error('createAnonymousProfile failed', e);
