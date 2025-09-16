@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import { readFile, stat } from 'fs/promises';
 import { extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { processAnonChildrenRequest } from '../lib/anon-children.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -342,6 +343,25 @@ const server = createServer(async (req, res) => {
       return send(res, lastError?.status || 500, JSON.stringify({ error: 'Create failed', details: lastError?.details || undefined }), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       return send(res, 500, JSON.stringify({ error: 'Server error', details: String(e.message || e) }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
+  if (req.method === 'OPTIONS' && url.pathname === '/api/anon/children') {
+    return send(res, 204, '', {
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/anon/children') {
+    try {
+      const body = await parseJson(req);
+      const result = await processAnonChildrenRequest(body);
+      return send(res, result.status, JSON.stringify(result.body), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      const status = e && Number.isInteger(e.status) ? e.status : 500;
+      const payload = { error: 'Server error', details: String(e?.details || e?.message || e) };
+      return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
     }
   }
 

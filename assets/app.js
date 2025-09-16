@@ -65,6 +65,89 @@ console.log('DEBUG: app.js chargé');
   const isProfileLoggedIn = () => !!getActiveProfileId();
   // ✅ Fix: useRemote défini dès le départ
   const useRemote = () => !!supabase && isProfileLoggedIn();
+  const isAnonProfile = () => !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
+
+  async function anonChildRequest(action, payload = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) throw new Error('Code unique manquant');
+    const body = { action, code, ...payload };
+    const response = await fetch('/api/anon/children', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text().catch(() => '');
+    let json = null;
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!response.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
+      throw err;
+    }
+    return json || {};
+  }
+
+  function buildMeasurementPayloads(entries) {
+    const arr = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+    const byMonth = new Map();
+    arr.forEach(item => {
+      if (!item) return;
+      const month = Number(item.month);
+      if (!Number.isInteger(month)) return;
+      const current = byMonth.get(month) || { month };
+      if (item.height != null || item.height_cm != null) {
+        const h = Number(item.height_cm ?? item.height);
+        if (Number.isFinite(h)) current.height_cm = h;
+      }
+      if (item.weight != null || item.weight_kg != null) {
+        const w = Number(item.weight_kg ?? item.weight);
+        if (Number.isFinite(w)) current.weight_kg = w;
+      }
+      byMonth.set(month, current);
+    });
+    const out = [];
+    byMonth.forEach(entry => {
+      const rec = { month: entry.month };
+      let valid = false;
+      if (Number.isFinite(entry.height_cm)) { rec.height_cm = entry.height_cm; valid = true; }
+      if (Number.isFinite(entry.weight_kg)) { rec.weight_kg = entry.weight_kg; valid = true; }
+      if (valid) out.push(rec);
+    });
+    return out;
+  }
+
+  function buildTeethPayloads(entries) {
+    const arr = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+    const out = [];
+    arr.forEach(item => {
+      if (!item) return;
+      const month = Number(item.month);
+      if (!Number.isInteger(month)) return;
+      const countRaw = item.count ?? item.teeth ?? item.value;
+      const count = Number(countRaw);
+      if (!Number.isFinite(count)) return;
+      out.push({ month, count: Math.max(0, Math.round(count)) });
+    });
+    return out;
+  }
+
+  function buildSleepPayloads(entries) {
+    const arr = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+    const out = [];
+    arr.forEach(item => {
+      if (!item) return;
+      const month = Number(item.month);
+      if (!Number.isInteger(month)) return;
+      const hoursRaw = item.hours ?? item.value;
+      const hours = Number(hoursRaw);
+      if (!Number.isFinite(hours)) return;
+      out.push({ month, hours });
+    });
+    return out;
+  }
 
   try {
     const env = await fetch('/api/env').then(r => r.json());
@@ -1587,6 +1670,38 @@ try {
       console.log('DEBUG: entrée dans loadChild()');
       if (useRemote()) {
         try {
+          if (isAnonProfile()) {
+            const list = await anonChildRequest('list', {});
+            const rows = Array.isArray(list.children) ? list.children : [];
+            if (!rows.length) {
+              const user = store.get(K.user);
+              const children = store.get(K.children, []);
+              return children.find(c => c.id === user?.primaryChildId) || children[0] || null;
+            }
+            const primaryRow = rows.find(x => x.is_primary) || rows[0];
+            if (!primaryRow) return null;
+            const detail = await anonChildRequest('get', { childId: primaryRow.id });
+            const data = detail.child;
+            if (!data) return null;
+            const child = mapRowToChild(data);
+            const growth = detail.growth || {};
+            (growth.measurements || []).forEach(m => {
+              const h = Number(m?.height_cm);
+              const w = Number(m?.weight_kg);
+              const heightValid = Number.isFinite(h);
+              const weightValid = Number.isFinite(w);
+              child.growth.measurements.push({
+                month: m.month,
+                height: heightValid ? h : null,
+                weight: weightValid ? w : null,
+                bmi: heightValid && weightValid && h ? w / Math.pow(h / 100, 2) : null,
+                measured_at: m.created_at
+              });
+            });
+            (growth.sleep || []).forEach(s => child.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (growth.teeth || []).forEach(t => child.growth.teeth.push({ month: t.month, count: t.count }));
+            return child;
+          }
           const uid = authSession?.user?.id || getActiveProfileId();
           if (!uid) {
             console.warn("Aucun user_id disponible pour la requête children (loadChild) — fallback local");
@@ -1639,6 +1754,29 @@ try {
       if (!id) return null;
       if (useRemote()) {
         try {
+          if (isAnonProfile()) {
+            const detail = await anonChildRequest('get', { childId: id });
+            const data = detail.child;
+            if (!data) return null;
+            const ch = mapRowToChild(data);
+            const growth = detail.growth || {};
+            (growth.measurements || []).forEach(m => {
+              const h = Number(m?.height_cm);
+              const w = Number(m?.weight_kg);
+              const heightValid = Number.isFinite(h);
+              const weightValid = Number.isFinite(w);
+              ch.growth.measurements.push({
+                month: m.month,
+                height: heightValid ? h : null,
+                weight: weightValid ? w : null,
+                bmi: heightValid && weightValid && h ? w / Math.pow(h / 100, 2) : null,
+                measured_at: m.created_at
+              });
+            });
+            (growth.sleep || []).forEach(s => ch.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (growth.teeth || []).forEach(t => ch.growth.teeth.push({ month: t.month, count: t.count }));
+            return ch;
+          }
           const uid = getActiveProfileId();
           if (!uid) {
             console.warn("Aucun user_id disponible pour la requête children (loadChildById) — fallback local");
@@ -1897,7 +2035,7 @@ try {
       // Function to send child profile to Supabase
       async function saveChildProfile(child) {
         const uid = getActiveProfileId();
-        // Insert child
+        if (!uid) throw new Error('Profil utilisateur introuvable');
         const payload = {
           user_id: uid,
           first_name: child.firstName,
@@ -1918,6 +2056,18 @@ try {
           milestones: child.milestones,
           is_primary: true
         };
+        const measurementRecords = buildMeasurementPayloads(child.growth.measurements);
+        const teethRecords = buildTeethPayloads(child.growth.teeth);
+        const sleepRecords = buildSleepPayloads(child.growth.sleep);
+        if (isAnonProfile()) {
+          await anonChildRequest('create', {
+            child: payload,
+            growthMeasurements: measurementRecords,
+            growthTeeth: teethRecords,
+            growthSleep: sleepRecords
+          });
+          return;
+        }
         const { data: insChild, error: errC } = await supabase
           .from('children')
           .insert([payload])
@@ -1925,34 +2075,21 @@ try {
           .single();
         if (errC) throw errC;
         const childId = insChild.id;
-        // Upsert initial measures (merge height/weight per month)
-        const byMonth = {};
-        child.growth.measurements.forEach(m => {
-          const monthKey = m.month;
-          if (!byMonth[monthKey]) byMonth[monthKey] = { child_id: childId, month: monthKey, height_cm: null, weight_kg: null };
-          if (Number.isFinite(m.height)) byMonth[monthKey].height_cm = m.height;
-          if (Number.isFinite(m.weight)) byMonth[monthKey].weight_kg = m.weight;
-        });
-        const msArr = Object.values(byMonth);
-        // Validate and log payloads; skip invalid ones
-        const validMsArr = [];
-        msArr.forEach(p => {
-          if (p && p.child_id && Number.isInteger(p.month)) {
-            console.log('Sending growth_measurements:', p);
-            validMsArr.push(p);
-          } else {
-            console.warn('Skip growth_measurements, invalid payload:', p);
-          }
-        });
-        if (validMsArr.length) await supabase
-          .from('growth_measurements')
-          .upsert(validMsArr, { onConflict: 'child_id,month' });
-        if (child.growth.teeth.length) {
-          const teethPayloads = child.growth.teeth.map(ti => ({ child_id: childId, month: ti.month, count: ti.count }));
-          teethPayloads.forEach(p => console.log('Sending growth_teeth:', p));
+        const msPayload = measurementRecords.map(m => ({ ...m, child_id: childId }));
+        if (msPayload.length) {
+          msPayload.forEach(p => console.log('Sending growth_measurements:', p));
           await supabase
-            .from('growth_teeth')
-            .insert(teethPayloads);
+            .from('growth_measurements')
+            .upsert(msPayload, { onConflict: 'child_id,month' });
+        }
+        const teethPayloads = teethRecords.map(t => ({ ...t, child_id: childId }));
+        if (teethPayloads.length) {
+          teethPayloads.forEach(p => console.log('Sending growth_teeth:', p));
+          await supabase.from('growth_teeth').insert(teethPayloads);
+        }
+        const sleepPayloads = sleepRecords.map(s => ({ ...s, child_id: childId }));
+        if (sleepPayloads.length) {
+          await supabase.from('growth_sleep').insert(sleepPayloads);
         }
       }
 
@@ -2253,69 +2390,87 @@ try {
         let handled = false;
         if (useRemote()) {
           try {
-            const uid = getActiveProfileId();
-            if (!uid) {
-              console.warn('Aucun user_id disponible pour growth_measurements/growth_sleep/growth_teeth (form-measure)');
-              throw new Error('Pas de user_id');
-            }
-            const promises = [];
-            console.log('Step 0: initializing promises array');
-            if (Number.isFinite(height) || Number.isFinite(weight)) {
-              const payload = {
-                child_id: child.id,
-                month,
-                height_cm: Number.isFinite(height) ? Number(height) : null,
-                weight_kg: Number.isFinite(weight) ? Number(weight) : null,
-              };
-              if (payload.child_id && Number.isInteger(payload.month)) {
-                console.log('Sending growth_measurements:', payload);
-                console.log('Step 1: pushing growth_measurements');
+            if (isAnonProfile()) {
+              const measurementInputs = [];
+              if (Number.isFinite(height)) measurementInputs.push({ month, height });
+              if (Number.isFinite(weight)) measurementInputs.push({ month, weight });
+              const measurementRecords = buildMeasurementPayloads(measurementInputs);
+              const sleepRecords = Number.isFinite(sleep) ? buildSleepPayloads([{ month, hours: sleep }]) : [];
+              const teethRecords = Number.isFinite(teeth) ? buildTeethPayloads([{ month, count: teeth }]) : [];
+              await anonChildRequest('add-growth', {
+                childId: child.id,
+                growthMeasurements: measurementRecords,
+                growthSleep: sleepRecords,
+                growthTeeth: teethRecords
+              });
+              await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
+              renderDashboard();
+              handled = true;
+            } else {
+              const uid = getActiveProfileId();
+              if (!uid) {
+                console.warn('Aucun user_id disponible pour growth_measurements/growth_sleep/growth_teeth (form-measure)');
+                throw new Error('Pas de user_id');
+              }
+              const promises = [];
+              console.log('Step 0: initializing promises array');
+              if (Number.isFinite(height) || Number.isFinite(weight)) {
+                const payload = {
+                  child_id: child.id,
+                  month,
+                  height_cm: Number.isFinite(height) ? Number(height) : null,
+                  weight_kg: Number.isFinite(weight) ? Number(weight) : null,
+                };
+                if (payload.child_id && Number.isInteger(payload.month)) {
+                  console.log('Sending growth_measurements:', payload);
+                  console.log('Step 1: pushing growth_measurements');
+                  promises.push(
+                    supabase
+                      .from('growth_measurements')
+                      .upsert([payload], { onConflict: 'child_id,month' })
+                  );
+                } else {
+                  console.warn('Skip growth_measurements, invalid payload:', payload);
+                }
+              }
+              if (Number.isFinite(sleep) && child?.id) {
+                console.log('Step 2: pushing growth_sleep insert promise');
+                promises.push((async () => {
+                  try {
+                    console.log('DEBUG: tentative insert growth_sleep', { childId: child?.id, sleep, month });
+                    const { data, error } = await supabase
+                      .from('growth_sleep')
+                      .insert([{ child_id: child.id, month, hours: sleep }]);
+                    if (error) {
+                      console.error('Erreur insert growth_sleep:', error);
+                    } else {
+                      console.log('Insert growth_sleep OK:', data);
+                    }
+                  } catch (err) {
+                    console.error('Exception insert growth_sleep:', err);
+                  }
+                })());
+              }
+              if (Number.isFinite(teeth)) {
+                const payload = { child_id: child.id, month, count: teeth };
+                console.log('Sending growth_teeth:', payload);
+                console.log('Step 3: pushing growth_teeth');
                 promises.push(
                   supabase
-                    .from('growth_measurements')
-                    .upsert([payload], { onConflict: 'child_id,month' })
+                    .from('growth_teeth')
+                    .insert([payload])
                 );
-              } else {
-                console.warn('Skip growth_measurements, invalid payload:', payload);
               }
+              console.log('Step 4: before Promise.all on measures', { count: promises.length });
+              console.log('DEBUG: avant Promise.allSettled', promises);
+              const results = await Promise.allSettled(promises);
+              console.log('DEBUG: après Promise.allSettled', results);
+              console.log('Step 5: Promise.all resolved for measures');
+              await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
+              console.log('Step UI: before renderDashboard', document.querySelector('#app'));
+              renderDashboard();
+              handled = true;
             }
-            if (Number.isFinite(sleep) && child?.id) {
-              console.log('Step 2: pushing growth_sleep insert promise');
-              promises.push((async () => {
-                try {
-                  console.log('DEBUG: tentative insert growth_sleep', { childId: child?.id, sleep, month });
-                  const { data, error } = await supabase
-                    .from('growth_sleep')
-                    .insert([{ child_id: child.id, month, hours: sleep }]);
-                  if (error) {
-                    console.error('Erreur insert growth_sleep:', error);
-                  } else {
-                    console.log('Insert growth_sleep OK:', data);
-                  }
-                } catch (err) {
-                  console.error('Exception insert growth_sleep:', err);
-                }
-              })());
-            }
-            if (Number.isFinite(teeth)) {
-              const payload = { child_id: child.id, month, count: teeth };
-              console.log('Sending growth_teeth:', payload);
-              console.log('Step 3: pushing growth_teeth');
-              promises.push(
-                supabase
-                  .from('growth_teeth')
-                  .insert([payload])
-              );
-            }
-            console.log('Step 4: before Promise.all on measures', { count: promises.length });
-            console.log('DEBUG: avant Promise.allSettled', promises);
-            const results = await Promise.allSettled(promises);
-            console.log('DEBUG: après Promise.allSettled', results);
-            console.log('Step 5: Promise.all resolved for measures');
-            await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
-            console.log('Step UI: before renderDashboard', document.querySelector('#app'));
-            renderDashboard();
-            handled = true;
           } catch (err) {
             console.error('Supabase error (form-measure):', err);
             alert('Erreur Supabase — enregistrement local des mesures.');
@@ -2410,89 +2565,123 @@ try {
         let gmErr = null;
         let gmCount = 0;
         try {
-          const uid = getActiveProfileId();
-          if (!uid) {
-            console.warn('Aucun user_id disponible pour la requête children (renderDashboard) — fallback local');
-            const u = store.get(K.user) || {};
-            const all = store.get(K.children, []);
-            if (!all.length) {
+          if (isAnonProfile()) {
+            const listRes = await anonChildRequest('list', {});
+            const rows = Array.isArray(listRes.children) ? listRes.children : [];
+            if (!rows.length) {
               if (rid !== renderDashboard._rid) return;
               dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
               return;
             }
-            const slimLocal = all.map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
-            const selId = (slimLocal.find(s=>s.isPrimary) || slimLocal[0]).id;
+            const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
+            const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
             if (rid !== renderDashboard._rid) return;
-            renderChildSwitcher(dom.parentElement || dom, slimLocal, selId, () => renderDashboard());
-            const child = all.find(c => c.id === selId) || all[0];
-            await renderForChild(child);
-            return;
-          }
-          const { data: rows, error: rowsErr } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
-          if (rowsErr) throw rowsErr;
-          if (!rows || !rows.length) {
-            if (rid !== renderDashboard._rid) return;
-            dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
-            return;
-          }
-          // Render switcher from remote children
-          const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
-          const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
-          if (rid !== renderDashboard._rid) return;
-          renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
-          const primary = rows.find(r=>r.is_primary) || rows[0];
-          remoteChild = {
-            id: primary.id,
-            firstName: primary.first_name,
-            sex: primary.sex,
-            dob: primary.dob,
-            photo: primary.photo_url,
-            context: {
-              allergies: primary.context_allergies,
-              history: primary.context_history,
-              care: primary.context_care,
-              languages: primary.context_languages,
-              feedingType: primary.feeding_type,
-              eatingStyle: primary.eating_style,
-              sleep: {
-                falling: primary.sleep_falling,
-                sleepsThrough: primary.sleep_sleeps_through,
-                nightWakings: primary.sleep_night_wakings,
-                wakeDuration: primary.sleep_wake_duration,
-                bedtime: primary.sleep_bedtime
+            renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
+            const primary = rows.find(r => r.id === selId) || rows[0];
+            const detail = await anonChildRequest('get', { childId: primary.id });
+            const data = detail.child;
+            if (!data) throw new Error('Profil introuvable');
+            remoteChild = mapRowToChild(data);
+            const growth = detail.growth || {};
+            (growth.measurements || []).forEach(m => {
+              const h = Number(m?.height_cm);
+              const w = Number(m?.weight_kg);
+              const heightValid = Number.isFinite(h);
+              const weightValid = Number.isFinite(w);
+              remoteChild.growth.measurements.push({
+                month: m.month,
+                height: heightValid ? h : null,
+                weight: weightValid ? w : null,
+                bmi: heightValid && weightValid && h ? w / Math.pow(h / 100, 2) : null,
+                measured_at: m.created_at
+              });
+            });
+            (growth.sleep || []).forEach(s => remoteChild.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (growth.teeth || []).forEach(t => remoteChild.growth.teeth.push({ month: t.month, count: t.count }));
+            gmCount = remoteChild.growth.measurements.length;
+          } else {
+            const uid = getActiveProfileId();
+            if (!uid) {
+              console.warn('Aucun user_id disponible pour la requête children (renderDashboard) — fallback local');
+              const u = store.get(K.user) || {};
+              const all = store.get(K.children, []);
+              if (!all.length) {
+                if (rid !== renderDashboard._rid) return;
+                dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+                return;
               }
-            },
-            milestones: Array.isArray(primary.milestones)? primary.milestones : [],
-            growth: { measurements: [], sleep: [], teeth: [] }
-          };
-          // Load growth
-          console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
-          const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await Promise.all([
-            supabase
-              .from('growth_measurements')
-              .select('month, height_cm, weight_kg, created_at')
-              .eq('child_id', primary.id)
-              .order('month', { ascending: true }),
-            supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
-            supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
-          ]);
-          gmErr = gmErrLocal;
-          console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
-          const measurements = (gm || []).map(m => {
-            const h = m.height_cm == null ? null : Number(m.height_cm);
-            const w = m.weight_kg == null ? null : Number(m.weight_kg);
-            return {
-              month: m.month,
-              height: h,
-              weight: w,
-              bmi: w && h ? w / Math.pow(h / 100, 2) : null,
-              measured_at: m.created_at
+              const slimLocal = all.map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
+              const selId = (slimLocal.find(s=>s.isPrimary) || slimLocal[0]).id;
+              if (rid !== renderDashboard._rid) return;
+              renderChildSwitcher(dom.parentElement || dom, slimLocal, selId, () => renderDashboard());
+              const child = all.find(c => c.id === selId) || all[0];
+              await renderForChild(child);
+              return;
+            }
+            const { data: rows, error: rowsErr } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+            if (rowsErr) throw rowsErr;
+            if (!rows || !rows.length) {
+              if (rid !== renderDashboard._rid) return;
+              dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+              return;
+            }
+            const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
+            const selId = (slimRemote.find(s=>s.isPrimary) || slimRemote[0]).id;
+            if (rid !== renderDashboard._rid) return;
+            renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
+            const primary = rows.find(r=>r.is_primary) || rows[0];
+            remoteChild = {
+              id: primary.id,
+              firstName: primary.first_name,
+              sex: primary.sex,
+              dob: primary.dob,
+              photo: primary.photo_url,
+              context: {
+                allergies: primary.context_allergies,
+                history: primary.context_history,
+                care: primary.context_care,
+                languages: primary.context_languages,
+                feedingType: primary.feeding_type,
+                eatingStyle: primary.eating_style,
+                sleep: {
+                  falling: primary.sleep_falling,
+                  sleepsThrough: primary.sleep_sleeps_through,
+                  nightWakings: primary.sleep_night_wakings,
+                  wakeDuration: primary.sleep_wake_duration,
+                  bedtime: primary.sleep_bedtime
+                }
+              },
+              milestones: Array.isArray(primary.milestones)? primary.milestones : [],
+              growth: { measurements: [], sleep: [], teeth: [] }
             };
-          });
-          gmCount = measurements.length;
-          measurements.forEach(m => remoteChild.growth.measurements.push(m));
-          (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
-          (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
+            console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
+            const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await Promise.all([
+              supabase
+                .from('growth_measurements')
+                .select('month, height_cm, weight_kg, created_at')
+                .eq('child_id', primary.id)
+                .order('month', { ascending: true }),
+              supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
+              supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
+            ]);
+            gmErr = gmErrLocal;
+            console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
+            const measurements = (gm || []).map(m => {
+              const h = m.height_cm == null ? null : Number(m.height_cm);
+              const w = m.weight_kg == null ? null : Number(m.weight_kg);
+              return {
+                month: m.month,
+                height: h,
+                weight: w,
+                bmi: w && h ? w / Math.pow(h / 100, 2) : null,
+                measured_at: m.created_at
+              };
+            });
+            gmCount = measurements.length;
+            measurements.forEach(m => remoteChild.growth.measurements.push(m));
+            (gs||[]).forEach(r=> remoteChild.growth.sleep.push({ month: r.month, hours: r.hours }));
+            (gt||[]).forEach(r=> remoteChild.growth.teeth.push({ month: r.month, count: r.count }));
+          }
         } catch (e) {
           if (rid !== renderDashboard._rid) return;
           dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
@@ -2898,14 +3087,19 @@ try {
     let children = [];
     if (useRemote()) {
       try {
-        const uid = getActiveProfileId();
-        if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
-        const { data: rows } = await supabase
-          .from('children')
-          .select('*')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: true });
-        children = rows || [];
+        if (isAnonProfile()) {
+          const res = await anonChildRequest('list', {});
+          children = Array.isArray(res.children) ? res.children : [];
+        } else {
+          const uid = getActiveProfileId();
+          if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
+          const { data: rows } = await supabase
+            .from('children')
+            .select('*')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: true });
+          children = rows || [];
+        }
       } catch { children = []; }
     } else {
       children = store.get(K.children, []);
@@ -2944,9 +3138,13 @@ try {
           if (!confirm('Supprimer ce profil enfant ?')) return;
           if (useRemote()) {
             try {
-              const uid = getActiveProfileId();
-              if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
-              await supabase.from('children').delete().eq('id', idD);
+              if (isAnonProfile()) {
+                await anonChildRequest('delete', { childId: idD });
+              } else {
+                const uid = getActiveProfileId();
+                if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
+                await supabase.from('children').delete().eq('id', idD);
+              }
               renderSettings();
               return;
             } catch {}
@@ -3177,47 +3375,54 @@ try {
               }
             }
           });
+          const heightVal = parseFloat(fd.get('height'));
+          const weightVal = parseFloat(fd.get('weight'));
+          const teethVal = parseInt(fd.get('teeth'));
           if (useRemote()) {
             try {
+              const measurementInputs = [];
+              if (Number.isFinite(heightVal)) measurementInputs.push({ month: ageMNow, height: heightVal });
+              if (Number.isFinite(weightVal)) measurementInputs.push({ month: ageMNow, weight: weightVal });
+              const measurementRecords = buildMeasurementPayloads(measurementInputs);
+              const teethRecords = Number.isFinite(teethVal) ? buildTeethPayloads([{ month: ageMNow, count: teethVal }]) : [];
+              if (isAnonProfile()) {
+                await anonChildRequest('update', {
+                  childId: id,
+                  child: payload,
+                  growthMeasurements: measurementRecords,
+                  growthTeeth: teethRecords
+                });
+                const summary = summarizeUpdate(prevSnap, nextSnap);
+                await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
+                alert('Profil enfant mis à jour.');
+                renderSettings();
+                return;
+              }
               const uid = getActiveProfileId();
               if (!uid) { console.warn('Aucun user_id disponible pour children (update)'); throw new Error('Pas de user_id'); }
               await supabase.from('children').update(payload).eq('id', id);
-              // Optional new measures
-              const eh = parseFloat(fd.get('height'));
-              const ew = parseFloat(fd.get('weight'));
-              const et = parseInt(fd.get('teeth'));
               const promises = [];
-              if (Number.isFinite(eh) || Number.isFinite(ew)) {
-                const payload = {
-                  child_id: id,
-                  month: ageMNow,
-                  height_cm: Number.isFinite(eh) ? Number(eh) : null,
-                  weight_kg: Number.isFinite(ew) ? Number(ew) : null,
-                };
-                if (payload.child_id && Number.isInteger(payload.month)) {
-                  console.log('Sending growth_measurements:', payload);
-                  promises.push(
-                    supabase
-                      .from('growth_measurements')
-                      .upsert([payload], { onConflict: 'child_id,month' })
-                  );
-                } else {
-                  console.warn('Skip growth_measurements, invalid payload:', payload);
-                }
-              }
-              if (Number.isFinite(et)) {
-                const payload = { child_id: id, month: ageMNow, count: et };
-                console.log('Sending growth_teeth:', payload);
+              if (measurementRecords.length) {
+                const msPayloads = measurementRecords.map(m => ({ ...m, child_id: id }));
+                msPayloads.forEach(p => console.log('Sending growth_measurements:', p));
                 promises.push(
-                  supabase.from('growth_teeth').insert([payload])
+                  supabase
+                    .from('growth_measurements')
+                    .upsert(msPayloads, { onConflict: 'child_id,month' })
+                );
+              }
+              if (Number.isFinite(teethVal)) {
+                const payloadTeeth = { child_id: id, month: ageMNow, count: teethVal };
+                console.log('Sending growth_teeth:', payloadTeeth);
+                promises.push(
+                  supabase.from('growth_teeth').insert([payloadTeeth])
                 );
               }
               if (promises.length) {
                 console.log('DEBUG: avant Promise.all (settings optional measures)', promises);
                 const results = await Promise.all(promises);
-                console.log('DEBUG: après Promise.all (settings optional measures)', results);
+                console.log('DEBUG: après Promise.all (settings optional mesures)', results);
               }
-              // Log update history via Supabase
               const summary = summarizeUpdate(prevSnap, nextSnap);
               await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
               alert('Profil enfant mis à jour.');
@@ -3249,12 +3454,9 @@ try {
           };
           c.milestones = milestones;
           // Optional new measures
-          const eh2 = parseFloat(fd.get('height'));
-          const ew2 = parseFloat(fd.get('weight'));
-          const et2 = parseInt(fd.get('teeth'));
-          if (Number.isFinite(eh2)) c.growth.measurements.push({ month: ageMNow, height: eh2 });
-          if (Number.isFinite(ew2)) c.growth.measurements.push({ month: ageMNow, weight: ew2 });
-          if (Number.isFinite(et2)) c.growth.teeth.push({ month: ageMNow, count: et2 });
+          if (Number.isFinite(heightVal)) c.growth.measurements.push({ month: ageMNow, height: heightVal });
+          if (Number.isFinite(weightVal)) c.growth.measurements.push({ month: ageMNow, weight: weightVal });
+          if (Number.isFinite(teethVal)) c.growth.teeth.push({ month: ageMNow, count: teethVal });
           store.set(K.children, childrenAll);
           const summary = summarizeUpdate(prevSnap, nextSnap);
           await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
@@ -3432,18 +3634,22 @@ try {
     if (!childId || !useRemote()) return;
     try {
       const content = typeof updateContent === 'string' ? updateContent : JSON.stringify(updateContent);
-      const { data, error } = await supabase
-        .from('child_updates')
-        .insert([{ child_id: childId, update_type: updateType, update_content: content }])
-        .select('id');
-      if (error) throw error;
-      const id = Array.isArray(data) && data.length ? data[0].id : null;
-      if (id) {
-        const comment = await generateAiComment(content);
-        if (comment) {
-          await supabase.from('child_updates').update({ ai_comment: comment }).eq('id', id);
-        }
+      const comment = await generateAiComment(content);
+      if (isAnonProfile()) {
+        await anonChildRequest('log-update', {
+          childId,
+          updateType,
+          updateContent: content,
+          aiComment: comment || null
+        });
+        return;
       }
+      const payload = { child_id: childId, update_type: updateType, update_content: content };
+      if (comment) payload.ai_comment = comment;
+      const { error } = await supabase
+        .from('child_updates')
+        .insert([payload]);
+      if (error) throw error;
     } catch (e) {
       console.warn('Supabase child_updates insert failed', e);
     }
@@ -3452,6 +3658,10 @@ try {
   async function getChildUpdates(childId) {
     if (!useRemote()) return [];
     try {
+      if (isAnonProfile()) {
+        const res = await anonChildRequest('list-updates', { childId });
+        return Array.isArray(res.updates) ? res.updates : [];
+      }
       const { data, error } = await supabase
         .from('child_updates')
         .select('*')
@@ -3508,6 +3718,11 @@ try {
   async function listChildrenSlim() {
     if (useRemote()) {
       try {
+        if (isAnonProfile()) {
+          const res = await anonChildRequest('list', {});
+          const rows = Array.isArray(res.children) ? res.children : [];
+          return rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
+        }
         const uid = getActiveProfileId();
         if (!uid) {
           console.warn('Aucun user_id disponible pour children (listChildrenSlim)');
@@ -3530,10 +3745,14 @@ try {
     if (!id) return;
     if (useRemote()) {
       try {
-        const uid = getActiveProfileId();
-        if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
-        await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
-        await supabase.from('children').update({ is_primary: true }).eq('id', id);
+        if (isAnonProfile()) {
+          await anonChildRequest('set-primary', { childId: id });
+        } else {
+          const uid = getActiveProfileId();
+          if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
+          await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
+          await supabase.from('children').update({ is_primary: true }).eq('id', id);
+        }
       } catch {}
       return;
     }
