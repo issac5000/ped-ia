@@ -68,10 +68,32 @@ function setupHeader(){
   const navBtn = $('#nav-toggle');
   const mainNav = $('#main-nav');
   const navBackdrop = $('#nav-backdrop');
-  $('#btn-login')?.addEventListener('click', async e=>{
+  const redirectToLogin = () => {
+    const targetHash = '#/login';
+    if (location.hash === targetHash) return;
+    if (location.hash.startsWith('#/')) {
+      location.hash = targetHash;
+      return;
+    }
+    const path = location.pathname || '';
+    if (path === '/' || path.endsWith('/') || path.endsWith('/index.html')) {
+      location.hash = targetHash;
+      return;
+    }
+    let basePath = path;
+    if (path.endsWith('.html')) {
+      basePath = path.replace(/[^/]*$/, '');
+    } else if (!path.endsWith('/')) {
+      basePath = `${path}/`;
+    }
+    if (!basePath.startsWith('/')) {
+      basePath = `/${basePath}`;
+    }
+    location.href = `${basePath}${targetHash}`;
+  };
+  $('#btn-login')?.addEventListener('click', e=>{
     e.preventDefault();
-    const btn=e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
-    try{ await signInGoogle(); } finally{}
+    redirectToLogin();
   });
   $('#btn-logout')?.addEventListener('click', async e=>{
     const btn=e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
