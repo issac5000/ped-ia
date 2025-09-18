@@ -2521,7 +2521,7 @@ try {
       hist.innerHTML = `
         <div class="card-header history-header">
           <h3>Historique de l’évolution</h3>
-          <p class="muted">Suivez en un coup d’œil les derniers ajouts et observations.</p>
+          <p class="page-subtitle">Suivez en un coup d’œil les derniers ajouts et observations.</p>
         </div>
       ` + (
         updates.length
