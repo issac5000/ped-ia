@@ -359,6 +359,61 @@ section[data-route="/settings"] .card.stack{ gap:10px }
 section[data-route="/settings"] .hstack{ gap:8px }
 section[data-route="/settings"] .btn{ padding:10px 14px; border-radius:12px; font-size:14px }
 
+/* Improve milestone readability on the dark settings pane */
+section[data-route="/settings"] #edit-milestones{ gap:16px }
+section[data-route="/settings"] #edit-milestones .dev-group{
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:22px;
+  padding:18px;
+  background:linear-gradient(180deg, rgba(17,24,39,.82), rgba(17,24,39,.66));
+  box-shadow:0 18px 40px rgba(0,0,0,.35);
+}
+section[data-route="/settings"] #edit-milestones .dev-group h4{
+  margin:0 0 14px;
+  color:#ffffff;
+  text-shadow:0 2px 14px rgba(0,0,0,.45);
+}
+section[data-route="/settings"] #edit-milestones .qgrid{ gap:14px }
+section[data-route="/settings"] #edit-milestones .qitem{
+  background:linear-gradient(180deg, rgba(31,41,60,.85), rgba(17,24,39,.78));
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 10px 28px rgba(0,0,0,.32);
+}
+section[data-route="/settings"] #edit-milestones .qitem:hover{
+  border-color:rgba(255,255,255,.32);
+  background:linear-gradient(180deg, rgba(36,52,84,.88), rgba(18,26,44,.82));
+  box-shadow:0 18px 36px rgba(0,0,0,.42);
+}
+section[data-route="/settings"] #edit-milestones .qitem label{
+  color:#ffffff;
+  text-shadow:0 1px 10px rgba(0,0,0,.6);
+}
+section[data-route="/settings"] #edit-milestones .qitem input[type="checkbox"]{
+  width:26px;
+  height:26px;
+  border-radius:10px;
+  background:rgba(12,19,33,.7);
+  border:2px solid rgba(255,255,255,.28);
+  box-shadow:0 4px 16px rgba(0,0,0,.35), inset 0 2px 4px rgba(255,255,255,.08);
+}
+section[data-route="/settings"] #edit-milestones .qitem input[type="checkbox"]:hover{
+  border-color:rgba(255,255,255,.45);
+  background:rgba(17,24,39,.78);
+}
+section[data-route="/settings"] #edit-milestones .qitem input[type="checkbox"]:checked{
+  background:linear-gradient(135deg, rgba(99,153,255,.95), rgba(147,118,255,.95));
+  border-color:transparent;
+  box-shadow:0 10px 24px rgba(97,145,255,.45);
+}
+section[data-route="/settings"] #edit-milestones .qitem input[type="checkbox"]:checked::after{
+  border-right-width:3px;
+  border-bottom-width:3px;
+}
+section[data-route="/settings"] #edit-milestones .qitem input[type="checkbox"]:focus-visible{
+  outline:3px solid rgba(147,198,255,.8);
+  outline-offset:3px;
+}
+
 /* keep settings layout stacked (one column) even on wide screens */
 section[data-route="/settings"] .grid-2{ grid-template-columns:1fr !important }
 
