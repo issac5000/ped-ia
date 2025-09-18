@@ -44,6 +44,13 @@
   font-style: normal;
   font-display: swap;
 }
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/fonts/inter-latin-900-normal.woff2") format("woff2");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
 *{box-sizing:border-box}
 html,body{min-height:100%; overflow-x:hidden}
 html, body{ -ms-overflow-style:none; scrollbar-width:none }
@@ -480,6 +487,9 @@ section[data-route="/settings"] #form-settings textarea{
   -webkit-text-fill-color: var(--orange-strong) !important;
   color: var(--orange-strong) !important;
   text-shadow:0 1px 4px rgba(255,150,64,.18);
+}
+.hero-v2-title strong{
+  font-weight:900;
 }
 .hero-v2-sub{ margin:0 0 14px; color:var(--muted); max-width:680px }
 .hero-v2-actions{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px }
