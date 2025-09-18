@@ -2485,45 +2485,79 @@ try {
       const hist = document.createElement('div');
       hist.className = 'card stack';
       hist.style.marginTop = '20px';
-      hist.innerHTML = `<h3>historique de l’évolution</h3>` + (
-        updates.length ?
-        `<div class="stack">${updates.map(u => {
-            const when = new Date(u.created_at).toLocaleString();
-            let details = '';
-            try {
-              const parsed = JSON.parse(u.update_content || '');
-              details = escapeHtml(parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {}));
-            } catch {
-              details = escapeHtml(u.update_content || '');
-            }
-            const typeLabel = u.update_type ? ` — ${escapeHtml(u.update_type)}` : '';
-            const comment = u.ai_comment ? `<div class=\\"muted\\"><strong><em>${escapeHtml(u.ai_comment)}</em></strong></div>` : '';
-            return `<div><div class=\\"muted\\">${when}${typeLabel}</div><div>${details}</div>${comment}</div>`;
-          }).join('')}</div>`
-        : `<div class="muted">Aucune mise à jour enregistrée pour l’instant.</div>`
+      const timelineHtml = updates.map(u => {
+        const created = new Date(u.created_at);
+        const hasValidDate = !Number.isNaN(created.getTime());
+        const when = hasValidDate
+          ? created.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
+          : 'Date inconnue';
+        const iso = hasValidDate ? created.toISOString() : '';
+        let details = '';
+        try {
+          const parsed = JSON.parse(u.update_content || '');
+          details = escapeHtml(parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {}));
+        } catch {
+          details = escapeHtml(u.update_content || '');
+        }
+        const typeBadge = u.update_type ? `<span class="timeline-tag">${escapeHtml(u.update_type)}</span>` : '';
+        const comment = u.ai_comment
+          ? `<div class="timeline-comment"><strong><em>${escapeHtml(u.ai_comment)}</em></strong></div>`
+          : '';
+        return `
+          <article class="timeline-item" role="listitem">
+            <div class="timeline-marker" aria-hidden="true"></div>
+            <div class="timeline-content">
+              <div class="timeline-meta">
+                <time datetime="${iso}">${when}</time>
+                ${typeBadge}
+              </div>
+              <div class="timeline-summary">${details}</div>
+              ${comment}
+            </div>
+          </article>
+        `;
+      }).join('');
+
+      hist.innerHTML = `
+        <div class="card-header history-header">
+          <h3>Historique de l’évolution</h3>
+          <p class="muted">Suivez en un coup d’œil les derniers ajouts et observations.</p>
+        </div>
+      ` + (
+        updates.length
+          ? `<div class="timeline" role="list">${timelineHtml}</div>`
+          : `<div class="empty-state muted">Aucune mise à jour enregistrée pour l’instant.</div>`
       );
       if (updates.length > 2) {
-        const stack = hist.querySelector('.stack');
-        const items = Array.from(stack.children);
+        const timeline = hist.querySelector('.timeline');
+        const items = timeline ? Array.from(timeline.children) : [];
         items.forEach((el, idx) => {
           if (idx >= 2) el.style.display = 'none';
         });
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.className = 'btn btn-secondary';
         btn.textContent = 'Tout afficher';
+        btn.dataset.expanded = '0';
+        btn.setAttribute('aria-expanded', 'false');
         btn.addEventListener('click', () => {
           const expanded = btn.dataset.expanded === '1';
           if (!expanded) {
             items.forEach(el => { el.style.display = ''; });
             btn.textContent = 'Réduire';
             btn.dataset.expanded = '1';
+            btn.setAttribute('aria-expanded', 'true');
           } else {
             items.forEach((el, idx) => { if (idx >= 2) el.style.display = 'none'; });
             btn.textContent = 'Tout afficher';
             btn.dataset.expanded = '0';
+            btn.setAttribute('aria-expanded', 'false');
           }
         });
-        hist.appendChild(btn);
+        const actions = document.createElement('div');
+        actions.className = 'timeline-actions';
+        actions.appendChild(btn);
+        hist.appendChild(actions);
       }
       if (rid !== renderDashboard._rid) return;
       dom.appendChild(hist);
