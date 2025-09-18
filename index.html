@@ -575,9 +575,85 @@
           <h2>Mentions légales & Confidentialité</h2>
           <p class="page-subtitle">Rappels importants et traitement des données.</p>
         </div>
-        <div class="card stack">
-          <p>Synap'Kids n’est pas un dispositif médical. Les informations fournies sont indicatives et ne remplacent pas l’avis d’un professionnel de santé.</p>
-          <p>Vos données demeurent sur votre appareil, sauf si vous les exportez volontairement. En cas de publication dans la communauté, évitez toute donnée sensible.</p>
+        <div class="card stack legal-card">
+          <article class="stack">
+            <h3>Mentions légales</h3>
+            <h4>Éditeur du site</h4>
+            <p>Synap'Kids est édité par Synap'Kids (projet en cours d’immatriculation), dont le siège est situé au 13, rue de la Pépinière, 5000 Namur, Belgique. Contact&nbsp;: <a href="mailto:contact@synapkids.com">contact@synapkids.com</a> – Tél.&nbsp;: +32&nbsp;465&nbsp;39&nbsp;53&nbsp;08.</p>
+            <h4>Responsable de la publication</h4>
+            <p>Synap'Kids, représenté par son responsable légal, joignable à l’adresse de contact mentionnée ci‑dessus.</p>
+            <h4>Hébergement</h4>
+            <p>Le site est hébergé par Vercel Inc., 340 S Lemon Ave #4133, Walnut, CA 91789, États‑Unis (<a href="https://vercel.com">vercel.com</a>). Les données applicatives (authentification, base de données, temps réel) sont gérées par Supabase Inc., 970 Toa Payoh North, #07-04, Singapour 318992 (<a href="https://supabase.com">supabase.com</a>).</p>
+            <h4>Activité – santé</h4>
+            <p>Synap'Kids est une plateforme numérique de soutien parental et de suivi du développement des enfants de 0 à 7 ans. L’application n’est pas un dispositif médical&nbsp;: les contenus générés (IA, articles, tableaux de bord) ont une visée informative et ne remplacent pas l’avis d’un professionnel de santé.</p>
+            <h4>Propriété intellectuelle</h4>
+            <p>L’ensemble des éléments graphiques, textuels et fonctionnels du site reste la propriété exclusive de Synap'Kids. Toute reproduction, représentation ou adaptation partielle ou totale est interdite sans autorisation préalable.</p>
+            <h4>Utilisation du service</h4>
+            <p>Les utilisateurs s’engagent à fournir des informations exactes, à respecter la confidentialité des données des enfants et des autres membres, et à adopter un comportement respectueux dans la communauté et les messages privés. Les publications contraires à l’ordre public, injurieuses, discriminatoires ou diffusant des données sensibles peuvent être supprimées et entraîner la suspension du compte.</p>
+            <h4>Responsabilité</h4>
+            <p>L’Éditeur met tout en œuvre pour assurer l’exactitude et la mise à jour du site, sans garantie d’exhaustivité. L’utilisation du service se fait sous la seule responsabilité des parents ou responsables légaux. Synap'Kids ne peut être tenu responsable de dommages indirects ou résultant d’un défaut de disponibilité.</p>
+            <h4>Liens externes</h4>
+            <p>Des liens vers des sites tiers (articles, ressources, outils) peuvent être proposés. Synap'Kids n’exerce aucun contrôle sur ces contenus externes et décline toute responsabilité quant à leurs informations ou à leur politique de confidentialité.</p>
+            <h4>Droit applicable</h4>
+            <p>Le site et ses conditions d’utilisation sont soumis au droit belge. Tout litige relèvera des juridictions compétentes de l’arrondissement de Namur, sous réserve des dispositions impératives applicables aux consommateurs.</p>
+          </article>
+
+          <article class="stack">
+            <h3>Politique de confidentialité</h3>
+            <p>Cette politique décrit la manière dont Synap'Kids collecte et traite les données personnelles des utilisateurs (parents, responsables légaux et enfants suivis) conformément au Règlement (UE) 2016/679 (RGPD) et à la législation belge.</p>
+            <h4>Données traitées</h4>
+            <ul>
+              <li><strong>Compte et authentification&nbsp;:</strong> adresse e‑mail, identifiant Google et métadonnées associées (via Supabase Auth) pour créer et sécuriser l’accès au compte.</li>
+              <li><strong>Profils enfants et suivi&nbsp;:</strong> prénom ou pseudo, date de naissance, sexe, contexte familial, préférences alimentaires, informations de sommeil, jalons de développement, mesures (taille, poids, sommeil, dents), photos facultatives.</li>
+              <li><strong>Contenus générés&nbsp;:</strong> publications communautaires, messages privés, commentaires, interactions avec les fonctionnalités IA (questions, contexte enfant, préférences), notifications et historiques associés.</li>
+              <li><strong>Support et newsletter&nbsp;:</strong> e‑mail et contenu des messages envoyés via le formulaire de contact ou l’inscription à la newsletter (stockés localement sur l’appareil en version de démonstration).</li>
+              <li><strong>Données de paiement (à venir)&nbsp;:</strong> informations relatives aux abonnements, au statut d’essai gratuit de 7 jours et aux transactions, traitées via un prestataire de paiement tiers certifié (type Stripe ou équivalent). Synap'Kids ne conserve pas les numéros de carte bancaire.</li>
+              <li><strong>Journalisation technique&nbsp;:</strong> logs serveur anonymisés (adresse IP tronquée, horodatage, requêtes) nécessaires à la sécurité et à la maintenance.</li>
+            </ul>
+            <h4>Finalités et bases légales</h4>
+            <ul>
+              <li>Fourniture des services (tableaux de bord, messagerie, communauté, IA, export) sur la base de l’exécution du contrat (CGU implicites lors de l’utilisation).</li>
+              <li>Personnalisation des conseils et contenus IA (consentement explicite lors de l’utilisation des formulaires).</li>
+              <li>Gestion de la relation client, support et envoi d’informations (intérêt légitime et consentement pour la newsletter).</li>
+              <li>Facturation des plans payants après la période d’essai (obligation légale et contractuelle).</li>
+              <li>Sécurité, prévention de la fraude et amélioration du service (intérêt légitime).</li>
+            </ul>
+            <h4>Hébergement et stockage</h4>
+            <p>Les données de compte, profils, mesures, contenus communautaires et messages sont hébergés dans les bases de données Supabase, dans un centre de données situé dans l’Union européenne lorsque l’option est disponible. Certaines informations (préférences d’affichage, messages de contact, newsletter en mode démo) sont conservées dans le stockage local du navigateur. Les fichiers statiques du site sont distribués via Vercel et le CDN jsDelivr.</p>
+            <h4>Destinataires et sous-traitants</h4>
+            <ul>
+              <li><strong>Supabase Inc.</strong> pour l’authentification, la base de données, le temps réel et le stockage des profils.</li>
+              <li><strong>OpenAI OpCo, LLC</strong> pour la génération de conseils, recettes, histoires et suggestions de commentaires. Les prompts contiennent les informations fournies par l’utilisateur et ne sont pas utilisés par OpenAI pour entraîner ses modèles selon les engagements contractuels.</li>
+              <li><strong>Google LLC</strong> (service OAuth) pour l’authentification via compte Google, soumise à la politique de confidentialité Google.</li>
+              <li><strong>Prestataire de paiement tiers</strong> (à intégrer avant le lancement commercial) pour gérer la période d’essai, le paiement récurrent et la facturation. Seules les informations nécessaires au traitement du paiement lui sont transmises.</li>
+              <li><strong>jsDelivr / Prospective OÜ</strong> pour la distribution du SDK Supabase.</li>
+            </ul>
+            <p>Synap'Kids ne vend ni ne loue aucune donnée personnelle et ne partage des informations qu’avec les sous-traitants nécessaires à l’exécution du service.</p>
+            <h4>Durées de conservation</h4>
+            <ul>
+              <li>Données de compte&nbsp;: tant que le compte est actif, puis suppression ou anonymisation dans un délai de 30 jours après demande de fermeture.</li>
+              <li>Données enfants et suivis&nbsp;: tant que le compte parent est actif. En cas de suppression d’un profil enfant, les mesures sont effacées ou anonymisées.</li>
+              <li>Contenus communautaires et messages&nbsp;: conservés jusqu’à suppression par l’utilisateur ou pendant 3 ans après inactivité du compte pour gérer les litiges potentiels.</li>
+              <li>Données de facturation&nbsp;: 10 ans conformément aux obligations comptables belges.</li>
+              <li>Newsletter et support&nbsp;: suppression immédiate sur demande de désinscription ou après 3 ans sans interaction.</li>
+              <li>Logs techniques&nbsp;: 12 mois maximum.</li>
+            </ul>
+            <h4>Droits des personnes</h4>
+            <p>Conformément au RGPD, vous disposez des droits d’accès, de rectification, d’effacement, d’opposition, de limitation, de portabilité et du droit de définir des directives post‑mortem. Pour exercer ces droits ou obtenir des précisions, contactez <a href="mailto:contact@synapkids.com">contact@synapkids.com</a> en précisant l’objet de votre demande et en joignant une preuve d’identité si nécessaire. Les parents ou titulaires de l’autorité parentale exercent les droits au nom des enfants.</p>
+            <h4>Paiements, période d’essai et résiliation</h4>
+            <p>Lors du lancement commercial, tout nouvel abonnement bénéficiera automatiquement d’une période d’essai gratuite de 7 jours. À l’issue de cette période, l’abonnement sélectionné sera facturé mensuellement ou annuellement (selon l’option choisie), sauf résiliation avant la fin de l’essai. L’utilisateur pourra annuler à tout moment depuis les paramètres du compte&nbsp;; la résiliation prendra effet à la fin de la période en cours. Aucun remboursement prorata n’est prévu pour les périodes entamées, sauf disposition légale impérative.</p>
+            <h4>Sécurité</h4>
+            <p>Des mesures techniques et organisationnelles sont mises en place&nbsp;: chiffrement TLS des échanges, règles de contrôle d’accès, séparation des environnements, surveillance des accès Supabase, stockage local chiffré côté navigateur lorsque possible. L’utilisateur est invité à protéger son terminal et à ne pas partager ses identifiants.</p>
+            <h4>Transferts hors UE</h4>
+            <p>Certaines données peuvent être transférées hors de l’Union européenne (notamment vers les États-Unis et Singapour) via Supabase, OpenAI ou Vercel. Ces transferts reposent sur des clauses contractuelles types et sur des garanties appropriées fournies par ces prestataires.</p>
+            <h4>Mineurs</h4>
+            <p>Le service est destiné aux parents ou responsables légaux. Les comptes ne doivent pas être créés directement par des mineurs de moins de 15 ans. Les informations concernant les enfants doivent être communiquées par un adulte ayant l’autorité parentale.</p>
+            <h4>Absence de cookies publicitaires</h4>
+            <p>Synap'Kids n’utilise pas de cookies tiers à des fins publicitaires ni d’outils d’analytics externes. Seuls des cookies ou stockages techniques nécessaires au fonctionnement (session Supabase, préférences locales) sont utilisés.</p>
+            <h4>Mises à jour</h4>
+            <p>La présente politique peut être amenée à évoluer, notamment en cas d’ajout de nouvelles fonctionnalités ou d’un changement de prestataire. La date de dernière mise à jour est indiquée ci‑dessous. En cas de modification majeure, un avis sera publié sur l’application.</p>
+            <p class="muted"><em>Dernière mise à jour&nbsp;: 15 mars 2025.</em></p>
+          </article>
         </div>
       </section>
 
