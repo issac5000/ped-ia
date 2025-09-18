@@ -913,7 +913,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 .history-header p{
   margin:0;
   font-size:13px;
-  color:rgba(20,32,73,.65);
+  color:var(--muted);
 }
 .timeline{
   --timeline-gap:18px;
