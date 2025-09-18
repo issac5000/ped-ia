@@ -208,6 +208,11 @@ section{opacity:.8}
   /* Make waves fill to bottom and overlap tighter */
   .footer-bg{ top:-140px }
   .footer-bg svg{ width:140%; height:240%; margin-left:-20%; transform:none }
+  /* Brighten footer waves for better contrast on small screens */
+  .home-footer .footer-bg .layer:nth-child(1){ fill:rgba(255,255,255,.16) }
+  .home-footer .footer-bg .layer:nth-child(2){ fill:rgba(64,76,102,.32) }
+  .home-footer .footer-bg .layer:nth-child(3){ fill:rgba(46,58,82,.44) }
+  .home-footer .footer-bg .layer:nth-child(4){ fill:rgba(28,36,52,.56) }
 }
 
 /* Background that paints the footer with a wavy top edge */
