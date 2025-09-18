@@ -4,16 +4,43 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 // Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
-console.log('Loaded DEV_QUESTIONS:', DEV_QUESTIONS);
-console.log('DEBUG: app.js chargé');
 (async () => {
-  console.log('DEBUG: entrée dans init()');
   document.body.classList.remove('no-js');
   // Always use hamburger layout on all viewports
   try { document.body.classList.add('force-mobile'); } catch {}
   // Dom helpers available early
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const normalizeRoutePath = (input) => {
+    const raw = typeof input === 'string' ? input.trim() : '';
+    if (!raw) return '/';
+    const withoutHash = raw.startsWith('#') ? raw.slice(1) : raw;
+    if (!withoutHash) return '/';
+    const pathOnly = withoutHash.split('?')[0].split('&')[0] || '/';
+    return pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`;
+  };
+  const routeSections = new Map();
+  document.querySelectorAll('section[data-route]').forEach(section => {
+    const key = normalizeRoutePath(section.dataset.route || '/');
+    if (!routeSections.has(key)) routeSections.set(key, section);
+  });
+  let activeRouteEl = document.querySelector('section.route.active') || null;
+  const navLinks = new Map();
+  const navLinkTargets = new Map();
+  document.querySelectorAll('#main-nav .nav-link').forEach(link => {
+    const href = link.getAttribute('href') || '';
+    navLinks.set(href, link);
+    if (href.startsWith('#')) navLinkTargets.set(href, normalizeRoutePath(href));
+  });
+  const navBadges = new Map();
+  const navBtn = document.getElementById('nav-toggle');
+  const mainNav = document.getElementById('main-nav');
+  const navBackdrop = document.getElementById('nav-backdrop');
+  const closeMobileNav = () => {
+    if (mainNav) mainNav.classList.remove('open');
+    if (navBtn) navBtn.setAttribute('aria-expanded', 'false');
+    navBackdrop?.classList.remove('open');
+  };
   // Les courbes OMS utilisaient auparavant Chart.js chargé via CDN.
   // Pour éviter les erreurs de chargement (réseau ou CSP),
   // on n'utilise plus de dépendance externe ici.
@@ -22,7 +49,6 @@ console.log('DEBUG: app.js chargé');
     console.error('Curves import failed', e);
     return {};
   });
-  console.log('OMS LENGTH loaded?', !!LENGTH_FOR_AGE);
   if (!LENGTH_FOR_AGE) console.error('Curves import failed');
   const fallbackCurves = { 0: { P3: null, P15: null, P50: null, P85: null, P97: null } };
   const curves = {
@@ -207,13 +233,11 @@ console.log('DEBUG: app.js chargé');
 
   try {
     const env = await fetch('/api/env').then(r => r.json());
-    if (DEBUG_AUTH) console.log('ENV', env);
     if (env?.url && env?.anonKey) {
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       supabase = createClient(env.url, env.anonKey, {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
-      if (DEBUG_AUTH) console.log('Supabase client created');
 
 
 
@@ -221,7 +245,6 @@ console.log('DEBUG: app.js chargé');
 try {
   const urlNow = new URL(window.location.href);
   if (urlNow.searchParams.get('code')) {
-    if (DEBUG_AUTH) console.log('Exchanging OAuth code for session…');
     // Supabase veut l’URL sans hash (#/dashboard), donc on nettoie
     const cleanUrl = window.location.origin + urlNow.pathname + urlNow.search;
     const { error: xErr } = await supabase.auth.exchangeCodeForSession(cleanUrl);
@@ -246,7 +269,6 @@ try {
         authSession = { user };
         await ensureProfile(user);
         await syncUserFromSupabase();
-        if (DEBUG_AUTH) console.log("Utilisateur connecté après retour Google:", user.email);
         updateHeaderAuth();
         // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
         // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
@@ -331,80 +353,62 @@ try {
   }
 
   // Routing
+  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
   function setActiveRoute(hash) {
-    const rawHash = typeof hash === 'string' ? hash : (hash == null ? '' : String(hash));
-    const trimmedHash = rawHash.trim();
-    const normalizedHash = trimmedHash.startsWith('#') ? trimmedHash : (trimmedHash ? `#${trimmedHash}` : '#');
-    const pathCandidate = normalizedHash.slice(1);
-    const path = pathCandidate ? pathCandidate : '/';
-    console.log('DEBUG: entrée dans setActiveRoute avec path =', path);
-    $$('.route').forEach(s => s.classList.remove('active'));
-    const route = $(`section[data-route="${path}"]`);
-    if (route) route.classList.add('active');
-    // Highlight active nav link
-    try {
-      const links = $$('#main-nav .nav-link');
-      links.forEach(a => {
-        const href = a.getAttribute('href') || '';
-        a.classList.toggle('active', href === '#' + path);
-      });
-    } catch {}
-    // Toggle page logo visibility (show on all except home)
+    const requestedPath = normalizeRoutePath(hash);
+    const path = routeSections.has(requestedPath) ? requestedPath : '/';
+    const targetSection = routeSections.get(path) || null;
+    if (targetSection && activeRouteEl !== targetSection) {
+      activeRouteEl?.classList.remove('active');
+      targetSection.classList.add('active');
+      activeRouteEl = targetSection;
+    } else if (!targetSection && activeRouteEl) {
+      activeRouteEl.classList.add('active');
+    }
+    for (const [href, link] of navLinks) {
+      const targetPath = navLinkTargets.get(href);
+      link.classList.toggle('active', !!targetPath && targetPath === path);
+    }
     try {
       const pl = document.getElementById('page-logo');
       if (pl) pl.hidden = (path === '/' || path === '');
     } catch {}
     updateHeaderAuth();
     const previousPath = (typeof __activePath === 'string' && __activePath.length > 0) ? __activePath : null;
-    // Align scroll behavior with static pages: only reset on real route change
     if (previousPath !== path) {
       window.scrollTo(0, 0);
     }
-    // Guard routes
     const authed = isProfileLoggedIn();
-    const needAuth = ['/dashboard','/community','/ai','/settings','/onboarding'];
-    console.log('DEBUG: test guard needAuth', { path, authed, needAuth });
-    if (needAuth.includes(path) && !authed) {
-      console.log('DEBUG: guard redirect -> /login (needAuth && !authed)');
+    if (protectedRoutes.has(path) && !authed) {
       location.hash = '#/login';
       return;
     }
-    console.log('DEBUG: test guard login/signup redirect', { path, authed });
     if ((path === '/login' || path === '/signup') && authed) {
-      console.log('DEBUG: guard redirect -> /dashboard (already authed)');
       location.hash = '#/dashboard';
       return;
     }
-    // Page hooks
-    console.log('DEBUG: test route /onboarding');
-    if (path === '/onboarding') { console.log('DEBUG: appel de renderOnboarding()'); renderOnboarding(); }
-    console.log('DEBUG: test route /dashboard');
-    if (path === '/dashboard') { console.log('DEBUG: appel de renderDashboard()'); renderDashboard(); }
-    console.log('DEBUG: test route /community');
-    if (path === '/community') { console.log('DEBUG: appel de renderCommunity()'); renderCommunity(); }
-    
-    console.log('DEBUG: test route /settings');
-    if (path === '/settings') { console.log('DEBUG: appel de renderSettings()'); renderSettings(); }
-    console.log('DEBUG: test route /ai');
-    if (path === '/ai') { console.log('DEBUG: appel de setupAIPage()'); setupAIPage(); }
-    console.log('DEBUG: test route /contact');
-    if (path === '/contact') { console.log('DEBUG: appel de setupContact()'); setupContact(); }
-    // prepare and trigger scroll-based reveals
-    setTimeout(setupScrollAnimations, 0);
-    // Particles: Home uses hero canvas; other routes use route-wide canvas
+    if (path === '/onboarding') { renderOnboarding(); }
+    if (path === '/dashboard') { renderDashboard(); }
+    if (path === '/community') { renderCommunity(); }
+    if (path === '/settings') { renderSettings(); }
+    if (path === '/ai') { setupAIPage(); }
+    if (path === '/contact') { setupContact(); }
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(setupScrollAnimations);
+    } else {
+      setTimeout(setupScrollAnimations, 0);
+    }
     if (path === '/') {
       try { setupNewsletter(); } catch {}
       stopRouteParticles();
       stopSectionParticles();
       startHeroParticles();
       stopLogoParticles();
-      // On mobile, overlay the page and cards with floating bubbles at low opacity
       if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
         startRouteParticles();
         startSectionParticles();
         startCardParticles();
       } else {
-        // Desktop: apply bubble canvas across the entire homepage
         startRouteParticles();
         stopCardParticles();
       }
@@ -418,21 +422,11 @@ try {
       startLogoParticles();
     }
     __activePath = path;
-    console.log('DEBUG: sortie de setActiveRoute, path =', path);
   }
 
   window.addEventListener('hashchange', () => {
-    console.log('DEBUG: hashchange détecté ->', location.hash);
     setActiveRoute(location.hash || '#/ai');
-  });
-  // Close mobile menu on route change
-  window.addEventListener('hashchange', () => {
-    const nav = document.getElementById('main-nav');
-    const btn = document.getElementById('nav-toggle');
-    if (nav) nav.classList.remove('open');
-    if (btn) btn.setAttribute('aria-expanded','false');
-    const bd = document.getElementById('nav-backdrop');
-    bd?.classList.remove('open');
+    closeMobileNav();
   });
 
   // Always use hamburger menu: force mobile nav layout regardless of width
@@ -446,8 +440,7 @@ try {
     document.body.classList.add('force-mobile');
     // Ensure overlay state remains consistent when resizing
     if (!mainNav?.classList.contains('open')) {
-      navBtn?.setAttribute('aria-expanded','false');
-      navBackdrop?.classList.remove('open');
+      closeMobileNav();
     }
   }
   window.addEventListener('resize', onViewportChange);
@@ -530,12 +523,18 @@ try {
 
   // Badges on nav links (messages + community)
   function setNavBadgeFor(hrefSel, n){
-    const link = document.querySelector(`#main-nav a[href="${hrefSel}"]`);
+    const link = navLinks.get(hrefSel);
     if (!link) return;
-    let b = link.querySelector('.nav-badge');
-    if (!b) { b = document.createElement('span'); b.className = 'nav-badge'; link.appendChild(b); }
-    b.textContent = String(Math.max(0, n|0));
-    b.hidden = (n|0) === 0;
+    let badge = navBadges.get(hrefSel);
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      link.appendChild(badge);
+      navBadges.set(hrefSel, badge);
+    }
+    const value = Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : Math.max(0, n|0);
+    badge.textContent = String(value);
+    badge.hidden = value === 0;
   }
   function countsByKind(){
     const arr = loadNotifs();
@@ -864,7 +863,7 @@ try {
   setActiveRoute = function(hash){
     origSetActiveRoute(hash);
     try {
-      const path = (hash.replace('#','')||'/');
+      const path = normalizeRoutePath(hash);
       if (path === '/community') markAllByTypeSeen('reply');
     } catch {}
   };
@@ -1554,7 +1553,6 @@ try {
     if (supabase) return true;
     try {
       const env = await fetch('/api/env').then(r => r.json());
-      if (DEBUG_AUTH) console.log('ENV (ensure client)', env);
       if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       supabase = createClient(env.url, env.anonKey, {
@@ -1568,7 +1566,6 @@ try {
   }
 
   async function signInGoogle(){
-    if (DEBUG_AUTH) console.log('signInGoogle clicked');
     try {
       const ok = await ensureSupabaseClient();
       if (!ok) throw new Error('Supabase indisponible');
@@ -1602,7 +1599,6 @@ try {
         throw err;
       }
       const data = payload.profile;
-      console.log('createAnonymousProfile -> profile:', data);
       // Ne pas connecter automatiquement l’utilisateur : on lui fournit le code et on le laisse se connecter manuellement.
       setActiveProfile(null);
       authSession = null;
@@ -1617,7 +1613,6 @@ try {
         try { inputCode.select(); } catch {}
       }
     } catch (e) {
-      console.log('createAnonymousProfile exception:', e);
       console.error('createAnonymousProfile failed', e);
       if (status) {
         status.classList.add('error');
@@ -1656,9 +1651,7 @@ try {
         .select('id, code_unique, full_name, user_id')
         .eq('code_unique', code)
         .single();
-      console.log('loginWithCode -> data:', data, 'error:', error);
       if (error) {
-        console.log('loginWithCode Supabase error:', error);
         if (status && (error.code === 'PGRST116' || (error.message || '').includes('Row not found'))) {
           status.classList.add('error'); status.textContent = 'Code invalide.';
           return;
@@ -1666,7 +1659,6 @@ try {
         throw error;
       }
       if (!data) {
-        console.log('loginWithCode -> no data for code', code);
         if (status) { status.classList.add('error'); status.textContent = 'Code invalide.'; }
         return;
       }
@@ -1681,7 +1673,6 @@ try {
       if (input) input.value = '';
       location.hash = '#/dashboard';
     } catch (e) {
-      console.log('loginWithCode exception:', e);
       console.error('loginWithCode failed', e);
       if (status) { status.classList.add('error'); status.textContent = 'Connexion impossible pour le moment.'; }
     } finally {
@@ -1758,29 +1749,16 @@ try {
   });
 
   // Mobile nav toggle
-  const navBtn = document.getElementById('nav-toggle');
-  const mainNav = document.getElementById('main-nav');
-  const navBackdrop = document.getElementById('nav-backdrop');
   navBtn?.addEventListener('click', () => {
     const isOpen = mainNav?.classList.toggle('open');
     navBtn.setAttribute('aria-expanded', String(!!isOpen));
     if (isOpen) navBackdrop?.classList.add('open'); else navBackdrop?.classList.remove('open');
   });
   // Close menu when clicking a link (mobile)
-  $$('.main-nav .nav-link').forEach(a => a.addEventListener('click', () => {
-    if (mainNav?.classList.contains('open')) {
-      mainNav.classList.remove('open');
-      navBtn?.setAttribute('aria-expanded','false');
-      navBackdrop?.classList.remove('open');
-    }
-  }));
+  $$('.main-nav .nav-link').forEach(a => a.addEventListener('click', closeMobileNav));
 
   // Close when tapping backdrop
-  navBackdrop?.addEventListener('click', () => {
-    mainNav?.classList.remove('open');
-    navBtn?.setAttribute('aria-expanded','false');
-    navBackdrop?.classList.remove('open');
-  });
+  navBackdrop?.addEventListener('click', closeMobileNav);
 
   // Auth flows
   $('#form-signup')?.addEventListener('submit', (e) => {
@@ -1875,7 +1853,6 @@ try {
     // Resolve current child from Supabase if connected, else from local store
     let currentChild = null;
     const loadChild = async () => {
-      console.log('DEBUG: entrée dans loadChild()');
       if (useRemote()) {
         try {
           if (isAnonProfile()) {
@@ -1924,13 +1901,11 @@ try {
             const child = mapRowToChild(r);
             if (!child) return null;
             try {
-              console.log('DEBUG: avant Promise.all (AI loadChild growth fetch)', { childId: r.id });
               const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
                 supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
                 supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
                 supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
               ]);
-              console.log('DEBUG: après Promise.all (AI loadChild growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
               (gm||[])
                 .map(m => {
                   const h = m.height_cm == null ? null : Number(m.height_cm);
@@ -1960,7 +1935,6 @@ try {
     };
 
     const loadChildById = async (id) => {
-      console.log('DEBUG: entrée dans loadChildById()', { id });
       if (!id) return null;
       if (useRemote()) {
         try {
@@ -1999,13 +1973,11 @@ try {
           const ch = mapRowToChild(r);
           if (!ch) return null;
           try {
-              console.log('DEBUG: avant Promise.all (AI loadChildById growth fetch)', { childId: r.id });
               const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
                 supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
                 supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
                 supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
               ]);
-              console.log('DEBUG: après Promise.all (AI loadChildById growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length });
               (gm||[])
                 .map(m => {
                   const h = m.height_cm == null ? null : Number(m.height_cm);
@@ -2289,14 +2261,12 @@ try {
         const childId = insChild.id;
         const msPayload = measurementRecords.map(m => ({ ...m, child_id: childId }));
         if (msPayload.length) {
-          msPayload.forEach(p => console.log('Sending growth_measurements:', p));
           await supabase
             .from('growth_measurements')
             .upsert(msPayload, { onConflict: 'child_id,month' });
         }
         const teethPayloads = teethRecords.map(t => ({ ...t, child_id: childId }));
         if (teethPayloads.length) {
-          teethPayloads.forEach(p => console.log('Sending growth_teeth:', p));
           await supabase.from('growth_teeth').insert(teethPayloads);
         }
         const sleepPayloads = sleepRecords.map(s => ({ ...s, child_id: childId }));
@@ -2378,8 +2348,6 @@ try {
   async function renderDashboard() {
     const rid = (renderDashboard._rid = (renderDashboard._rid || 0) + 1);
     let child = null; let all = [];
-    try { console.log('Step UI: entering renderDashboard', document.querySelector('#app')); } catch {}
-    console.log('DEBUG: entrée dans renderDashboard()');
     if (useRemote()) {
       // Remote load
       const uid = getActiveProfileId();
@@ -2393,8 +2361,6 @@ try {
       child = all.find(c => c.id === user?.primaryChildId) || all[0];
     }
     const dom = $('#dashboard-content');
-    try { console.log('Step UI: dashboard content container', dom); } catch {}
-    try { console.log('DEBUG: juste avant rendu central — container #app =', document.querySelector('#app')); } catch {}
     if (!dom) {
       const appEl = document.querySelector('#app');
       if (appEl) {
@@ -2423,7 +2389,6 @@ try {
     const renderForChild = async (child) => {
       const ageM = ageInMonths(child.dob);
       const ageTxt = formatAge(child.dob);
-      try { console.log('DEBUG: juste avant rendu central — renderForChild', { childId: child?.id, firstName: child?.firstName }); } catch {}
       if (rid !== renderDashboard._rid) return;
     // Compute latest health snapshot values
     const msAll = normalizeMeasures(child.growth.measurements);
@@ -2625,7 +2590,6 @@ try {
                 throw new Error('Pas de user_id');
               }
               const promises = [];
-              console.log('Step 0: initializing promises array');
               if (Number.isFinite(height) || Number.isFinite(weight)) {
                 const payload = {
                   child_id: child.id,
@@ -2634,8 +2598,6 @@ try {
                   weight_kg: Number.isFinite(weight) ? Number(weight) : null,
                 };
                 if (payload.child_id && Number.isInteger(payload.month)) {
-                  console.log('Sending growth_measurements:', payload);
-                  console.log('Step 1: pushing growth_measurements');
                   promises.push(
                     supabase
                       .from('growth_measurements')
@@ -2646,17 +2608,14 @@ try {
                 }
               }
               if (Number.isFinite(sleep) && child?.id) {
-                console.log('Step 2: pushing growth_sleep insert promise');
                 promises.push((async () => {
                   try {
-                    console.log('DEBUG: tentative insert growth_sleep', { childId: child?.id, sleep, month });
                     const { data, error } = await supabase
                       .from('growth_sleep')
                       .insert([{ child_id: child.id, month, hours: sleep }]);
                     if (error) {
                       console.error('Erreur insert growth_sleep:', error);
                     } else {
-                      console.log('Insert growth_sleep OK:', data);
                     }
                   } catch (err) {
                     console.error('Exception insert growth_sleep:', err);
@@ -2665,21 +2624,14 @@ try {
               }
               if (Number.isFinite(teeth)) {
                 const payload = { child_id: child.id, month, count: teeth };
-                console.log('Sending growth_teeth:', payload);
-                console.log('Step 3: pushing growth_teeth');
                 promises.push(
                   supabase
                     .from('growth_teeth')
                     .insert([payload])
                 );
               }
-              console.log('Step 4: before Promise.all on measures', { count: promises.length });
-              console.log('DEBUG: avant Promise.allSettled', promises);
               const results = await Promise.allSettled(promises);
-              console.log('DEBUG: après Promise.allSettled', results);
-              console.log('Step 5: Promise.all resolved for measures');
               await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
-              console.log('Step UI: before renderDashboard', document.querySelector('#app'));
               renderDashboard();
               handled = true;
             }
@@ -2868,7 +2820,6 @@ try {
               milestones: Array.isArray(primary.milestones)? primary.milestones : [],
               growth: { measurements: [], sleep: [], teeth: [] }
             };
-            console.log('DEBUG: avant Promise.all (remote growth fetch)', { childId: primary.id });
             const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await Promise.all([
               supabase
                 .from('growth_measurements')
@@ -2879,7 +2830,6 @@ try {
               supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
             ]);
             gmErr = gmErrLocal;
-            console.log('DEBUG: après Promise.all (remote growth fetch)', { gm: (gm||[]).length, gs: (gs||[]).length, gt: (gt||[]).length, gmErr });
             const measurements = (gm || []).map(m => {
               const h = m.height_cm == null ? null : Number(m.height_cm);
               const w = m.weight_kg == null ? null : Number(m.weight_kg);
@@ -3678,7 +3628,6 @@ try {
               const promises = [];
               if (measurementRecords.length) {
                 const msPayloads = measurementRecords.map(m => ({ ...m, child_id: id }));
-                msPayloads.forEach(p => console.log('Sending growth_measurements:', p));
                 promises.push(
                   supabase
                     .from('growth_measurements')
@@ -3687,15 +3636,12 @@ try {
               }
               if (Number.isFinite(teethVal)) {
                 const payloadTeeth = { child_id: id, month: ageMNow, count: teethVal };
-                console.log('Sending growth_teeth:', payloadTeeth);
                 promises.push(
                   supabase.from('growth_teeth').insert([payloadTeeth])
                 );
               }
               if (promises.length) {
-                console.log('DEBUG: avant Promise.all (settings optional measures)', promises);
                 const results = await Promise.all(promises);
-                console.log('DEBUG: après Promise.all (settings optional mesures)', results);
               }
               const summary = summarizeUpdate(prevSnap, nextSnap);
               await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
