@@ -930,7 +930,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   top:18px;
   bottom:22px;
   width:2px;
-  background:linear-gradient(180deg, rgba(110,163,255,.35), rgba(255,194,214,.28));
+  background:linear-gradient(180deg, rgba(132,168,255,.55), rgba(255,194,214,.32));
   border-radius:999px;
 }
 .timeline-item{
@@ -939,25 +939,27 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   grid-template-columns:24px 1fr;
   gap:16px;
   padding:18px 20px;
-  background:linear-gradient(135deg, rgba(138,182,255,.18), rgba(255,194,214,.12));
-  border:1px solid rgba(255,255,255,.42);
+  background:linear-gradient(135deg, rgba(18,29,66,.78), rgba(33,21,53,.72));
+  border:1px solid rgba(148,172,255,.28);
   border-radius:20px;
-  box-shadow:0 12px 28px rgba(15,35,80,.14);
-  transition:transform .18s ease, box-shadow .24s ease;
-  color:#142049;
+  box-shadow:0 12px 28px rgba(5,10,25,.45);
+  backdrop-filter:blur(16px);
+  transition:transform .18s ease, box-shadow .24s ease, border-color .24s ease;
+  color:#f4f6ff;
 }
 .timeline-item:hover{
   transform:translateY(-2px);
-  box-shadow:0 18px 38px rgba(15,35,80,.2);
+  box-shadow:0 18px 40px rgba(6,14,38,.52);
+  border-color:rgba(176,194,255,.45);
 }
 .timeline-marker{
   position:relative;
   width:14px;
   height:14px;
   border-radius:999px;
-  background:linear-gradient(135deg, var(--blue-strong), var(--violet-strong));
-  border:3px solid rgba(255,255,255,.95);
-  box-shadow:0 0 0 4px rgba(110,163,255,.25);
+  background:linear-gradient(135deg, rgba(118,154,255,1), rgba(195,155,255,1));
+  border:3px solid rgba(18,25,56,.6);
+  box-shadow:0 0 0 4px rgba(124,160,255,.32);
   margin-top:6px;
 }
 .timeline-marker::after{
@@ -985,7 +987,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   font-weight:700;
   text-transform:uppercase;
   letter-spacing:.08em;
-  color:rgba(20,32,73,.65);
+  color:rgba(226,233,255,.7);
 }
 .timeline-meta time{
   color:inherit;
@@ -996,20 +998,21 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   gap:6px;
   padding:4px 10px;
   border-radius:999px;
-  background:rgba(110,163,255,.18);
-  color:var(--blue-strong);
+  background:rgba(118,154,255,.22);
+  color:#f4f6ff;
   font-size:11px;
   letter-spacing:.08em;
+  border:1px solid rgba(184,204,255,.28);
 }
 .timeline-summary{
   font-size:15px;
   font-weight:600;
   line-height:1.55;
-  color:#142049;
+  color:#ffffff;
 }
 .timeline-comment{
   font-size:13px;
-  color:rgba(20,32,73,.68);
+  color:rgba(226,233,255,.72);
 }
 .timeline-comment strong{
   font-weight:600;
