@@ -11,7 +11,7 @@ import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
 import { buildOpenAIUrl } from './openai-url.js';
-import { generateImage as generateImageFromPrompt, IMAGE_MODEL } from './generate-image.js';
+import { generateImage as generateImageFromPrompt, IMAGE_MODEL, getImageModelCandidates } from './generate-image.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -321,7 +321,11 @@ const server = createServer(async (req, res) => {
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : Number.isInteger(e?.statusCode) ? e.statusCode : 500;
       const details = e?.details ? String(e.details) : String(e?.message || e);
-      const payload = { error: 'Image generation failed', details, model: IMAGE_MODEL };
+      const triedModels = Array.isArray(e?.triedModels) ? e.triedModels : undefined;
+      const fallbackModels = getImageModelCandidates();
+      const lastTriedModel = triedModels?.length ? triedModels[triedModels.length - 1]?.model : undefined;
+      const payload = { error: 'Image generation failed', details, model: lastTriedModel || fallbackModels[0] || IMAGE_MODEL };
+      if (triedModels?.length) payload.triedModels = triedModels;
       return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
     }
   }
