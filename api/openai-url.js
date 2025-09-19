@@ -1,6 +1,8 @@
 const DEFAULT_BASE_URL = 'https://api.openai.com';
 const VERSION_SUFFIX_REGEX = /\/v\d+[a-z0-9-]*$/i;
 const VERSION_PREFIX_REGEX = /^v\d+[a-z0-9-]*/i;
+const AZURE_HOST_REGEX = /\.openai\.azure\.com$/i;
+const AZURE_DEPLOYMENT_SEGMENT_REGEX = /\/openai\/deployments\//i;
 
 function normalizeString(value) {
   if (value == null) return '';
@@ -11,12 +13,14 @@ function normalizeString(value) {
 export function resolveOpenAIBaseUrl(value, defaultBase = DEFAULT_BASE_URL) {
   const raw = normalizeString(value);
   if (!raw) {
-    return { baseUrl: defaultBase, version: undefined };
+    return { baseUrl: defaultBase, version: undefined, searchParams: undefined };
   }
 
-  let trimmed = raw.replace(/\/+$/, '');
+  const { urlPart, searchParams } = splitUrlAndQuery(raw);
+
+  let trimmed = urlPart.replace(/\/+$/, '');
   if (!trimmed) {
-    return { baseUrl: defaultBase, version: undefined };
+    return { baseUrl: defaultBase, version: undefined, searchParams };
   }
 
   let version;
@@ -27,8 +31,13 @@ export function resolveOpenAIBaseUrl(value, defaultBase = DEFAULT_BASE_URL) {
     trimmed = trimmed.slice(0, -match[0].length).replace(/\/+$/, '');
   }
 
+  if (!version && searchParams?.has('api-version')) {
+    const paramVersion = normalizeString(searchParams.get('api-version'));
+    if (paramVersion) version = paramVersion;
+  }
+
   const baseUrl = trimmed || defaultBase;
-  return { baseUrl, version };
+  return { baseUrl, version, searchParams };
 }
 
 export function normalizeOpenAIBaseUrl(value, defaultBase = DEFAULT_BASE_URL) {
@@ -66,7 +75,18 @@ export function normalizeOpenAIPath(path, defaultVersion = 'v1') {
 }
 
 export function buildOpenAIUrl(baseUrl, path, defaultVersion = 'v1') {
-  const { baseUrl: cleanBase, version } = resolveOpenAIBaseUrl(baseUrl);
+  const { baseUrl: cleanBase, version, searchParams } = resolveOpenAIBaseUrl(baseUrl);
+
+  if (isAzureOpenAIBaseUrl(cleanBase)) {
+    return buildAzureOpenAIUrl({
+      baseUrl: cleanBase,
+      path,
+      version: version || undefined,
+      defaultVersion,
+      searchParams,
+    });
+  }
+
   const normalizedPath = isVersionedOpenAIPath(path)
     ? normalizeOpenAIPath(path)
     : normalizeOpenAIPath(path, version || defaultVersion);
@@ -80,3 +100,62 @@ export function isVersionedOpenAIPath(path) {
 }
 
 export { DEFAULT_BASE_URL };
+
+function splitUrlAndQuery(raw) {
+  let urlPart = raw;
+  let searchParams;
+
+  const queryIndex = urlPart.indexOf('?');
+  if (queryIndex >= 0) {
+    const query = urlPart.slice(queryIndex + 1);
+    urlPart = urlPart.slice(0, queryIndex);
+    try {
+      searchParams = new URLSearchParams(query);
+    } catch {
+      searchParams = undefined;
+    }
+  }
+
+  const hashIndex = urlPart.indexOf('#');
+  if (hashIndex >= 0) {
+    urlPart = urlPart.slice(0, hashIndex);
+  }
+
+  return { urlPart, searchParams };
+}
+
+function isAzureOpenAIBaseUrl(value) {
+  const raw = normalizeString(value);
+  if (!raw) return false;
+
+  try {
+    const parsed = new URL(raw);
+    if (AZURE_HOST_REGEX.test(parsed.hostname)) return true;
+    if (AZURE_DEPLOYMENT_SEGMENT_REGEX.test(parsed.pathname)) return true;
+  } catch {}
+
+  return AZURE_HOST_REGEX.test(raw) || AZURE_DEPLOYMENT_SEGMENT_REGEX.test(raw);
+}
+
+function buildAzureOpenAIUrl({ baseUrl, path, version, defaultVersion, searchParams }) {
+  const normalizedBase = normalizeString(baseUrl).replace(/\/+$/, '');
+  const normalizedPath = normalizeAzurePath(path);
+  const params = new URLSearchParams(searchParams ? searchParams.toString() : '');
+
+  const detectedVersion = normalizeString(version);
+  const overrideCandidate = normalizeString(defaultVersion);
+  const apiVersion = detectedVersion || (overrideCandidate && overrideCandidate.toLowerCase() !== 'v1' ? overrideCandidate : '');
+  if (apiVersion) {
+    params.set('api-version', apiVersion);
+  }
+
+  const queryString = params.toString();
+  const joined = normalizedPath ? `${normalizedBase}/${normalizedPath}` : normalizedBase;
+  return queryString ? `${joined}?${queryString}` : joined;
+}
+
+function normalizeAzurePath(path) {
+  const raw = normalizeString(path);
+  if (!raw) return '';
+  return raw.replace(/^[\/]+/, '').replace(/\/{2,}/g, '/');
+}
