@@ -2196,19 +2196,14 @@ try {
         box.innerHTML = `<div class="muted">Aucun profil enfant chargé pour l’IA. <a href="#/onboarding">Créer un profil</a>.</div>`;
         return;
       }
-      const ageTxt = formatAge(child.dob);
       const selectedId = child.id;
       const opts = slim.map(c => `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${escapeHtml(c.firstName)}${c.dob?` • ${formatAge(c.dob)}`:''}</option>`).join('');
       box.innerHTML = `
         <div class="hstack">
-          <strong>Profil IA:</strong>
-          <label style="margin-left:6px">Enfant
+          <label style="display:flex;align-items:center;gap:8px;">
+            <span>Profil IA • Enfant</span>
             <select id="ai-child-switcher">${opts}</select>
           </label>
-          <span class="chip">${escapeHtml(child.firstName)} • ${ageTxt}</span>
-          <span class="chip">Allergies: ${escapeHtml(child.context.allergies||'—')}</span>
-          <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
-          <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
         </div>`;
       const sel = box.querySelector('#ai-child-switcher');
       if (sel && !sel.dataset.bound) {
