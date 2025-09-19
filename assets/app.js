@@ -2160,7 +2160,17 @@ try {
           setTimeout(() => { if (sImage.textContent === successMsg) sImage.textContent = ''; }, 4000);
         }
       } catch (err) {
-        if (sImage) sImage.textContent = 'Génération impossible pour le moment.';
+        console.error('Image generation failed', err);
+        if (sImage) {
+          const rawMsg = typeof err?.message === 'string' ? err.message : '';
+          let friendly = 'Génération impossible pour le moment.';
+          if (/missing openai/i.test(rawMsg)) {
+            friendly = 'Configuration serveur incomplète pour la génération d’images.';
+          } else if (/model/i.test(rawMsg) && /(not available|does not exist|no access)/i.test(rawMsg)) {
+            friendly = 'Modèle d’image indisponible pour cette clé API.';
+          }
+          sImage.textContent = friendly;
+        }
       } finally {
         fImage.dataset.busy = '0';
         if (submitBtn) submitBtn.disabled = false;

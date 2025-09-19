@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Ped’IA — Suivi & évolution 0–7 ans (SPA prototype)",
   "scripts": {
-    "start": "node api/server.js"
+    "start": "node api/server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"
