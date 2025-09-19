@@ -11,9 +11,12 @@ import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
 import { buildOpenAIUrl } from './openai-url.js';
-import { enqueueImageJob } from './generate-image.js';
-import { runImageGenerationWorker } from './generate-image-worker.js';
-import { getImageJobStatus } from './generate-image-status.js';
+import {
+  enqueueImageJob,
+  runImageGenerationWorker,
+  getImageJobStatus,
+  extractErrorDetails,
+} from './image.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -314,58 +317,180 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/generate-image') {
-    try {
-      const body = await parseJson(req);
-      const job = await enqueueImageJob(body);
-      return send(res, 202, JSON.stringify(job), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      const isJsonError = e?.name === 'SyntaxError';
-      const status = isJsonError ? 400 : Number.isInteger(e?.status) ? e.status : 500;
-      const details = e?.details ? String(e.details) : String(e?.message || e);
-      const payload = {
-        error: isJsonError ? 'Invalid JSON body' : 'Image job enqueue failed',
-        details,
-      };
-      return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+  if (url.pathname === '/api/image') {
+    if (req.method === 'OPTIONS') {
+      return send(res, 204, '', {
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      });
     }
-  }
 
-  if (req.method === 'POST' && url.pathname === '/api/generate-image-worker') {
-    try {
-      let body = {};
+    let body = {};
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
       try {
         body = await parseJson(req);
-      } catch (err) {
-        if (err?.name === 'SyntaxError') {
-          return send(res, 400, JSON.stringify({ error: 'Invalid JSON body' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      } catch (e) {
+        if (e?.name === 'SyntaxError') {
+          const payload = { ok: false, data: { message: 'Invalid JSON body' } };
+          return send(res, 400, JSON.stringify(payload), {
+            'Content-Type': 'application/json; charset=utf-8',
+          });
         }
-        throw err;
+        throw e;
       }
-      const limitValue = Number(url.searchParams.get('limit') ?? url.searchParams.get('batchSize') ?? body.limit ?? body.batchSize);
-      const normalizedLimit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(Math.floor(limitValue), 10) : undefined;
-      const summary = await runImageGenerationWorker({ limit: normalizedLimit });
-      const payload = normalizedLimit ? { ...summary, limit: normalizedLimit } : summary;
-      return send(res, 200, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      const status = Number.isInteger(e?.status) ? e.status : 500;
-      const details = e?.details ? String(e.details) : String(e?.message || e);
-      return send(res, status, JSON.stringify({ error: 'Image worker failed', details }), { 'Content-Type': 'application/json; charset=utf-8' });
     }
-  }
 
-  if (req.method === 'GET' && url.pathname === '/api/generate-image-status') {
-    try {
-      const jobId = url.searchParams.get('jobId') || url.searchParams.get('jobid');
-      if (!jobId || !jobId.trim()) {
-        return send(res, 400, JSON.stringify({ error: 'jobId query parameter required' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    const actionValue = body?.action ?? url.searchParams.get('action');
+    const action =
+      typeof actionValue === 'string'
+        ? actionValue.trim().toLowerCase()
+        : String(actionValue ?? '').trim().toLowerCase();
+
+    if (!action) {
+      const payload = { ok: false, data: { message: 'Missing action parameter' } };
+      return send(res, 400, JSON.stringify(payload), {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+    }
+
+    const parseJobId = () => {
+      if (body && typeof body === 'object') {
+        const candidate = body.id ?? body.jobId ?? body.jobid;
+        if (typeof candidate === 'string' && candidate.trim()) {
+          return candidate.trim();
+        }
       }
-      const status = await getImageJobStatus(jobId.trim());
-      return send(res, 200, JSON.stringify({ jobId: jobId.trim(), ...status }), { 'Content-Type': 'application/json; charset=utf-8' });
+      const candidate =
+        url.searchParams.get('id') ??
+        url.searchParams.get('jobId') ??
+        url.searchParams.get('jobid');
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+      return '';
+    };
+
+    try {
+      if (action === 'generate') {
+        if (req.method !== 'POST') {
+          return send(
+            res,
+            405,
+            JSON.stringify({ ok: false, data: { message: 'Method Not Allowed' } }),
+            {
+              'Content-Type': 'application/json; charset=utf-8',
+              Allow: 'POST,OPTIONS',
+            }
+          );
+        }
+        const job = await enqueueImageJob(body);
+        return send(
+          res,
+          202,
+          JSON.stringify({ ok: true, data: job }),
+          { 'Content-Type': 'application/json; charset=utf-8' }
+        );
+      }
+
+      if (action === 'status') {
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          return send(
+            res,
+            405,
+            JSON.stringify({ ok: false, data: { message: 'Method Not Allowed' } }),
+            {
+              'Content-Type': 'application/json; charset=utf-8',
+              Allow: 'GET,POST,OPTIONS',
+            }
+          );
+        }
+        const jobId = parseJobId();
+        if (!jobId) {
+          return send(
+            res,
+            400,
+            JSON.stringify({ ok: false, data: { message: 'jobId query parameter required' } }),
+            { 'Content-Type': 'application/json; charset=utf-8' }
+          );
+        }
+        const statusData = await getImageJobStatus(jobId);
+        return send(
+          res,
+          200,
+          JSON.stringify({ ok: true, data: { id: jobId, jobId, ...statusData } }),
+          { 'Content-Type': 'application/json; charset=utf-8' }
+        );
+      }
+
+      if (action === 'worker') {
+        if (req.method !== 'POST') {
+          return send(
+            res,
+            405,
+            JSON.stringify({ ok: false, data: { message: 'Method Not Allowed' } }),
+            {
+              'Content-Type': 'application/json; charset=utf-8',
+              Allow: 'POST,OPTIONS',
+            }
+          );
+        }
+        const limit = (() => {
+          if (body && typeof body === 'object') {
+            const fromBody = Number(body.limit ?? body.batchSize);
+            if (Number.isFinite(fromBody) && fromBody > 0) {
+              return Math.min(Math.floor(fromBody), 10);
+            }
+          }
+          const fromQuery = Number(
+            url.searchParams.get('limit') ?? url.searchParams.get('batchSize')
+          );
+          if (Number.isFinite(fromQuery) && fromQuery > 0) {
+            return Math.min(Math.floor(fromQuery), 10);
+          }
+          return 3;
+        })();
+        const summary = await runImageGenerationWorker({ limit });
+        return send(
+          res,
+          200,
+          JSON.stringify({ ok: true, data: { ...summary, limit } }),
+          { 'Content-Type': 'application/json; charset=utf-8' }
+        );
+      }
+
+      return send(
+        res,
+        400,
+        JSON.stringify({ ok: false, data: { message: 'Unknown action' } }),
+        { 'Content-Type': 'application/json; charset=utf-8' }
+      );
     } catch (e) {
-      const status = Number.isInteger(e?.status) ? e.status : 500;
-      const details = e?.details ? String(e.details) : String(e?.message || e);
-      return send(res, status, JSON.stringify({ error: 'Status lookup failed', details }), { 'Content-Type': 'application/json; charset=utf-8' });
+      const status = Number.isInteger(e?.status)
+        ? e.status
+        : Number.isInteger(e?.statusCode)
+          ? e.statusCode
+          : 500;
+      const message =
+        typeof e?.message === 'string' && e.message
+          ? e.message
+          : status >= 500
+            ? 'Internal Server Error'
+            : 'Bad Request';
+      const data = { message };
+      if (e?.details) {
+        data.details = e.details;
+      } else if (status >= 500) {
+        const details = await extractErrorDetails(e);
+        if (details && details !== message) {
+          data.details = details;
+        }
+      }
+      return send(
+        res,
+        status,
+        JSON.stringify({ ok: false, data }),
+        { 'Content-Type': 'application/json; charset=utf-8' }
+      );
     }
   }
 

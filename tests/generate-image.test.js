@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { generateImage, getImageModelCandidates, IMAGE_MODEL } from '../api/generate-image.js';
+import { generateImage, getImageModelCandidates, IMAGE_MODEL } from '../api/image.js';
 
 function resetImageEnv() {
   delete process.env.OPENAI_IMAGE_MODEL;
