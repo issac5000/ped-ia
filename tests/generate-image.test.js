@@ -132,6 +132,69 @@ test('generateImage fallback behaviour', async (t) => {
       }
     );
   });
+
+  await t.test('handles Azure asynchronous image generation flow', async (t) => {
+    const originalFetch = global.fetch;
+    const originalModel = process.env.OPENAI_IMAGE_MODEL;
+    const originalModels = process.env.OPENAI_IMAGE_MODELS;
+    resetImageEnv();
+    t.after(() => {
+      global.fetch = originalFetch;
+      restoreEnvValue('OPENAI_IMAGE_MODEL', originalModel);
+      restoreEnvValue('OPENAI_IMAGE_MODELS', originalModels);
+    });
+
+    const calls = [];
+    const headersMap = (values = {}) => ({
+      get(name) {
+        if (!name) return null;
+        const lower = name.toLowerCase();
+        const table = Object.create(null);
+        for (const [key, value] of Object.entries(values)) {
+          table[key.toLowerCase()] = value;
+        }
+        return table[lower] ?? null;
+      },
+    });
+
+    global.fetch = async (url, options = {}) => {
+      calls.push({ url, options });
+      if (calls.length === 1) {
+        return {
+          ok: true,
+          status: 202,
+          headers: headersMap({
+            'operation-location': 'https://demo-resource.openai.azure.com/openai/operations/images/op123?api-version=2024-02-01',
+            'retry-after': '0',
+          }),
+          async json() {
+            return { id: 'op123', status: 'notRunning' };
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: headersMap(),
+        async json() {
+          return { status: 'succeeded', result: { data: [{ b64_json: 'YXp1cmVCYXNlNjQ=' }] } };
+        },
+      };
+    };
+
+    const result = await generateImage(
+      { prompt: 'Dessine une fusée sur Azure' },
+      { apiKey: 'test', baseUrl: 'https://demo-resource.openai.azure.com/openai', apiVersion: '2024-02-01' }
+    );
+
+    assert.equal(result.imageBase64, 'YXp1cmVCYXNlNjQ=');
+    assert.equal(result.mimeType, 'image/png');
+    assert.equal(result.model, IMAGE_MODEL);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[1].options.method, 'GET');
+    assert.match(calls[1].url, /operations\/images\/op123/i);
+  });
 });
 
 // Sanity check: ensure helper exposes ordered candidates

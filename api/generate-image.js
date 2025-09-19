@@ -7,6 +7,11 @@ import { buildOpenAIUrl, resolveOpenAIBaseUrl } from './openai-url.js';
 const IMAGES_PATH = 'images/generations';
 const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
 const LEGACY_FALLBACK_MODELS = ['dall-e-3'];
+const AZURE_HOST_REGEX = /\.openai\.azure\.com$/i;
+const AZURE_PATH_HINT_REGEX = /\/openai\//i;
+const AZURE_IMAGE_POLL_TIMEOUT_MS = 60_000;
+const AZURE_IMAGE_POLL_INITIAL_DELAY_MS = 1_000;
+const AZURE_IMAGE_POLL_MAX_DELAY_MS = 5_000;
 
 export const IMAGE_MODEL = DEFAULT_IMAGE_MODEL;
 
@@ -110,15 +115,20 @@ async function generateWithOpenAI({ prompt, contextText, config, model }) {
     err.endpoint = endpoint;
     throw err;
   }
-
-  const image = data?.data?.[0]?.b64_json;
-  if (!image) {
-    const err = new Error('No image data returned from OpenAI');
-    err.status = 502;
-    throw err;
+  const imageDirect = extractImagePayload(data);
+  if (imageDirect) {
+    return { imageBase64: imageDirect, mimeType: 'image/png', model };
   }
 
-  return { imageBase64: image, mimeType: 'image/png', model };
+  if (isAzureConfig(config)) {
+    const azureResult = await pollAzureImageOperation({ config, response, payload: data, model });
+    if (azureResult) return azureResult;
+  }
+
+  const err = new Error('No image data returned from OpenAI');
+  err.status = 502;
+  err.raw = data;
+  throw err;
 }
 
 export function getImageModelCandidates({ requestedModel, overrides } = {}) {
@@ -201,6 +211,159 @@ function normalizeOpenAIError(error, model) {
   }
   error.model = model;
   return error;
+}
+
+function extractImagePayload(data) {
+  if (!data || typeof data !== 'object') return '';
+  const direct = data?.data?.[0]?.b64_json;
+  if (direct) return direct;
+  const nested = data?.result?.data?.[0]?.b64_json;
+  if (nested) return nested;
+  const alt = data?.result?.image_base64;
+  if (typeof alt === 'string' && alt.trim()) return alt.trim();
+  return '';
+}
+
+function isAzureConfig(config) {
+  const base = config?.baseUrl || config?.baseURL || '';
+  if (!base) return false;
+  try {
+    const url = new URL(base);
+    if (AZURE_HOST_REGEX.test(url.hostname)) return true;
+  } catch {}
+  return AZURE_HOST_REGEX.test(base) || AZURE_PATH_HINT_REGEX.test(base);
+}
+
+async function pollAzureImageOperation({ config, response, payload, model }) {
+  const operationUrl = resolveAzureOperationUrl({ config, response, payload });
+  const status = typeof payload?.status === 'string' ? payload.status.toLowerCase() : '';
+  const directImage = extractImagePayload(payload);
+  if (directImage && (!status || status === 'succeeded')) {
+    return { imageBase64: directImage, mimeType: 'image/png', model };
+  }
+  if (!operationUrl) {
+    return null;
+  }
+
+  const deadline = Date.now() + AZURE_IMAGE_POLL_TIMEOUT_MS;
+  let delayMs = computeNextAzureDelay(0, response);
+  while (Date.now() < deadline) {
+    if (delayMs > 0) await delay(delayMs);
+    const pollRes = await fetch(operationUrl, {
+      method: 'GET',
+      headers: buildOpenAIHeaders(config),
+    });
+
+    let pollData;
+    try {
+      pollData = await pollRes.json();
+    } catch (error) {
+      const err = new Error('Invalid response from OpenAI');
+      err.status = 502;
+      err.cause = error;
+      err.model = model;
+      throw err;
+    }
+
+    const image = extractImagePayload(pollData);
+    const pollStatus = typeof pollData?.status === 'string' ? pollData.status.toLowerCase() : '';
+
+    if (!pollRes.ok && pollStatus !== 'running' && pollStatus !== 'notrunning') {
+      const message = pollData?.error?.message || `OpenAI API error (${pollRes.status})`;
+      const err = new Error(message);
+      err.status = pollRes.status;
+      if (pollData?.error?.code) err.code = pollData.error.code;
+      else if (pollData?.error?.type) err.code = pollData.error.type;
+      err.raw = pollData;
+      err.model = model;
+      throw err;
+    }
+
+    if (pollStatus === 'succeeded') {
+      if (image) return { imageBase64: image, mimeType: 'image/png', model };
+      const err = new Error('No image data returned from OpenAI');
+      err.status = 502;
+      err.raw = pollData;
+      err.model = model;
+      throw err;
+    }
+
+    if (pollStatus === 'failed' || pollStatus === 'cancelled' || pollStatus === 'canceled') {
+      const message = pollData?.error?.message || `Azure image generation ${pollStatus}`;
+      const err = new Error(message);
+      if (pollData?.error?.code) err.code = pollData.error.code;
+      err.status = pollRes.ok ? 500 : pollRes.status;
+      err.raw = pollData;
+      err.model = model;
+      throw err;
+    }
+
+    if (image && !pollStatus) {
+      return { imageBase64: image, mimeType: 'image/png', model };
+    }
+
+    delayMs = computeNextAzureDelay(delayMs, pollRes);
+  }
+
+  const timeoutError = new Error('Azure image generation timed out');
+  timeoutError.status = 504;
+  timeoutError.code = 'timeout';
+  timeoutError.model = model;
+  throw timeoutError;
+}
+
+function resolveAzureOperationUrl({ config, response, payload }) {
+  const headerNames = ['operation-location', 'azure-asyncoperation', 'location'];
+  for (const name of headerNames) {
+    const value = readHeader(response, name);
+    if (value) return value;
+  }
+  const opId = typeof payload?.id === 'string' ? payload.id.trim() : '';
+  if (!opId) return '';
+  return buildOpenAIUrl(config.baseUrl, `operations/images/${opId}`, config.apiVersion);
+}
+
+function computeNextAzureDelay(previousDelay, res) {
+  const retryAfter = parseRetryAfter(readHeader(res, 'retry-after'));
+  if (retryAfter != null) return Math.max(0, retryAfter);
+  if (!previousDelay) return AZURE_IMAGE_POLL_INITIAL_DELAY_MS;
+  const next = previousDelay * 1.5;
+  return Math.min(Math.max(0, next), AZURE_IMAGE_POLL_MAX_DELAY_MS);
+}
+
+function delay(ms) {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readHeader(res, name) {
+  if (!res || !res.headers) return '';
+  const lower = name.toLowerCase();
+  try {
+    if (typeof res.headers.get === 'function') {
+      const value = res.headers.get(name) ?? res.headers.get(lower);
+      if (value) return value;
+    }
+  } catch {}
+  try {
+    if (lower in res.headers) return res.headers[lower];
+    if (name in res.headers) return res.headers[name];
+  } catch {}
+  return '';
+}
+
+function parseRetryAfter(value) {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) return numeric * 1000;
+  const asDate = Date.parse(trimmed);
+  if (!Number.isNaN(asDate)) {
+    const delta = asDate - Date.now();
+    if (Number.isFinite(delta)) return delta;
+  }
+  return null;
 }
 
 function shouldFallbackToNextModel(error) {
