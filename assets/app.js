@@ -2062,6 +2062,74 @@ try {
       } finally { sStory.textContent=''; fStory.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fStory && (fStory.dataset.bound='1');
 
+    // Générateur d'images
+    const fImage = document.getElementById('form-ai-image');
+    const sImage = document.getElementById('ai-image-status');
+    const loaderImage = document.getElementById('ai-image-loader');
+    const errorImage = document.getElementById('ai-image-error');
+    const figureImage = document.getElementById('ai-image-result');
+    const imgPreview = figureImage?.querySelector('img');
+    if (fImage && !fImage.dataset.bound) fImage.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (fImage.dataset.busy === '1') return;
+      const fd = new FormData(fImage);
+      const prompt = fd.get('prompt')?.toString().trim();
+      if (!prompt) {
+        if (sImage) sImage.textContent = 'Décrivez une scène pour lancer la génération.';
+        return;
+      }
+      fImage.dataset.busy = '1';
+      const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
+      if (sImage) sImage.textContent = 'Génération en cours…';
+      if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
+      if (figureImage) figureImage.hidden = true;
+      if (imgPreview) imgPreview.removeAttribute('src');
+      if (loaderImage) loaderImage.hidden = false;
+      try {
+        const res = await fetch('/api/image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt })
+        });
+        const raw = await res.text();
+        if (!res.ok) {
+          let msg = 'Impossible de générer l’illustration pour le moment.';
+          try {
+            const payload = JSON.parse(raw || '{}');
+            msg = payload?.error || payload?.message || msg;
+          } catch {}
+          throw new Error(msg);
+        }
+        let payload = {};
+        try {
+          payload = JSON.parse(raw || '{}');
+        } catch {
+          payload = { image: raw };
+        }
+        const rawImage = payload?.image || payload?.base64 || payload?.data || payload?.result || '';
+        const mime = typeof payload?.mime === 'string' ? payload.mime : 'image/png';
+        const dataUrl = rawImage.startsWith('data:') ? rawImage : (rawImage ? `data:${mime.startsWith('image/') ? mime : 'image/png'};base64,${rawImage}` : '');
+        if (!dataUrl) throw new Error('Réponse image invalide.');
+        if (imgPreview) {
+          imgPreview.src = dataUrl;
+        }
+        if (figureImage) figureImage.hidden = false;
+        if (sImage) sImage.textContent = 'Illustration prête 🎨';
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Illustration indisponible.';
+        if (errorImage) {
+          errorImage.textContent = message;
+          errorImage.hidden = false;
+        }
+        if (sImage) sImage.textContent = '';
+      } finally {
+        if (loaderImage) loaderImage.hidden = true;
+        fImage.dataset.busy = '0';
+        const submitBtnFinal = fImage.querySelector('button[type="submit"],input[type="submit"]');
+        if (submitBtnFinal) submitBtnFinal.disabled = false;
+      }
+    }); fImage && (fImage.dataset.bound='1');
+
     // Discussion
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');

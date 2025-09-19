@@ -574,6 +574,33 @@
             </div>
           </div>
 
+          <div class="card stack ai-image-card">
+            <div class="card-header">
+              <h3>Générateur d’images</h3>
+              <p class="muted">Donnez vie à l’imagination de votre enfant ! Décrivez une scène que votre enfant souhaite explorer et notre IA en fera une illustration joyeuse et adaptée.</p>
+            </div>
+            <form id="form-ai-image" class="form-grid ai-image-form">
+              <label>Décrivez la scène souhaitée
+                <textarea name="prompt" rows="3" placeholder="Ex : Un dragon gentil qui apprend à compter avec des nuages colorés" required></textarea>
+              </label>
+              <div class="hstack">
+                <button class="btn btn-primary" type="submit">Générer</button>
+                <span id="ai-image-status" class="muted"></span>
+              </div>
+            </form>
+            <div id="ai-image-feedback" class="ai-image-feedback">
+              <div id="ai-image-loader" class="ai-image-loader" hidden>
+                <span class="ai-image-spinner" aria-hidden="true"></span>
+                <span>Création en cours…</span>
+              </div>
+              <div id="ai-image-error" class="ai-image-error" role="alert" hidden></div>
+              <figure id="ai-image-result" class="ai-image-result" hidden>
+                <img src="" alt="Illustration générée par l’IA" loading="lazy" decoding="async" />
+                <figcaption class="muted">Aperçu généré par l’IA</figcaption>
+              </figure>
+            </div>
+          </div>
+
         </div>
       </section>
 
