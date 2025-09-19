@@ -2124,6 +2124,47 @@ try {
       } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); fChat.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fChat && (fChat.dataset.bound='1');
 
+    // Générateur d’images
+    const fImage = document.getElementById('form-ai-image');
+    const sImage = document.getElementById('ai-image-status');
+    const imgPreview = document.getElementById('ai-image-preview');
+    const imgEmpty = document.getElementById('ai-image-empty');
+    if (fImage && !fImage.dataset.bound) fImage.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (fImage.dataset.busy === '1') return;
+      const fd = new FormData(fImage);
+      const prompt = (fd.get('prompt')?.toString() || '').trim();
+      if (!prompt) {
+        if (sImage) sImage.textContent = 'Décrivez ce que vous souhaitez voir.';
+        return;
+      }
+      fImage.dataset.busy = '1';
+      const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
+      if (sImage) sImage.textContent = 'Génération en cours…';
+      if (imgPreview) { imgPreview.hidden = true; imgPreview.removeAttribute('src'); }
+      if (imgEmpty) imgEmpty.classList.remove('hidden');
+      try {
+        const result = await askAIImage(prompt, currentChild);
+        const mime = result.mimeType || 'image/png';
+        const src = `data:${mime};base64,${result.imageBase64}`;
+        if (imgPreview) {
+          imgPreview.src = src;
+          imgPreview.alt = `Illustration générée pour : ${prompt}`;
+          imgPreview.hidden = false;
+        }
+        if (imgEmpty) imgEmpty.classList.add('hidden');
+        if (sImage) {
+          sImage.textContent = 'Image générée !';
+          setTimeout(() => { if (sImage.textContent === 'Image générée !') sImage.textContent = ''; }, 4000);
+        }
+      } catch (err) {
+        if (sImage) sImage.textContent = 'Génération impossible pour le moment.';
+      } finally {
+        fImage.dataset.busy = '0';
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }); fImage && (fImage.dataset.bound='1');
+
     // Charger l’enfant de façon asynchrone pour personnaliser l’IA
     const renderIndicator = async (child) => {
       const route = document.querySelector('section[data-route="/ai"]');
@@ -4267,6 +4308,29 @@ try {
     if (!res.ok) throw new Error('AI backend error');
     const data = await res.json();
     return data.text || '';
+  }
+
+  async function askAIImage(prompt, child){
+    const payload = { prompt, child };
+    const res = await fetch('/api/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const raw = await res.text();
+    if (!res.ok) {
+      try {
+        const j = JSON.parse(raw);
+        throw new Error(j.error || j.details || raw || 'AI backend error');
+      } catch {
+        throw new Error(raw || 'AI backend error');
+      }
+    }
+    let data;
+    try { data = JSON.parse(raw); }
+    catch { data = {}; }
+    if (!data.imageBase64) throw new Error('Invalid image payload');
+    return { imageBase64: data.imageBase64, mimeType: data.mimeType || 'image/png' };
   }
 
   // Animations révélées au scroll
