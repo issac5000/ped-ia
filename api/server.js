@@ -10,6 +10,7 @@ import { processAnonChildrenRequest } from '../lib/anon-children.js';
 import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
+import { buildOpenAIUrl } from './openai-url.js';
 import { generateImage as generateImageFromPrompt, IMAGE_MODEL } from './generate-image.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -173,7 +174,8 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
     { role:'user', content: user }
   ];
 
-  const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.4, messages: convo })
@@ -199,7 +201,8 @@ Donne des idées de menus et recettes adaptées à l’âge, en excluant les all
 Prends en compte le type d’alimentation (allaitement/biberon/diversification), le style d’appétit et, si pertinent, les repères de sommeil.
 Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
-  const r = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const r = await fetch(endpoint, {
     method:'POST', headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
       {role:'system', content: system}, {role:'user', content: user}
@@ -225,7 +228,8 @@ Rédige une histoire de ${duration} minute(s), adaptée à l’âge, avec le pr�
 Style ${sleepy ? 'très apaisant, vocabulaire doux, propice au coucher' : 'dynamique et bienveillant'}.
 Texte clair, phrases courtes. Termine par une petite morale positive.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
-  const r = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const r = await fetch(endpoint, {
     method:'POST', headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.7, messages:[
       {role:'system', content: system}, {role:'user', content: user}
@@ -244,7 +248,8 @@ async function aiComment(body){
   const config = requireOpenAIConfig();
   const content = String(body.content || '').slice(0, 2000);
   const system = `Tu es Ped’IA, un assistant bienveillant pour parents. Rédige un commentaire clair, positif et bref (moins de 50 mots) sur la mise à jour fournie.`;
-  const r = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const r = await fetch(endpoint, {
     method:'POST', headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
       {role:'system', content: system}, {role:'user', content}
