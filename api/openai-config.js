@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = 'https://api.openai.com';
+import { DEFAULT_BASE_URL, resolveOpenAIBaseUrl } from './openai-url.js';
 
 function normalizeString(value) {
   if (value == null) return '';
@@ -6,27 +6,15 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
-function normalizeBaseUrl(value) {
-  const raw = normalizeString(value);
-  if (!raw) return DEFAULT_BASE_URL;
-
-  const trimmed = raw.replace(/\/+$/, '');
-  const lower = trimmed.toLowerCase();
-  if (lower.endsWith('/v1')) {
-    const withoutVersion = trimmed.slice(0, -3).replace(/\/+$/, '');
-    return withoutVersion || DEFAULT_BASE_URL;
-  }
-
-  return trimmed || DEFAULT_BASE_URL;
-}
-
 export function getOpenAIConfig(overrides = {}) {
   const apiKey = normalizeString(overrides.apiKey ?? overrides.key ?? process.env.OPENAI_API_KEY ?? process.env.OPENAI_KEY);
   const baseCandidate = overrides.baseUrl ?? overrides.baseURL ?? process.env.OPENAI_BASE_URL ?? process.env.OPENAI_API_BASE ?? DEFAULT_BASE_URL;
-  const baseUrl = normalizeBaseUrl(baseCandidate);
+  const { baseUrl, version: detectedVersion } = resolveOpenAIBaseUrl(baseCandidate, DEFAULT_BASE_URL);
   const organization = normalizeString(overrides.organization ?? overrides.org ?? process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID);
   const project = normalizeString(overrides.project ?? process.env.OPENAI_PROJECT_ID ?? process.env.OPENAI_PROJECT);
-  return { apiKey, baseUrl, organization, project };
+  const versionOverride = normalizeString(overrides.version ?? overrides.apiVersion ?? process.env.OPENAI_API_VERSION ?? '');
+  const apiVersion = versionOverride || detectedVersion || undefined;
+  return { apiKey, baseUrl, organization, project, apiVersion };
 }
 
 export function buildOpenAIHeaders(config, extraHeaders = {}) {

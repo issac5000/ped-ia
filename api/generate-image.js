@@ -2,8 +2,9 @@
 // Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
 
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
+import { buildOpenAIUrl, resolveOpenAIBaseUrl } from './openai-url.js';
 
-const IMAGES_PATH = '/v1/images/generations';
+const IMAGES_PATH = 'images/generations';
 export const IMAGE_MODEL = 'gpt-image-1';
 
 export async function generateImage(body = {}, configOverrides = undefined) {
@@ -42,7 +43,7 @@ async function generateWithOpenAI({ prompt, contextText, config }) {
     `Description à illustrer: ${prompt}`
   ].join('\n');
 
-  const endpoint = buildImagesEndpoint(config);
+  const endpoint = buildOpenAIUrl(config.baseUrl, IMAGES_PATH, config.apiVersion);
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: buildOpenAIHeaders(config),
@@ -83,29 +84,15 @@ async function generateWithOpenAI({ prompt, contextText, config }) {
 function resolveConfig(overrides) {
   if (overrides && typeof overrides === 'object' && overrides.apiKey) {
     const baseUrl = overrides.baseUrl || overrides.baseURL;
+    const { baseUrl: normalizedBase, version } = resolveOpenAIBaseUrl(baseUrl);
+    const versionOverride = overrides.apiVersion ?? overrides.version;
     return {
       ...overrides,
-      baseUrl: normalizeBaseUrl(baseUrl),
+      baseUrl: normalizedBase,
+      apiVersion: versionOverride ?? version ?? undefined,
     };
   }
   return getOpenAIConfig(overrides || {});
-}
-
-function buildImagesEndpoint(config) {
-  const base = normalizeBaseUrl(config?.baseUrl || config?.baseURL);
-  return `${base}${IMAGES_PATH}`;
-}
-
-function normalizeBaseUrl(value) {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  if (!raw) return 'https://api.openai.com';
-  const trimmed = raw.replace(/\/+$/, '');
-  const lower = trimmed.toLowerCase();
-  if (lower.endsWith('/v1')) {
-    const withoutVersion = trimmed.slice(0, -3).replace(/\/+$/, '');
-    return withoutVersion || 'https://api.openai.com';
-  }
-  return trimmed || 'https://api.openai.com';
 }
 
 export default async function handler(req, res) {

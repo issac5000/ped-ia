@@ -2,6 +2,7 @@
 // Regroupe les anciens endpoints /api/ai/advice, /api/ai/recipes, /api/ai/story et /api/ai/comment
 
 import { buildOpenAIHeaders, getOpenAIConfig } from '../openai-config.js';
+import { buildOpenAIUrl } from '../openai-url.js';
 
 const ACTION_HANDLERS = {
   advice: handleAdvice,
@@ -74,7 +75,8 @@ Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
 Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
 
-  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
@@ -110,7 +112,8 @@ Prends en compte le type d’alimentation (allaitement/biberon/diversification),
 Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
 
-  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
@@ -145,7 +148,8 @@ Style ${sleepy ? 'très apaisant, vocabulaire doux, propice au coucher' : 'dynam
 Texte clair, phrases courtes. Termine par une petite morale positive.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
 
-  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
@@ -172,7 +176,8 @@ async function handleComment(body, config) {
   const content = String(body?.content || '').slice(0, 2000);
   const system = 'Tu es Ped’IA, un assistant bienveillant pour parents. Rédige un commentaire clair, positif et bref (moins de 50 mots) sur la mise à jour fournie.';
 
-  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const endpoint = buildOpenAIUrl(config.baseUrl, 'chat/completions', config.apiVersion);
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
