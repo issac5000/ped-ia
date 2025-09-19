@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { processAnonChildrenRequest } from '../lib/anon-children.js';
 import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
+import { generateImage as generateImageFromPrompt } from './generate-image.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -300,6 +301,17 @@ const server = createServer(async (req, res) => {
       return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/generate-image') {
+    try {
+      const body = await parseJson(req);
+      const out = await generateImageFromPrompt(body);
+      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      const status = Number.isInteger(e?.status) ? e.status : Number.isInteger(e?.statusCode) ? e.statusCode : 500;
+      return send(res, status, JSON.stringify({ error: 'Image generation failed', details: String(e?.message || e) }), { 'Content-Type': 'application/json; charset=utf-8' });
     }
   }
 

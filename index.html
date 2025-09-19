@@ -574,6 +574,26 @@
             </div>
           </div>
 
+          <div class="card stack">
+            <div class="card-header">
+              <h3>Générateur d’images&nbsp;: donne vie à l’imagination de votre enfant</h3>
+              <p class="muted">Parents et enfants peuvent décrire la scène qu’ils souhaitent explorer. L’IA traduit ces idées en illustrations joyeuses et adaptées à leur univers. Chaque image devient une invitation à rêver et à raconter de nouvelles histoires.</p>
+            </div>
+            <form id="form-ai-image" class="form-grid">
+              <label>Description de l’image
+                <textarea name="prompt" rows="3" placeholder="Ex&nbsp;: Un dragon gentil qui apprend à voler avec un enfant." required></textarea>
+              </label>
+              <div class="hstack">
+                <button class="btn btn-primary" type="submit">Générer</button>
+                <span id="ai-image-status" class="muted"></span>
+              </div>
+            </form>
+            <div id="ai-image-output" class="card ai-image-output">
+              <p id="ai-image-empty" class="muted">L’image générée s’affichera ici.</p>
+              <img id="ai-image-preview" alt="Prévisualisation de l’image générée" hidden loading="lazy" />
+            </div>
+          </div>
+
         </div>
       </section>
 
