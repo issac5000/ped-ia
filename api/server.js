@@ -63,6 +63,8 @@ async function loadLocalEnv() {
 await loadLocalEnv();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const API_KEY = process.env.OPENAI_API_KEY || '';
+const GOOGLE_KEY = process.env.GOOGLE_API_KEY || '';
+const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image-preview';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -145,6 +147,34 @@ function safeChildSummary(child) {
     jalons: child.milestones,
     mesures: child.growth,
   };
+}
+
+function extractGeminiImage(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const candidates = [];
+  if (Array.isArray(payload.images)) candidates.push(...payload.images);
+  if (Array.isArray(payload.predictions)) candidates.push(...payload.predictions);
+  if (Array.isArray(payload.data)) candidates.push(...payload.data);
+  if (Array.isArray(payload.output)) candidates.push(...payload.output);
+  const inline = payload?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  if (inline?.inlineData?.data) {
+    return { data: inline.inlineData.data, mime: inline.inlineData.mimeType || 'image/png' };
+  }
+  for (const item of candidates) {
+    if (!item || typeof item !== 'object') continue;
+    const data = item.data || item.base64 || item.base64Data || item.bytesBase64Encoded || item.image || item.inlineData?.data;
+    if (data) {
+      return { data, mime: item.mimeType || item.mime || item.inlineData?.mimeType || 'image/png' };
+    }
+  }
+  return null;
+}
+
+function createHttpError(status, message, details) {
+  const err = new Error(message || 'Request failed');
+  err.statusCode = status;
+  if (details) err.details = details;
+  return err;
 }
 
 /**
@@ -252,6 +282,38 @@ async function aiComment(body){
   return { text };
 }
 
+async function generateImage(prompt){
+  if (!GOOGLE_KEY) throw createHttpError(500, 'Missing GOOGLE_API_KEY');
+  const cleanPrompt = prompt.trim().slice(0, 800);
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateImage?key=${GOOGLE_KEY}`;
+  console.info('[api/image] Envoi Gemini', { model: GEMINI_IMAGE_MODEL, promptLength: cleanPrompt.length });
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: { text: cleanPrompt } })
+  });
+  const text = await response.text();
+  console.info('[api/image] Statut Gemini', { status: response.status, ok: response.ok });
+  if (!response.ok) {
+    let parsed = null;
+    try { parsed = JSON.parse(text || '{}'); } catch {}
+    const msg = parsed?.error?.message || parsed?.error || text || 'Gemini error';
+    throw createHttpError(response.status, msg, parsed?.error);
+  }
+  let payload = null;
+  try { payload = JSON.parse(text || '{}'); }
+  catch (err) {
+    console.error('[api/image] JSON invalide Gemini', err);
+    throw createHttpError(502, 'Réponse inattendue du service image');
+  }
+  const imageNode = extractGeminiImage(payload);
+  if (!imageNode?.data) {
+    console.error('[api/image] Aucune image retournée', payload);
+    throw createHttpError(502, 'Aucune image générée');
+  }
+  return { image: imageNode.data, mime: imageNode.mime || 'image/png' };
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   // Pré-vol CORS
@@ -261,6 +323,26 @@ const server = createServer(async (req, res) => {
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization'
     });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/image') {
+    try {
+      const body = await parseJson(req);
+      const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+      if (!prompt) {
+        return send(res, 400, JSON.stringify({ error: 'Prompt manquant' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+      console.info('[api/image] Reçu', { promptLength: prompt.length, promptPreview: prompt.slice(0, 80) });
+      const result = await generateImage(prompt);
+      return send(res, 200, JSON.stringify(result), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      console.error('[api/image] Erreur', e);
+      const isSyntax = e instanceof SyntaxError;
+      const status = Number(e?.statusCode) || Number(e?.status) || (isSyntax ? 400 : 500);
+      const payload = { error: isSyntax ? 'Requête JSON invalide' : (e?.message || 'Génération indisponible') };
+      if (e?.details) payload.details = e.details;
+      return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
   }
 
   if (req.method === 'POST' && url.pathname === '/api/ai') {

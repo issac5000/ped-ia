@@ -2078,6 +2078,7 @@ try {
         if (sImage) sImage.textContent = 'Décrivez une scène pour lancer la génération.';
         return;
       }
+      console.info('[AI image] Génération demandée', { promptLength: prompt.length, preview: prompt.slice(0, 80) });
       fImage.dataset.busy = '1';
       const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
       if (sImage) sImage.textContent = 'Génération en cours…';
@@ -2092,6 +2093,7 @@ try {
           body: JSON.stringify({ prompt })
         });
         const raw = await res.text();
+        console.info('[AI image] Réponse reçue', { status: res.status, ok: res.ok, bodySize: raw?.length ?? 0 });
         if (!res.ok) {
           let msg = 'Impossible de générer l’illustration pour le moment.';
           try {
@@ -2116,6 +2118,7 @@ try {
         if (figureImage) figureImage.hidden = false;
         if (sImage) sImage.textContent = 'Illustration prête 🎨';
       } catch (err) {
+        console.error('[AI image] Erreur', err);
         const message = err instanceof Error ? err.message : 'Illustration indisponible.';
         if (errorImage) {
           errorImage.textContent = message;
