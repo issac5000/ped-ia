@@ -30,26 +30,44 @@ function buildContextText(child) {
   return 'Contexte enfant: aucun détail spécifique.';
 }
 
-async function generateWithOpenAI({ prompt, contextText, apiKey }) {
+async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 55000 }) {
   const description = [
     'Crée une illustration colorée, douce et rassurante adaptée aux enfants de 0 à 7 ans. Style chaleureux, sans violence ni éléments effrayants.',
     contextText,
     `Description à illustrer: ${prompt}`
   ].join('\n');
 
-  const resp = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-image-1',
-      prompt: description,
-      size: '1024x1024',
-      response_format: 'b64_json'
-    })
-  });
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  let resp;
+  try {
+    resp = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt: description,
+        size: '1024x1024',
+        response_format: 'b64_json'
+      }),
+      signal: controller?.signal
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const err = new Error('OpenAI request timed out');
+      err.status = 504;
+      throw err;
+    }
+    const err = new Error(`Failed to reach OpenAI: ${error?.message || error}`);
+    err.status = 502;
+    throw err;
+  } finally {
+    if (timeout != null) clearTimeout(timeout);
+  }
 
   const text = await resp.text();
   if (!resp.ok) {
