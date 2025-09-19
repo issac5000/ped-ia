@@ -1,4 +1,4 @@
-// Expose Supabase env to the frontend (no secrets beyond anon key)
+// Expose la configuration Supabase côté front (uniquement l’URL et la clé anonyme)
 export default async function handler(req, res){
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');

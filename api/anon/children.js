@@ -1,5 +1,7 @@
 import { processAnonChildrenRequest } from '../../lib/anon-children.js';
 
+// Route API Next.js pour les opérations anonymes sur les profils enfants
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {

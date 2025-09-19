@@ -1,14 +1,14 @@
 let notifCount = 0;
 const NOTIF_LAST_KEY = 'pedia_notif_last';
 const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
-// Synap'Kids SPA — Front-only prototype with localStorage + Supabase Auth (Google)
+// Synap'Kids SPA — Prototype 100 % front avec localStorage + authentification Supabase (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 (async () => {
   document.body.classList.remove('no-js');
-  // Always use hamburger layout on all viewports
+  // Forcer l’interface « menu hamburger » sur tous les formats d’écran
   try { document.body.classList.add('force-mobile'); } catch {}
-  // Dom helpers available early
+  // Helpers DOM accessibles immédiatement
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const normalizeRoutePath = (input) => {
@@ -66,7 +66,7 @@ import { DEV_QUESTIONS } from './questions-dev.js';
     "/", "/signup", "/login", "/onboarding", "/dashboard",
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
-  // Data model keys
+  // Clés utilisées pour le stockage local du modèle de données
   const K = {
     user: 'pedia_user',
     children: 'pedia_children',
@@ -78,16 +78,16 @@ import { DEV_QUESTIONS } from './questions-dev.js';
   };
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
-  // Load Supabase env and client
+  // Chargement des informations Supabase et du client JS
   let supabase = null;
   let authSession = null;
   let activeProfile = null;
-  // Keep notification channels to clean up on logout
+  // Conserver la liste des canaux de notifications pour les nettoyer à la déconnexion
   let notifChannels = [];
   let anonNotifTimer = null;
-  // Track the last activated route to control scroll resets safely
+  // Conserver la dernière route activée pour maîtriser les remises à zéro du scroll
   let __activePath = null;
-  // Reveal observer (initialized later in setupScrollAnimations)
+  // Observateur d’animations de révélation (initialisé plus tard dans setupScrollAnimations)
   let revealObserver = null;
 
   const getActiveProfileId = () => activeProfile?.id || null;
@@ -241,7 +241,7 @@ import { DEV_QUESTIONS } from './questions-dev.js';
 
 
 
-    // Robust handling: if we return from Google with ?code in URL, exchange for a session
+    // Cas robuste : si Google renvoie ?code dans l’URL, on échange immédiatement contre une session
 try {
   const urlNow = new URL(window.location.href);
   if (urlNow.searchParams.get('code')) {
@@ -306,33 +306,33 @@ try {
         } else {
           setActiveRoute(location.hash);
         }
-        // Rebind realtime notifications on auth change
+        // Ré-attache les notifications temps réel à chaque changement d’authentification
         if (authSession?.user) {
           setupRealtimeNotifications();
           updateBadgeFromStore();
-          // Always fetch missed notifs after login to avoid gaps during OAuth redirects
+          // Récupère systématiquement les notifications manquées après connexion (lacunes possibles après OAuth)
           fetchMissedNotifications();
-          // Only replay toast popups once per session
+          // Ne rejoue les toasts qu’une seule fois par session
           if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
         } else {
-          // cleanup channels on logout
+          // Nettoie les canaux lors de la déconnexion
           try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
           notifChannels = [];
         }
       });
-      // Initial routing once auth state is resolved
+      // Routage initial une fois l’état d’authentification déterminé
       if (location.hash) {
         setActiveRoute(location.hash);
       } else {
         location.hash = isProfileLoggedIn() ? '#/dashboard' : '#/';
       }
-      // Bind notifications for existing session and replay once on open
+      // Abonne les notifications pour une session déjà active et rejoue les toasts une fois
       if (authSession?.user) {
         setupRealtimeNotifications();
         updateBadgeFromStore();
-        // Always fetch missed on entry if already logged in
+        // Récupère systématiquement les notifications manquées à l’ouverture si déjà connecté
         fetchMissedNotifications();
-        // Replay toast popups at most once per session
+        // Ne rejoue les toasts qu’une fois par session
         if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
       }
     }
@@ -344,7 +344,7 @@ try {
 
   
 
-  // Bootstrap defaults
+  // Valeurs par défaut de démarrage
   function bootstrap() {
     if (!store.get(K.forum)) store.set(K.forum, { topics: [] });
     if (!store.get(K.children)) store.set(K.children, []);
@@ -352,7 +352,7 @@ try {
     if (!store.get(K.session)) store.set(K.session, { loggedIn: false });
   }
 
-  // Routing
+  // Gestion du routage
   const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
   function setActiveRoute(hash) {
     const requestedPath = normalizeRoutePath(hash);
@@ -429,44 +429,44 @@ try {
     closeMobileNav();
   });
 
-  // Always use hamburger menu: force mobile nav layout regardless of width
+  // Forcer en permanence le menu hamburger, quelle que soit la largeur d’écran
   function evaluateHeaderFit(){
     document.body.classList.add('force-mobile');
   }
 
-  // On resize/orientation, re-evaluate header fit and reset menu state if not mobile
+  // Au redimensionnement/orientation, réévaluer l’entête et réinitialiser l’état du menu si besoin
   function onViewportChange(){
-    // Always keep mobile mode
+    // Conserver systématiquement le mode mobile
     document.body.classList.add('force-mobile');
-    // Ensure overlay state remains consistent when resizing
+    // Garantir la cohérence de l’overlay lors des redimensionnements
     if (!mainNav?.classList.contains('open')) {
       closeMobileNav();
     }
   }
   window.addEventListener('resize', onViewportChange);
   window.addEventListener('orientationchange', onViewportChange);
-  // Also re-check after resize settles to account for font reflow
+  // Recontrôle après stabilisation du resize pour tenir compte du reflow des polices
   let resizeRaf = null;
   window.addEventListener('resize', () => {
     if (resizeRaf) cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(onViewportChange);
   });
-  // Re-evaluate after full load (fonts/assets can change widths)
+  // Nouvelle évaluation après chargement complet (les polices/ressources peuvent modifier les largeurs)
   window.addEventListener('load', evaluateHeaderFit);
 
   // --- Notifications (popup) -------------------------------------------------
-  // Toast-based notifications (auto-close after 4s; stackable)
+  // Notifications type toast (fermeture auto en 4 s, empilables)
   let notifyAudioCtx = null;
   function playNotifySound(){
     try {
-      // Create or reuse a single AudioContext
+      // Crée ou réutilise un AudioContext unique
       notifyAudioCtx = notifyAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const ctx = notifyAudioCtx;
       const now = ctx.currentTime + 0.01;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now); // soft chime
+      osc.frequency.setValueAtTime(880, now); // tintement doux
       gain.gain.setValueAtTime(0.0001, now);
       gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
@@ -489,7 +489,7 @@ try {
     try {
       const { title = 'Notification', text = '', actionHref = '', actionLabel = 'Voir', onAcknowledge } = opts || {};
       const host = getToastHost();
-      // Cap the stack to 4 by removing the oldest
+      // Limite la pile à 4 éléments en supprimant le plus ancien
       while (host.children.length >= 4) host.removeChild(host.firstElementChild);
       const toast = document.createElement('div');
       toast.className = 'notify-toast';
@@ -513,7 +513,7 @@ try {
       toast.querySelector('.nt-close').addEventListener('click', acknowledge);
       link.addEventListener('click', acknowledge);
       host.appendChild(toast);
-      // Discreet sound on notification
+      // Son discret lors d’une notification
       playNotifySound();
       const timer = setTimeout(hide, 4000);
       toast.addEventListener('mouseenter', () => clearTimeout(timer));
@@ -521,7 +521,7 @@ try {
     } catch {}
   }
 
-  // Badges on nav links (messages + community)
+  // Badges sur les liens de navigation (messages + communauté)
   function setNavBadgeFor(hrefSel, n){
     const link = navLinks.get(hrefSel);
     if (!link) return;
@@ -543,11 +543,11 @@ try {
     return { msg, reply };
   }
   function bumpMessagesBadge(){
-    // Keep for compatibility: recompute all badges from store
+    // Compatibilité : recalculer tous les badges depuis le store local
     updateBadgeFromStore();
   }
 
-  // --- Unseen notifications persistence (localStorage) ---
+  // --- Persistance des notifications non lues (localStorage) ---
   function loadNotifs(){ return store.get(K.notifs, []); }
   function saveNotifs(arr){ store.set(K.notifs, arr); }
   function addNotif(n){
@@ -665,7 +665,7 @@ try {
     });
   }
 
-  // Last-seen timestamps to fetch missed notifications at login
+  // Gestion des horodatages de dernière vue pour récupérer les notifications manquées à la connexion
   function getNotifLast(){ return store.get(NOTIF_LAST_KEY, {}); }
   function setNotifLast(obj){ store.set(NOTIF_LAST_KEY, obj); }
   function getNotifLastSince(kind){ const o = getNotifLast(); return o[kind] || null; }
@@ -682,7 +682,7 @@ try {
       const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
       const sinceMsg = getNotifLastSince('msg') || sinceDefault;
       const sinceRep = getNotifLastSince('reply') || sinceDefault;
-      // Messages to me since last seen
+      // Messages reçus depuis la dernière consultation
       const { data: msgs } = await supabase
         .from('messages')
         .select('id,sender_id,created_at')
@@ -707,7 +707,7 @@ try {
           }
         }
       }
-      // Replies to topics I own or where I already commented since last seen
+      // Réponses aux sujets que je possède ou où j’ai déjà commenté depuis la dernière visite
       const [{ data: topics }, { data: myReps }] = await Promise.all([
         supabase.from('forum_topics').select('id').eq('user_id', uid).limit(200),
         supabase.from('forum_replies').select('topic_id').eq('user_id', uid).limit(500)
@@ -730,7 +730,7 @@ try {
             const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds);
             names = new Map((profs||[]).map(p=>[p.id, p.full_name]));
           } catch {}
-          // also need titles map
+          // Nécessite également la table des titres
           let titleMap = new Map();
           try {
             const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id))));
@@ -753,7 +753,7 @@ try {
     } catch (e) { console.warn('fetchMissedNotifications error', e); }
   }
 
-  // Avoid replaying notifications on every route change: guard per session
+  // Éviter de rejouer les notifications à chaque changement de route : garde par session
   function hasBootedNotifs(){ try { return sessionStorage.getItem(NOTIF_BOOT_FLAG) === '1'; } catch { return false; } }
   function markBootedNotifs(){ try { sessionStorage.setItem(NOTIF_BOOT_FLAG, '1'); } catch {} }
 
@@ -766,10 +766,10 @@ try {
       }
       if (!useRemote()) return;
       const uid = getActiveProfileId(); if (!uid) return;
-      // Cleanup previous
+      // Nettoyer les abonnements précédents
       try { for (const ch of notifChannels) supabase.removeChannel(ch); } catch {}
       notifChannels = [];
-      // New messages addressed to me
+      // Nouveaux messages qui me sont adressés
       const chMsg = supabase
         .channel('notify-messages-'+uid)
         .on('postgres_changes', {
@@ -778,7 +778,7 @@ try {
           const row = payload.new || {};
           const fromId = row.sender_id != null ? String(row.sender_id) : '';
           if (!fromId) return;
-          // Resolve sender name
+          // Résoudre le nom de l’expéditeur
           let fromName = 'Un parent';
           try {
             const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle();
@@ -800,7 +800,7 @@ try {
         .subscribe();
       notifChannels.push(chMsg);
 
-      // Replies on topics I own or where I already commented
+      // Réponses sur les sujets que je possède ou où j’ai déjà commenté
       const chRep = supabase
         .channel('notify-replies-'+uid)
         .on('postgres_changes', {
@@ -808,7 +808,7 @@ try {
         }, async (payload) => {
           const r = payload.new || {};
           if (!r?.topic_id) return;
-          // Don't notify for my own replies
+          // Ignorer mes propres réponses
           if (String(r.user_id) === String(uid)) return;
           try {
             const { data: topic } = await supabase.from('forum_topics').select('id,user_id,title').eq('id', r.topic_id).maybeSingle();
@@ -823,7 +823,7 @@ try {
               isParticipant = (count||0) > 0;
             }
             if (!isParticipant) return;
-            // Resolve replier name
+            // Résoudre le nom de l’auteur de la réponse
             let who = 'Un parent';
             try {
               const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle();
@@ -849,16 +849,16 @@ try {
     } catch {}
   }
 
-  // Clear badges when user visits pages
+  // Remet les badges à zéro lorsque l’utilisateur visite les pages
   window.addEventListener('DOMContentLoaded', () => {
     const link = document.querySelector('#main-nav a[href="messages.html"]');
-    // For Messages: only hide the badge on click; real 'seen' occurs when opening a conversation
+    // Messages : on masque seulement le badge au clic, la vraie lecture se fait en ouvrant la conversation
     link?.addEventListener('click', () => { try { setNavBadgeFor('messages.html', 0); } catch {} });
     const linkComm = document.querySelector('#main-nav a[href="#/community"]');
     linkComm?.addEventListener('click', () => { markAllByTypeSeen('reply'); });
   });
 
-  // Mark community notifications as seen when visiting the community page
+  // Marque les notifications communauté comme lues lors de la visite de la page dédiée
   const origSetActiveRoute = setActiveRoute;
   setActiveRoute = function(hash){
     origSetActiveRoute(hash);
@@ -868,7 +868,7 @@ try {
     } catch {}
   };
 
-  // Soft pastel particles in hero
+  // Particules pastel dans le hero
   let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null, extra: 0, route: null, hero: null };
   function startHeroParticles(){
     try {
@@ -878,13 +878,13 @@ try {
       const hero = route.querySelector('.hero-v2') || route.querySelector('.hero');
       const cvs = document.getElementById('hero-canvas');
       if (!cvs) return;
-      // Keep canvas scoped to the hero only to avoid affecting page scroll
+      // Conserver le canvas dans le hero pour ne pas impacter le scroll de page
       if (cvs.parentElement !== hero && hero) hero.prepend(cvs);
       const width = hero ? hero.clientWidth : route.clientWidth;
       const height = hero ? hero.clientHeight : route.clientHeight;
-      const extra = 0; // no extra area; keep within hero bounds
+      const extra = 0; // aucune zone supplémentaire : rester dans les limites du hero
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-      // Reset sizing to match hero area
+      // Réinitialiser la taille pour épouser la zone du hero
       cvs.style.left = '';
       cvs.style.top = '';
       cvs.style.right = '';
@@ -901,7 +901,7 @@ try {
       heroParticlesState.extra = extra;
       heroParticlesState.route = route;
       heroParticlesState.hero = hero;
-      // Palette from CSS variables
+      // Palette dérivée des variables CSS
       const cs = getComputedStyle(document.documentElement);
       const palette = [
         cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
@@ -911,18 +911,18 @@ try {
       ];
       const W = width, H = height;
       const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
-      // Adjust particle count on low-power or small screens
+      // Ajuster le nombre de particules sur les écrans petits ou économes en énergie
       const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
       const lowPower = !!(conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || ''))) || Math.min(W, H) < 520;
       const N = lowPower
         ? Math.max(8, Math.min(24, Math.round(W*H/80000)))
         : Math.max(20, Math.min(48, Math.round(W*H/45000)));
       for (let i=0;i<N;i++) {
-        // Size buckets: small (50%), medium (35%), large (15%) with clearly different radii
+        // Trois familles de tailles : petites (50 %), moyennes (35 %), grandes (15 %) avec des rayons distincts
         const u = Math.random();
-        const r = u < .5 ? (5 + Math.random()*8)       // 5–13px
-                : (u < .85 ? (12 + Math.random()*12)   // 12–24px
-                : (22 + Math.random()*20));            // 22–42px
+        const r = u < .5 ? (5 + Math.random()*8)       // 5–13 px
+                : (u < .85 ? (12 + Math.random()*12)   // 12–24 px
+                : (22 + Math.random()*20));            // 22–42 px
         heroParticlesState.parts.push({
           x: Math.random()*W,
           y: Math.random()*H,
@@ -935,7 +935,7 @@ try {
           spin: .0015 + Math.random()*.0035
         });
       }
-      // Add extra particles concentrated around the hero section
+      // Ajoute des particules supplémentaires concentrées autour du hero
       const heroH = hero?.offsetHeight || 0;
       const extraHeroParts = heroH ? Math.round(N * 0.3) : 0;
       for (let i=0; i<extraHeroParts; i++) {
@@ -959,21 +959,21 @@ try {
         const ctx = heroParticlesState.ctx; if (!ctx) return;
         const now = t || performance.now();
         const dt = heroParticlesState.lastT? Math.min(40, now - heroParticlesState.lastT) : 16;
-        // Skip drawing when tab is hidden to save battery/CPU
+        // Ne dessine rien si l’onglet est caché pour préserver batterie/CPU
         if (document.hidden) { heroParticlesState.lastT = now; heroParticlesState.raf = requestAnimationFrame(step); return; }
         heroParticlesState.lastT = now;
         const hero = heroParticlesState.hero;
         const W = hero ? hero.clientWidth : 0;
         const H = hero ? hero.clientHeight : 0;
         const extra = heroParticlesState.extra || 0;
-        // Clear
+        // Efface la zone de dessin
         ctx.clearRect(0,0,W+extra,H+extra);
-        // Draw parts
+        // Dessine chaque particule
         for (const p of heroParticlesState.parts){
           p.drift += p.spin*dt;
           p.x += p.vx + Math.cos(p.drift)*.05;
           p.y += p.vy + Math.sin(p.drift)*.05;
-          // Wrap
+          // Remise en circulation quand une particule sort de l’aire
           if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
           if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
           ctx.globalAlpha = p.alpha;
@@ -984,7 +984,7 @@ try {
       };
       cancelAnimationFrame(heroParticlesState.raf);
       heroParticlesState.raf = requestAnimationFrame(step);
-      // Resize handler
+      // Gestion du redimensionnement
       const onR = ()=>{
         const hero = heroParticlesState.hero;
         if (!hero) return;
@@ -1035,7 +1035,7 @@ try {
     } catch {}
   }
 
-    // Full-page particles for routes (dashboard uses full-viewport fixed canvas)
+    // Particules plein écran pour les routes (dashboard utilise un canvas fixe couvrant tout l’écran)
     let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
   function startRouteParticles(){
     try {
@@ -1046,10 +1046,10 @@ try {
       const isDashboard = routePath === '/dashboard';
       const isHome = routePath === '/';
       const cvs = document.createElement('canvas');
-      // Dashboard: use fixed, full-viewport canvas so bubbles cover the whole page
+      // Dashboard : canvas fixe plein écran pour recouvrir toute la page
       if (isDashboard || isHome) {
         cvs.className = 'route-canvas route-canvas-fixed';
-        // Prevent canvas from blocking UI elements
+        // Empêche le canvas de bloquer les éléments d’interface
         cvs.style.pointerEvents = 'none';
         document.body.prepend(cvs);
       } else {
@@ -1063,7 +1063,7 @@ try {
       cvs.width = Math.floor(width * dpr);
       cvs.height = Math.floor(height * dpr);
       const ctx = cvs.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-        // palette from CSS variables
+        // Palette dérivée des variables CSS
         const cs = getComputedStyle(document.documentElement);
         const palette = [
           cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
@@ -1145,7 +1145,7 @@ try {
       } catch {}
     }
 
-    // Particles for the top page logo (shown on non-home routes)
+    // Particules autour du logo supérieur (affiché sur les routes hors accueil)
     let logoParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, el: null, dpr: 1 };
     function startLogoParticles(){
       try {
@@ -1233,7 +1233,7 @@ try {
       } catch {}
     }
 
-    // Particles for select sections on home (mobile only)
+    // Particules pour certaines sections de l’accueil (mobile uniquement)
     let sectionParticlesStates = [];
     function startSectionParticles(){
       try {
@@ -1432,7 +1432,7 @@ try {
     } catch {}
   }
 
-  // Header auth buttons
+  // Boutons d’authentification de l’en-tête
   function updateHeaderAuth() {
     const logged = isProfileLoggedIn();
     $('#btn-login').hidden = logged;
@@ -1499,13 +1499,13 @@ try {
     return false;
   }
 
-  // Ensure a row exists in profiles for the authenticated user without overwriting custom pseudo
+  // Garantir l’existence d’une ligne profil pour l’utilisateur authentifié sans écraser son pseudo
   async function ensureProfile(user){
     try {
       if (!supabase || !user?.id) return;
       const uid = user.id;
       const metaName = user.user_metadata?.full_name || user.email || '';
-      // Check existing profile
+      // Vérifier si un profil existe déjà
       const { data: existing, error: selErr } = await supabase
         .from('profiles')
         .select('id, full_name')
@@ -1513,17 +1513,17 @@ try {
         .maybeSingle();
       if (selErr) throw selErr;
       if (!existing) {
-        // Insert new profile with metadata defaults (no avatar)
+        // Insérer un nouveau profil avec les métadonnées par défaut (pas d’avatar)
         await supabase.from('profiles').insert({ id: uid, full_name: metaName });
       } else {
-        // Do not override a user‑chosen full_name; nothing else to update
+        // Ne pas écraser un full_name choisi par l’utilisateur ; rien d’autre à mettre à jour
       }
     } catch (e) {
       if (DEBUG_AUTH) console.warn('ensureProfile failed', e);
     }
   }
 
-  // Keep local user pseudo in sync with Supabase profile
+  // Garder le pseudo local synchronisé avec le profil Supabase
   async function syncUserFromSupabase() {
     try {
       if (!supabase) return;
@@ -1708,7 +1708,7 @@ try {
     e.preventDefault();
     redirectToLogin();
   });
-  // Buttons on /login and /signup pages (event delegation for robustness)
+  // Boutons des pages /login et /signup (délégation d’événements pour plus de robustesse)
   document.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target.closest('.btn-google-login') : null;
     if (t) {
@@ -1748,19 +1748,19 @@ try {
     location.hash = '#/login';
   });
 
-  // Mobile nav toggle
+  // Bascule du menu mobile
   navBtn?.addEventListener('click', () => {
     const isOpen = mainNav?.classList.toggle('open');
     navBtn.setAttribute('aria-expanded', String(!!isOpen));
     if (isOpen) navBackdrop?.classList.add('open'); else navBackdrop?.classList.remove('open');
   });
-  // Close menu when clicking a link (mobile)
+  // Ferme le menu lorsqu’un lien est cliqué (mobile)
   $$('.main-nav .nav-link').forEach(a => a.addEventListener('click', closeMobileNav));
 
-  // Close when tapping backdrop
+  // Ferme le menu lors d’un appui sur l’arrière-plan
   navBackdrop?.addEventListener('click', closeMobileNav);
 
-  // Auth flows
+  // Parcours d’authentification
   $('#form-signup')?.addEventListener('submit', (e) => {
     e.preventDefault();
     alert('Veuillez utiliser "Se connecter avec Google".');
@@ -1777,7 +1777,7 @@ try {
 
   function logout() { /* replaced by supabase signOut above */ }
 
-  // Contact (demo: save locally)
+  // Contact (démo : enregistrement local)
   function setupContact(){
     const form = $('#form-contact');
     const status = $('#contact-status');
@@ -1815,11 +1815,11 @@ try {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!emailInput) return;
-      // Honeypot anti‑bot
+      // Champ piège anti-bot
       const fd = new FormData(form);
       const trap = (fd.get('website')||'').toString().trim();
       if (trap) { return; }
-      // Validation
+      // Validation côté client
       const email = (fd.get('email')||'').toString().trim();
       if (!email) {
         if (status){ status.textContent = 'Veuillez renseigner votre email.'; status.classList.add('error'); }
@@ -1848,9 +1848,9 @@ try {
     form.dataset.bound='1';
   }
 
-  // --- AI page handlers ---
+  // --- Gestion de la page IA ---
   function setupAIPage(){
-    // Resolve current child from Supabase if connected, else from local store
+    // Déterminer l’enfant courant via Supabase si connecté, sinon via le stockage local
     let currentChild = null;
     const loadChild = async () => {
       if (useRemote()) {
@@ -2001,7 +2001,7 @@ try {
       return children.find(c=>c.id===id) || null;
     };
 
-    // Chat history helpers (local, per child)
+    // Helpers d’historique de chat (local, par enfant)
     const chatKey = (c) => `pedia_ai_chat_${c?.id||'anon'}`;
     const loadChat = (c) => { try { return JSON.parse(localStorage.getItem(chatKey(c))||'[]'); } catch { return []; } };
     const saveChat = (c, arr) => { try { localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20))); } catch {} };
@@ -2019,7 +2019,7 @@ try {
       el.scrollTo({ top: el.scrollHeight, behavior:'smooth' });
     };
 
-    // Recipes
+    // Recettes
     const fRecipes = document.getElementById('form-ai-recipes');
     const sRecipes = document.getElementById('ai-recipes-status');
     const outRecipes = document.getElementById('ai-recipes-result');
@@ -2039,7 +2039,7 @@ try {
       } finally { sRecipes.textContent=''; fRecipes.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fRecipes && (fRecipes.dataset.bound='1');
 
-    // Story
+    // Histoire
     const fStory = document.getElementById('form-ai-story');
     const sStory = document.getElementById('ai-story-status');
     const outStory = document.getElementById('ai-story-result');
@@ -2062,7 +2062,7 @@ try {
       } finally { sStory.textContent=''; fStory.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fStory && (fStory.dataset.bound='1');
 
-    // Chat
+    // Discussion
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');
     const msgsEl = document.getElementById('ai-chat-messages');
@@ -2096,12 +2096,12 @@ try {
       const q = new FormData(fChat).get('q')?.toString().trim();
       if (!q) return;
       sChat.textContent = 'Réflexion en cours…';
-      // Render immediate user bubble
+      // Afficher immédiatement la bulle de l’utilisateur
       const history = loadChat(currentChild);
       history.push({ role:'user', content:q });
       saveChat(currentChild, history);
       renderChat(history);
-      // Show typing indicator
+      // Afficher l’indicateur de frappe
       document.getElementById('ai-typing')?.remove();
       const typing = document.createElement('div');
       typing.id='ai-typing';
@@ -2124,7 +2124,7 @@ try {
       } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); fChat.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
     }); fChat && (fChat.dataset.bound='1');
 
-    // Load child asynchronously for IA personalization
+    // Charger l’enfant de façon asynchrone pour personnaliser l’IA
     const renderIndicator = async (child) => {
       const route = document.querySelector('section[data-route="/ai"]');
       if (!route) return;
@@ -2162,10 +2162,10 @@ try {
           const id = e.currentTarget.value;
           await setPrimaryChild(id);
           currentChild = await loadChildById(id);
-          // Refresh indicator and chat/history outputs for this child
+          // Rafraîchir l’indicateur et les historiques pour cet enfant
           await renderIndicator(currentChild);
           renderChat(loadChat(currentChild));
-          // Clear previous generated texts to avoid confusion
+          // Vider les textes générés précédemment pour éviter la confusion
           const outR = document.getElementById('ai-recipes-result'); if (outR) outR.innerHTML = '';
           const outS = document.getElementById('ai-story-result'); if (outS) outS.innerHTML = '';
         });
@@ -2183,7 +2183,7 @@ try {
     if (!container) return;
     container.innerHTML = '';
 
-    // Build 3 sections with titles and 10 checkboxes each
+    // Construire 3 sections avec titres et 10 cases à cocher chacune
     const groups = [
       { title: '0 – 12 mois', start: 0, end: 9 },
       { title: '12 – 24 mois', start: 10, end: 19 },
@@ -2202,7 +2202,7 @@ try {
         const id = `ms_${i}`;
         const item = document.createElement('div');
         item.className = 'qitem';
-        // Checkbox with name milestones[] so FormData groups them; we will read .checked to include false
+        // Case avec name milestones[] pour que FormData regroupe les valeurs (on lit .checked pour inclure les faux)
         item.innerHTML = `
           <input type="checkbox" id="${id}" name="milestones[]" data-index="${i}" />
           <label for="${id}">${q.label}</label>
@@ -2216,7 +2216,7 @@ try {
 
     const form = $('#form-child');
     if (form && !form.dataset.bound) {
-      // Function to send child profile to Supabase
+      // Fonction d’envoi du profil enfant vers Supabase
       async function saveChildProfile(child) {
         const uid = getActiveProfileId();
         if (!uid) throw new Error('Profil utilisateur introuvable');
@@ -2287,7 +2287,7 @@ try {
           const fd = new FormData(form);
           const dobStr = fd.get('dob').toString();
           const ageMAtCreation = ageInMonths(dobStr);
-          const // read 30 booleans in displayed order (include false)
+          const // lire 30 booléens dans l’ordre d’affichage (inclure les faux)
             msInputs = Array.from(document.querySelectorAll('#dev-questions input[name="milestones[]"]')),
             milestones = msInputs
               .sort((a,b)=> (Number(a.dataset.index||0) - Number(b.dataset.index||0)))
@@ -2316,13 +2316,13 @@ try {
             },
             milestones,
             growth: {
-              measurements: [], // {month, height, weight}
-              sleep: [], // {month, hours}
-              teeth: [], // {month, count}
+              measurements: [], // {mois, taille, poids}
+              sleep: [], // {mois, heures}
+              teeth: [], // {mois, nombre}
             },
             createdAt: Date.now(),
           };
-          // Initial measures if provided
+          // Mesures initiales si fournies
           const h = parseFloat(fd.get('height'));
           const w = parseFloat(fd.get('weight'));
           const t = parseInt(fd.get('teeth'));
@@ -2349,12 +2349,12 @@ try {
     const rid = (renderDashboard._rid = (renderDashboard._rid || 0) + 1);
     let child = null; let all = [];
     if (useRemote()) {
-      // Remote load
+      // Chargement distant
       const uid = getActiveProfileId();
-      // Load children, pick primary if any else first
-      // We assume a boolean is_primary column exists
-      // Fallback to first row if none primary
-      // Growth will be loaded after DOM skeleton is set
+      // Charger les enfants, choisir le primaire s’il existe sinon le premier
+      // Supposition : une colonne booléenne is_primary est présente
+      // Repli sur la première ligne si aucun enfant principal
+      // Les données de croissance sont chargées après la mise en place du squelette DOM
     } else {
       const user = store.get(K.user);
       all = store.get(K.children, []);
@@ -2369,7 +2369,7 @@ try {
       }
       return;
     }
-    // Local: render child switcher if children exist
+    // Local : afficher le sélecteur d’enfant si des profils existent
     if (!useRemote()) {
       const u = store.get(K.user) || {};
       const slimLocal = (all || []).map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
@@ -2380,7 +2380,7 @@ try {
       dom.innerHTML = `<div class="card stack"><p>Aucun profil enfant. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`;
       return;
     }
-    // Placeholder while fetching remote
+    // Placeholder pendant le chargement distant
     if (useRemote()) {
       if (rid !== renderDashboard._rid) return;
       dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Forcer le chargement</button></div>`;
@@ -2390,7 +2390,7 @@ try {
       const ageM = ageInMonths(child.dob);
       const ageTxt = formatAge(child.dob);
       if (rid !== renderDashboard._rid) return;
-    // Compute latest health snapshot values
+    // Calculer le dernier état de santé (mesures récentes)
     const msAll = normalizeMeasures(child.growth.measurements);
     const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
     const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
@@ -2476,9 +2476,9 @@ try {
 
     `;
 
-    // Profil santé section removed per request
+    // Section « Profil santé » retirée à la demande
 
-    // Append updates history block
+    // Ajouter le bloc d’historique des mises à jour
     try {
       const updates = await getChildUpdates(child.id);
       if (rid !== renderDashboard._rid) return;
@@ -2563,7 +2563,7 @@ try {
       dom.appendChild(hist);
     } catch {}
 
-    // Append advice block after history
+    // Ajouter le bloc de conseils après l’historique
     const adviceWrap = document.createElement('div');
     adviceWrap.className = 'grid-2';
     adviceWrap.style.marginTop = '12px';
@@ -2576,7 +2576,7 @@ try {
     if (rid !== renderDashboard._rid) return;
     dom.appendChild(adviceWrap);
 
-    // Handle measure form (removed UI; guard if present)
+    // Gérer le formulaire de mesures (interface retirée ; garde au cas où)
     const formMeasure = $('#form-measure');
     if (formMeasure) formMeasure.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -2675,7 +2675,7 @@ try {
           }
         }
         if (!handled) {
-          // Fallback local
+        // Repli local
           const children = store.get(K.children, []);
           const c = children.find(x => x.id === child.id);
           if (Number.isFinite(height) || Number.isFinite(weight)) {
@@ -2700,7 +2700,7 @@ try {
       }
     });
 
-    // Bind milestones toggle
+    // Bouton pour afficher/masquer les jalons
     try {
       const btn = document.getElementById('btn-toggle-milestones');
       const list = document.getElementById('milestones-list');
@@ -2714,7 +2714,7 @@ try {
       }
     } catch {}
 
-    // Charts
+    // Graphiques
     const ms = normalizeMeasures(child.growth.measurements);
     const heightData = ms.filter(m=>Number.isFinite(m.height)).map(m=>({month:m.month,value:m.height}));
     const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({month:m.month,value:m.weight}));
@@ -2742,7 +2742,7 @@ try {
       drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
     }
 
-    // Plain-language chart notes for parents
+    // Notes explicatives en langage simple pour les parents
     try {
       if (rid !== renderDashboard._rid) return;
       const latestT = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
@@ -2914,7 +2914,7 @@ try {
   }
 
   function normalizeMeasures(entries) {
-    // entries may contain objects with either height or weight keyed
+    // les entrées peuvent ne contenir que la taille ou que le poids
     const byMonth = new Map();
     for (const e of entries) {
       const m = e.month ?? e.m ?? 0;
@@ -2933,9 +2933,9 @@ try {
     return Array.from(byMonth.values()).sort((a,b)=>a.month-b.month);
   }
 
-  // Community
+  // Communauté
   function renderCommunity() {
-    // Render instance guard to avoid race conditions and duplicate DOM nodes
+    // Garde d’instance pour éviter les courses et les doublons DOM
     const rid = (renderCommunity._rid = (renderCommunity._rid || 0) + 1);
     const list = $('#forum-list');
     list.innerHTML = '';
@@ -2944,7 +2944,7 @@ try {
       refreshBtn.dataset.bound = '1';
       refreshBtn.addEventListener('click', () => location.reload());
     }
-    // Category filter handlers
+    // Gestionnaires du filtre de catégories
     const cats = $('#forum-cats');
     if (cats && !cats.dataset.bound) {
       cats.addEventListener('click', (e)=>{
@@ -2969,7 +2969,7 @@ try {
         if (!topics.length) return showEmpty();
         if (rid !== renderCommunity._rid) return;
         topics.slice().forEach(t => {
-        // Extract category from title prefix like [Sommeil] Titre
+        // Extraire la catégorie depuis un préfixe de titre [Sommeil] Titre
         let title = t.title || '';
         let cat = 'Divers';
         const m = title.match(/^\[(.*?)\]\s*(.*)$/);
@@ -3032,7 +3032,7 @@ try {
                 return;
               } catch {}
             }
-            // fallback local
+            // Repli local
             const forum = store.get(K.forum);
             const topic = forum.topics.find(x=>x.id===id);
             const user = store.get(K.user);
@@ -3045,10 +3045,10 @@ try {
           } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
         });
       });
-      // Delegated actions: toggle/collapse and delete (guard busy)
+      // Actions déléguées : pliage/dépliage et suppression (avec garde d’occupation)
       if (!list.dataset.delBound) {
         list.addEventListener('click', async (e)=>{
-          // Toggle expand/collapse
+          // Ouvrir/fermer le sujet
           const tgl = e.target.closest('[data-toggle-comments]');
           if (tgl) {
             e.preventDefault();
@@ -3062,7 +3062,7 @@ try {
             }
             return;
           }
-          // Delete topic
+          // Supprimer le sujet
           const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
           if (btn.dataset.busy === '1') return; btn.dataset.busy='1'; btn.disabled = true;
           const id = btn.getAttribute('data-del-topic');
@@ -3081,7 +3081,7 @@ try {
               return;
             } catch {}
           }
-          // Local fallback
+          // Repli local
           const forum = store.get(K.forum);
           forum.topics = forum.topics.filter(t=>t.id!==id);
           store.set(K.forum, forum);
@@ -3159,15 +3159,15 @@ try {
       renderTopics(forum.topics.slice().reverse(), repliesMap, authors);
     }
 
-    // New topic dialog
+    // Boîte de dialogue de nouveau sujet
     const dlg = $('#dialog-topic');
-    // Move dialog to body to avoid parent section opacity affecting it
+    // Déplacer la boîte de dialogue dans le body pour éviter l’opacité du parent
     if (dlg && dlg.parentElement && dlg.parentElement.tagName.toLowerCase() !== 'body') {
       document.body.appendChild(dlg);
     }
     $('#btn-new-topic').onclick = () => { if (dlg) dlg.showModal(); };
     const formTopic = $('#form-topic');
-    // Make cancel button close the dialog and reset the form
+    // Bouton Annuler : fermer la boîte de dialogue et réinitialiser le formulaire
     const btnCancelTopic = $('#btn-cancel-topic');
     if (btnCancelTopic && !btnCancelTopic.dataset.bound) {
       btnCancelTopic.dataset.bound = '1';
@@ -3239,9 +3239,9 @@ try {
 
   // (Comparateur retiré — les courbes sont dans le Dashboard)
 
-  // Settings
+    // Paramètres
   async function renderSettings() {
-    // Render instance guard to avoid async races that duplicate rows
+    // Garde d’instance pour éviter les duplications lors des chargements asynchrones
     const rid = (renderSettings._rid = (renderSettings._rid || 0) + 1);
     const user = store.get(K.user);
     const form = $('#form-settings');
@@ -3252,7 +3252,7 @@ try {
       refreshBtn.dataset.bound = '1';
       refreshBtn.addEventListener('click', () => location.reload());
     }
-    // Privacy & profile load
+    // Chargement des préférences de confidentialité et du profil
     (async () => {
       if (useRemote()) {
         try {
@@ -3267,7 +3267,7 @@ try {
           form.allowMessages.checked = !!p.allow_messages;
           if (prof.data?.full_name) {
             form.pseudo.value = prof.data.full_name;
-            // Keep local store aligned so other pages see the pseudo immediately
+            // Garder le store local aligné pour que les autres pages voient le pseudo immédiatement
             const current = store.get(K.user) || {};
             if (current.pseudo !== prof.data.full_name) {
               store.set(K.user, { ...current, pseudo: prof.data.full_name });
@@ -3362,7 +3362,7 @@ try {
     } else {
       children = store.get(K.children, []);
     }
-    // If another render started, abort appending to avoid duplicates
+    // Si un autre rendu a démarré, interrompre l’ajout pour éviter les doublons
     if (rid !== renderSettings._rid) return;
     children.forEach(c => {
       const firstName = c.first_name || c.firstName;
@@ -3380,7 +3380,7 @@ try {
       list.addEventListener('click', async (e)=>{
         const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-del]') : null;
         if (!target) return;
-        if (list.dataset.busy === '1') return; // prevent concurrent actions
+        if (list.dataset.busy === '1') return; // éviter les actions concurrentes
         list.dataset.busy = '1';
         target.disabled = true;
         const idE = target.getAttribute('data-edit');
@@ -3420,7 +3420,7 @@ try {
       list.dataset.bound = '1';
     }
 
-    // Child edit form render
+    // Rendu du formulaire d’édition enfant
     const editBox = document.getElementById('child-edit');
     let currentEditId = editBox?.getAttribute('data-edit-id') || null;
     if (!currentEditId && children[0]) currentEditId = children[0].id;
@@ -3573,7 +3573,7 @@ try {
           });
           msBtn.dataset.bound = '1';
         }
-        // Bind submit
+        // Lier la soumission du formulaire
         const f = document.getElementById('form-child-edit');
         if (f && !f.dataset.bound) f.addEventListener('submit', async (e) => {
           e.preventDefault();
@@ -3592,7 +3592,7 @@ try {
           const milestones = msInputs
             .sort((a,b)=> (Number(a.dataset.index||0) - Number(b.dataset.index||0)))
             .map(inp => !!inp.checked);
-          // Prepare update history snapshots
+          // Préparer les instantanés pour l’historique des mises à jour
           const prevSnap = makeUpdateSnapshot(child);
           const payload = {
             first_name: firstName,
@@ -3686,7 +3686,7 @@ try {
               alert('Erreur Supabase — modifications enregistrées localement');
             }
           }
-          // Local fallback
+          // Repli local
           const childrenAll = store.get(K.children, []);
           const c = childrenAll.find(x=>x.id===id);
           if (!c) return;
@@ -3707,7 +3707,7 @@ try {
             },
           };
           c.milestones = milestones;
-          // Optional new measures
+          // Mesures optionnelles supplémentaires
           if (Number.isFinite(heightVal)) c.growth.measurements.push({ month: ageMNow, height: heightVal });
           if (Number.isFinite(weightVal)) c.growth.measurements.push({ month: ageMNow, weight: weightVal });
           if (Number.isFinite(teethVal)) c.growth.teeth.push({ month: ageMNow, count: teethVal });
@@ -3784,7 +3784,7 @@ try {
     }
   }
 
-  // Helpers
+  // Fonctions utilitaires
   function genId() { return Math.random().toString(36).slice(2, 10); }
   function ageInMonths(dob) {
     const d = new Date(dob);
@@ -4021,7 +4021,7 @@ try {
       box = document.createElement('div');
       box.id = 'child-switcher-box';
       box.className = 'stack';
-      // Insert right after the page header if present (so titles appear before selector)
+      // Insérer juste après l’en-tête de page si présent (les titres restent avant le sélecteur)
       const header = container.querySelector('.page-header') || container.firstElementChild;
       if (header && header.nextSibling) {
         header.parentNode.insertBefore(box, header.nextSibling);
@@ -4049,7 +4049,7 @@ try {
     }
   }
 
-  // Advice generator (fake IA)
+  // Générateur de conseils (simulation d’IA)
   function renderAdvice(ageM){
     const sleep = sleepRecommendation(ageM);
     const tips = [];
@@ -4112,10 +4112,9 @@ try {
     svg.parentElement.appendChild(note);
   }
 
-  // SVG Chart utils (lightweight)
-  // Helper to build a single series of child data for generic charts.
-  // Marking it as `isChild` ensures points (incl. latest breathing dot)
-  // are rendered like in the WHO growth charts.
+  // Utilitaires de graphiques SVG (léger)
+  // Helper pour construire une série unique de données enfant pour les graphiques génériques.
+  // L’option `isChild` garantit que les points (dont le dernier marqué) sont rendus comme sur les courbes OMS.
   function buildSeries(list){
     return [{
       color: 'var(--turquoise)',
@@ -4130,7 +4129,7 @@ try {
     const W = svg.clientWidth || 600; const H = svg.clientHeight || 240;
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML='';
-    // Gather extents
+    // Calculer les bornes des axes
     const allPoints = series.flatMap(s=>s.data);
     const xs = allPoints.map(p=>p.x);
     const ys = allPoints.map(p=>p.y);
@@ -4141,7 +4140,7 @@ try {
     const xScale = x => left + (x-minX)/(maxX-minX||1)*innerW;
     const yScale = y => top + (1-(y-minY)/(maxY-minY||1))*innerH;
 
-    // Grid + Y ticks
+    // Grille + graduations Y
     const grid = document.createElementNS('http://www.w3.org/2000/svg','g');
     grid.setAttribute('stroke', '#1f2447');
     grid.setAttribute('stroke-width', '1');
@@ -4152,7 +4151,7 @@ try {
       const y = top + i*(innerH/6);
       const l = line(left,y, left+innerW, y);
       grid.appendChild(l);
-      // Y-axis labels
+      // Étiquettes de l’axe Y
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x', left - 4);
       t.setAttribute('y', y);
@@ -4169,7 +4168,7 @@ try {
     svg.appendChild(line(left, top, left, top+innerH, 'var(--border)'));
     svg.appendChild(line(left, top+innerH, left+innerW, top+innerH, 'var(--border)'));
 
-    // Series paths
+    // Tracé des séries
     series.forEach((s) => {
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
       const pts = s.data.sort((a,b)=>a.x-b.x);
@@ -4203,7 +4202,7 @@ try {
       }
     });
 
-    // Minor ticks on X (every 12 months)
+    // Graduations intermédiaires sur l’axe X (tous les 12 mois)
     for (let m=12;m<=60;m+=12){
       const x = xScale(m);
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -4223,19 +4222,19 @@ try {
     l.setAttribute('stroke',stroke); return l;
   }
 
-  // Init
+  // Initialisation
   bootstrap();
   if (!location.hash) location.hash = '#/';
   setActiveRoute(location.hash);
-  // Evaluate header fit on load
+  // Vérifier l’adaptation de l’en-tête au chargement
   evaluateHeaderFit();
-  // Footer year (replaces inline script to satisfy CSP)
+  // Année du pied de page (remplace un script inline pour respecter la CSP)
   try {
     const yEl = document.getElementById('y');
     if (yEl) yEl.textContent = String(new Date().getFullYear());
   } catch {}
 
-  // --- AI request helper ---
+  // --- Helpers d’appels IA ---
   async function askAI(question, child, history){
     const payload = { question, child, history };
     const res = await fetch('/api/ai/advice', {
@@ -4270,7 +4269,7 @@ try {
     return data.text || '';
   }
 
-  // Reveal on scroll animations
+  // Animations révélées au scroll
   function setupScrollAnimations(){
     try { revealObserver?.disconnect(); } catch {}
     const root = document.querySelector('.route.active') || document;
@@ -4297,7 +4296,7 @@ try {
       }
     }, { threshold: 0.01, rootMargin: '0px 0px -10% 0px' });
     targets.forEach(t => revealObserver.observe(t));
-    // ensure above-the-fold elements are visible immediately
+    // s’assurer que les éléments au-dessus de la ligne de flottaison apparaissent immédiatement
     targets.forEach(t => {
       const r = t.getBoundingClientRect();
       const vh = window.innerHeight || document.documentElement.clientHeight;

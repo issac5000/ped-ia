@@ -1,5 +1,5 @@
-// Vercel Serverless Function for AI advice
-// Path: /api/ai/advice
+// Fonction serverless Vercel fournissant les conseils IA
+// Chemin : /api/ai/advice
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -60,6 +60,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
   }
 }
 
+// Limite les informations enfant envoyées dans le prompt IA
 function safeChildSummary(child) {
   if (!child) return 'Aucun profil';
   return {
@@ -72,6 +73,7 @@ function safeChildSummary(child) {
   };
 }
 
+// Lit le corps brut de la requête en gardant une taille raisonnable
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let buf = '';

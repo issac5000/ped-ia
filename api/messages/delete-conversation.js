@@ -1,5 +1,5 @@
-// Securely delete an entire conversation between the authenticated user and `otherId`.
-// Uses Supabase service role to bypass RLS, but verifies the caller's identity first.
+// Supprime en toute sécurité une conversation complète entre l’utilisateur authentifié et « otherId ».
+// Utilise la clé service Supabase pour passer outre la RLS après vérification de l’identité du demandeur.
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     const otherId = String(body.otherId || '').trim();
     if (!otherId) return res.status(400).json({ error: 'otherId required' });
 
-    // Verify user token with GoTrue
+    // Vérifie le jeton utilisateur auprès de GoTrue
     const uRes = await fetch(`${supaUrl}/auth/v1/user`, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     const uid = String(uJson?.id || uJson?.user?.id || '').trim();
     if (!uid) return res.status(401).json({ error: 'Invalid token' });
 
-    // Delete all messages in both directions using two calls (avoids tricky or= syntax)
+    // Supprime tous les messages dans les deux sens via deux appels distincts (plus simple qu’un filtre or=)
     const q1 = `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(uid)}&receiver_id=eq.${encodeURIComponent(otherId)}`;
     const q2 = `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(otherId)}&receiver_id=eq.${encodeURIComponent(uid)}`;
     for (const url of [q1, q2]) {
