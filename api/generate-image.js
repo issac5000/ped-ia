@@ -114,6 +114,12 @@ async function generateWithOpenAI({ prompt, contextText, config, model }) {
     err.endpoint = endpoint;
     throw err;
   }
+  const imageUrlRaw = data?.data?.[0]?.url;
+  const imageUrl = typeof imageUrlRaw === 'string' ? imageUrlRaw.trim() : '';
+  if (imageUrl) {
+    return { imageUrl, model };
+  }
+
   const imageDirect = extractImageUrl(data);
   if (imageDirect) {
     return { imageUrl: imageDirect, model };
@@ -401,8 +407,12 @@ export default async function handler(req, res) {
     const raw = await readBody(req);
     const body = JSON.parse(raw || '{}');
     const result = await generateImage(body);
+    const payload = {
+      imageUrl: typeof result?.imageUrl === 'string' ? result.imageUrl : '',
+      model: DEFAULT_IMAGE_MODEL,
+    };
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.status(200).send(JSON.stringify(result));
+    return res.status(200).send(JSON.stringify(payload));
   } catch (e) {
     const status = Number.isInteger(e?.status) ? e.status : 500;
     const message = e?.message ? String(e.message) : 'Image generation failed';
