@@ -1,4 +1,4 @@
-// Serverless Function: /api/ai/comment
+// Fonction serverless : /api/ai/comment (résumé bienveillant)
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -43,6 +43,7 @@ export default async function handler(req, res) {
   }
 }
 
+// Lit le corps de la requête en limitant la taille pour éviter les abus
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let buf = '';

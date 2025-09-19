@@ -1,4 +1,5 @@
-// Serverless Function: /api/ai/recipes
+// Fonction serverless : /api/ai/recipes (menus personnalisés)
+// Fournit des idées de repas adaptées à l’enfant en se basant sur le contexte transmis
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -41,6 +42,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
   }
 }
 
+// Limite les champs enfant envoyés à l’IA pour éviter d’exposer des données inutiles
 function safeChildSummary(child) {
   if (!child) return 'Aucun profil';
   return {
@@ -53,6 +55,7 @@ function safeChildSummary(child) {
   };
 }
 
+// Lit entièrement le corps de la requête (JSON) en coupant au-delà de 1 Mo
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let buf = '';

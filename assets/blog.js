@@ -190,7 +190,7 @@ window.addEventListener('storage', evt=>{
   }
 });
 
-// Soft pastel particles over entire page
+// Particules pastel douces sur toute la page
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
 function startRouteParticles(){
   try{
@@ -253,7 +253,7 @@ function startRouteParticles(){
   }catch(e){}
 }
 
-// Particles around page logo
+// Particules autour du logo de page
 let logoParticles = { cvs:null, ctx:null, parts:[], raf:0, resize:null, W:0, H:0 };
 function startLogoParticles(){
   try{

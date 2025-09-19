@@ -1,5 +1,7 @@
 import { processAnonCommunityRequest } from '../../lib/anon-community.js';
 
+// Route API Next.js pour le forum anonyme (Sujets, réponses, notifications)
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {

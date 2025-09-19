@@ -33,7 +33,7 @@ let isAnon = false;
 let anonProfile = null;
 let loginUIBound = false;
 
-// Normalize all user IDs to strings to avoid type mismatches
+// Normaliser tous les identifiants utilisateur en chaînes pour éviter les incohérences de type
 const idStr = id => String(id);
 
 function escapeHTML(str){
@@ -375,7 +375,7 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('load', evaluateHeaderFit);
 
-// ---- Toast notifications (same style as SPA) ----
+// ---- Notifications toast (même style que la SPA) ----
 function getToastHost(){
   let host = document.getElementById('notify-toasts');
   if (!host) {
@@ -434,7 +434,7 @@ function countsByKind(){
 function updateBadges(){ const { msg, reply } = countsByKind(); setNavBadgeFor('messages.html', msg); setNavBadgeFor('#/community', reply); }
 function bumpMessagesBadge(){ updateBadges(); }
 
-// Persist unseen notifications (shared with SPA via localStorage)
+// Persistance des notifications non lues (partagée avec la SPA via localStorage)
 const NOTIF_STORE = 'pedia_notifs';
 function loadNotifs(){ try { return JSON.parse(localStorage.getItem(NOTIF_STORE)) || []; } catch (e) { return []; } }
 function saveNotifs(arr){ try { localStorage.setItem(NOTIF_STORE, JSON.stringify(arr)); } catch (e) {} }
@@ -540,7 +540,7 @@ async function anonCommunityRequest(action, payload = {}) {
   return json || {};
 }
 
-// Unread helpers per sender
+// Helpers pour compter les messages non lus par expéditeur
 function hasUnreadFrom(otherId){
   const id = idStr(otherId);
   return loadNotifs().some(n => !n.seen && n.kind==='msg' && idStr(n.fromId)===id);
@@ -551,7 +551,7 @@ function markSenderSeen(otherId){
   saveNotifs(arr);
 }
 
-// Missed messages since last seen
+// Messages manqués depuis la dernière consultation
 const NOTIF_LAST_KEY = 'pedia_notif_last';
 function isNotifUnseen(id){ try { return loadNotifs().some(n=>n.id===id && !n.seen); } catch { return false; } }
 function getNotifLast(){ try { return JSON.parse(localStorage.getItem(NOTIF_LAST_KEY)) || {}; } catch (e) { return {}; } }
@@ -589,14 +589,14 @@ async function fetchMissedMessages(){
   } catch (e) {}
 }
 
-// Soft pastel particles over entire page
+// Particules pastel sur l’ensemble de la page
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
 function startRouteParticles(){
   try {
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const cvs = document.createElement('canvas');
     cvs.className = 'route-canvas route-canvas-fixed';
-    // Ensure background canvas never blocks interactions
+    // S’assurer que le canvas d’arrière-plan ne bloque jamais les interactions
     cvs.style.pointerEvents = 'none';
     document.body.prepend(cvs);
     const ctx = cvs.getContext('2d');
@@ -653,7 +653,7 @@ function startRouteParticles(){
   } catch(e){}
 }
 
-// Particles around page logo
+// Particules autour du logo en haut de page
 let logoParticles = { cvs:null, ctx:null, parts:[], raf:0, resize:null, W:0, H:0 };
 function startLogoParticles(){
   try {
@@ -662,7 +662,7 @@ function startLogoParticles(){
     if(!wrap) return;
     const cvs = document.createElement('canvas');
     cvs.className='logo-canvas';
-    // Canvas is decorative; it must not intercept clicks
+    // Le canvas est décoratif : il ne doit pas intercepter les clics
     cvs.style.pointerEvents = 'none';
     wrap.prepend(cvs);
     const ctx = cvs.getContext('2d');
@@ -949,8 +949,8 @@ async function loadConversations(){
     }
   }
   parents = profiles;
-  // Some conversations may involve users without a profile entry.
-  // Ensure those ids still appear in the list with a placeholder profile
+  // Certaines conversations peuvent impliquer des utilisateurs sans profil.
+  // On veille à afficher malgré tout ces identifiants avec un profil par défaut
   ids.forEach(id=>{
     if(!parents.some(p=>p.id===id)) parents.push({ id, full_name:'Parent' });
   });
@@ -1073,7 +1073,7 @@ async function openConversation(otherId){
   await ensureConversation(id);
   activeParent = parents.find(p=>p.id===id);
   $$('#parents-list .parent-item').forEach(li=>li.classList.toggle('active', li.dataset.id===id));
-  // Mark unread for this sender as seen and refresh badges/list
+  // Marquer les messages non lus de cet expéditeur comme lus puis rafraîchir badges et liste
   try { markSenderSeen(id); updateBadgeFromStore(); renderParentList(); } catch (e) {}
   currentMessages = [];
   $('#conversation').innerHTML='';
@@ -1193,28 +1193,28 @@ function setupMessageSubscription(otherId){
       const sender = idStr(m.sender_id);
       const receiver = idStr(m.receiver_id);
       if((sender===user.id && receiver===id) || (sender===id && receiver===user.id)){
-        // Deduplicate: avoid double-adding when we already appended after local insert
+        // Dédupliquer : éviter les doublons lorsqu’un enregistrement local a déjà été ajouté
         if (currentMessages.some(x => String(x.id) === String(m.id))) return;
         const msg = { ...m, sender_id: sender, receiver_id: receiver };
         currentMessages.push(msg); renderMessages();
         lastMessages.set(id, msg); renderParentList();
-        // If receiving a message from the active interlocutor, mark it seen
+        // Si un message arrive depuis l’interlocuteur actif, le marquer comme lu
         if (sender===id && receiver===user.id) { try { markSenderSeen(id); updateBadgeFromStore(); renderParentList(); } catch (e) {} }
       }
     })
     .subscribe();
 }
 
-// Realtime notifications (messages to me, replies to topics I own or commented)
+// Notifications temps réel (messages reçus, réponses à mes sujets/commentaires)
 function setupRealtimeNotifications(){
   try {
     stopAnonNotifPolling();
     if (isAnon) { startAnonNotifPolling(); return; }
     if (!supabase || !user?.id) return;
-    // cleanup old
+    // Nettoyer les anciens abonnements
     try { for(const ch of notifChannels) supabase.removeChannel(ch); } catch (e) {}
     notifChannels = [];
-    // messages to me
+    // Messages qui me sont adressés
   const chMsg = supabase
     .channel('notify-messages-'+user.id)
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`receiver_id=eq.${user.id}` }, async (payload) => {
@@ -1226,12 +1226,12 @@ function setupRealtimeNotifications(){
         showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(`msg:${row.id}`); setNotifLastNow('msg'); } });
         updateBadges();
       }
-      // Refresh conversation list to reflect unread dots
+      // Rafraîchir la liste des conversations pour refléter les indicateurs de lecture
       try { renderParentList(); } catch (e) {}
     })
       .subscribe();
     notifChannels.push(chMsg);
-    // replies to topics I own or commented
+    // Réponses aux sujets que je possède ou auxquels j’ai répondu
     const chRep = supabase
       .channel('notify-replies-'+user.id)
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'forum_replies' }, async (payload) => {

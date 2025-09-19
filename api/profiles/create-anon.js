@@ -1,12 +1,13 @@
 import { randomBytes, randomUUID } from 'crypto';
 
-// Create an anonymous profile using the Supabase service role key.
-// Returns the generated id + code without requiring the user to be authenticated.
+// Crée un profil anonyme à l’aide de la clé service Supabase.
+// Retourne l’identifiant et le code généré sans exiger d’authentification préalable.
 
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_DIGITS = '23456789';
 const MAX_CREATE_ATTEMPTS = 5;
 
+// Génère un code alternant lettres et chiffres faciles à lire
 function generateAnonCode() {
   const bytes = randomBytes(12);
   let out = '';
@@ -18,6 +19,7 @@ function generateAnonCode() {
   return out;
 }
 
+// Indique si l’on doit retenter après une collision de code_unique
 function shouldRetryDuplicate(status, detailsText) {
   if (status === 409) return true;
   if (!detailsText) return false;

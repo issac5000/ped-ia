@@ -1,5 +1,5 @@
-// Minimal Node HTTP server (no deps) serving static files and proxying OpenAI
-// Usage: OPENAI_API_KEY=sk-... node api/server.js
+// Serveur HTTP Node minimal (sans dépendances) qui sert les fichiers statiques et proxifie l’API OpenAI
+// Utilisation : OPENAI_API_KEY=sk-... node api/server.js
 
 import { createServer } from 'http';
 import { randomBytes, randomUUID } from 'crypto';
@@ -17,6 +17,10 @@ const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_DIGITS = '23456789';
 const MAX_ANON_ATTEMPTS = 5;
 
+/**
+ * Génère un code lisible pour les profils anonymes en alternant lettres et chiffres.
+ * On exclut volontairement les caractères ambigus (I, O, 0, 1) pour limiter les erreurs de saisie.
+ */
 function generateAnonCode() {
   const bytes = randomBytes(12);
   let out = '';
@@ -28,13 +32,17 @@ function generateAnonCode() {
   return out;
 }
 
+/**
+ * Détermine s’il faut retenter une création de profil après une erreur Supabase.
+ * Les collisions de code_unique déclenchent un nouvel essai jusqu’à atteindre MAX_ANON_ATTEMPTS.
+ */
 function shouldRetryDuplicate(status, detailsText) {
   if (status === 409) return true;
   if (!detailsText) return false;
   return /duplicate key value/i.test(detailsText) && /code_unique/i.test(detailsText);
 }
 
-// Load env vars from .env.local/.env for local dev if not already present
+// Charge les variables d’environnement depuis .env.local/.env en local si nécessaire
 async function loadLocalEnv() {
   const tryFiles = ['.env.local', '.env'];
   for (const f of tryFiles) {
@@ -68,6 +76,10 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
+/**
+ * Envoie une réponse HTTP en ajoutant les en-têtes de sécurité et de CORS.
+ * Les réponses JSON passent par cette fonction afin d’harmoniser les en-têtes.
+ */
 function send(res, status, body, headers={}) {
   const security = {
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
@@ -75,7 +87,7 @@ function send(res, status, body, headers={}) {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=()',
-    // Allow Supabase + jsdelivr to match production CSP in vercel.json
+    // Autorise Supabase + jsdelivr pour refléter la CSP de production définie dans vercel.json
     'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://*.supabase.in https://cdn.jsdelivr.net; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
   };
   const h = { 'Access-Control-Allow-Origin': '*', ...security, ...headers };
@@ -83,10 +95,14 @@ function send(res, status, body, headers={}) {
   res.end(body);
 }
 
+/**
+ * Sert les fichiers statiques du prototype (HTML, assets, etc.).
+ * La résolution de chemin reste strictement sous ROOT pour éviter toute traversée de répertoire.
+ */
 async function handleStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = url.pathname === '/' ? '/index.html' : url.pathname;
-  // prevent directory traversal
+  // Empêche toute tentative de traversée de répertoires
   const filePath = resolve(ROOT, `.${pathname}`);
   if (!filePath.startsWith(ROOT)) return send(res, 403, 'Forbidden');
   try {
@@ -101,6 +117,10 @@ async function handleStatic(req, res) {
   }
 }
 
+/**
+ * Lit et parse le corps JSON d’une requête POST.
+ * Détruit la connexion si le corps dépasse 1 Mo pour éviter les abus.
+ */
 async function parseJson(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -112,6 +132,9 @@ async function parseJson(req) {
   });
 }
 
+/**
+ * Normalise les informations enfant transmises au prompt IA pour éviter l’exposition de champs inutiles.
+ */
 function safeChildSummary(child) {
   if (!child) return 'Aucun profil';
   return {
@@ -124,6 +147,10 @@ function safeChildSummary(child) {
   };
 }
 
+/**
+ * Appelle OpenAI pour générer un conseil parental structuré.
+ * Les historiques sont tronqués et filtrés côté serveur pour éviter les débordements.
+ */
 async function aiAdvice(body) {
   if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
   const question = String(body.question || '').slice(0, 2000);
@@ -156,6 +183,9 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
   return { text };
 }
 
+/**
+ * Génère des idées de recettes adaptées à l’âge et au contexte nutritionnel de l’enfant.
+ */
 async function aiRecipes(body){
   if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
   const child = safeChildSummary(body.child);
@@ -177,6 +207,9 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
   return { text };
 }
 
+/**
+ * Crée une histoire personnalisée (durée configurable, ton apaisant ou énergique).
+ */
 async function aiStory(body){
   if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
   const child = safeChildSummary(body.child);
@@ -200,6 +233,9 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
   return { text };
 }
 
+/**
+ * Produit un commentaire très court et positif pour les journaux d’évolution.
+ */
 async function aiComment(body){
   if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
   const content = String(body.content || '').slice(0, 2000);
@@ -218,7 +254,7 @@ async function aiComment(body){
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  // CORS preflight
+  // Pré-vol CORS
   if (req.method === 'OPTIONS') {
     return send(res, 204, '', {
       'Access-Control-Allow-Origin': '*',
@@ -405,7 +441,7 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  // Delete conversation (local dev server parity with Vercel function)
+  // Suppression d’une conversation (parité avec la fonction Vercel en local)
   if (req.method === 'POST' && url.pathname === '/api/messages/delete-conversation') {
     try {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
@@ -455,7 +491,7 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  // Fetch limited public profile fields for a list of user IDs using service role
+  // Récupère un sous-ensemble public de profils via la clé service (liste d’identifiants)
   if (req.method === 'POST' && url.pathname === '/api/profiles/by-ids') {
     try {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
@@ -467,7 +503,7 @@ const server = createServer(async (req, res) => {
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
       if (!token) return send(res, 401, JSON.stringify({ error:'Missing Authorization' }), { 'Content-Type':'application/json' });
 
-      // Verify the token corresponds to a logged-in user (only to prevent open scraping)
+      // Vérifie que le jeton correspond bien à un utilisateur connecté (limite le scraping public)
       const uRes = await fetch(`${supaUrl}/auth/v1/user`, {
         headers: { 'Authorization': `Bearer ${token}`, 'apikey': anonKey || serviceKey }
       });
@@ -478,11 +514,11 @@ const server = createServer(async (req, res) => {
 
       const body = await parseJson(req);
       const ids = Array.isArray(body?.ids) ? body.ids.map(x=>String(x)).filter(Boolean) : [];
-      // Limit to a reasonable amount
+      // Limite le nombre d’identifiants autorisés par appel
       if (!ids.length) return send(res, 400, JSON.stringify({ error:'ids required' }), { 'Content-Type':'application/json' });
       if (ids.length > 200) return send(res, 400, JSON.stringify({ error:'too many ids' }), { 'Content-Type':'application/json' });
 
-      // Build PostgREST in() filter
+      // Construit le filtre PostgREST in() en échappant les identifiants
       const escaped = ids.map(id => id.replace(/"/g, '""'));
       const list = `(${escaped.map(id=>`"${id}"`).join(',')})`;
       const q = `${supaUrl}/rest/v1/profiles?select=id,full_name&id=in.${encodeURIComponent(list)}`;
@@ -503,7 +539,7 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  // Static
+  // Fichiers statiques
   return handleStatic(req, res);
 });
 

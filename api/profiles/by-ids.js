@@ -1,5 +1,5 @@
-// Vercel serverless function to fetch limited public profile fields by ids
-// Requires env: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY (or NEXT_PUBLIC variants)
+// Fonction serverless Vercel pour récupérer un sous-ensemble public de profils par identifiants
+// Requiert les variables : SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY (ou variantes NEXT_PUBLIC)
 
 export default async function handler(req, res) {
   try {
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ error: 'Missing Authorization' }));
     }
 
-    // Verify requester is an authenticated user (prevents open scraping)
+    // Vérifie que l’appelant est bien authentifié (limite le scraping anonyme)
     const uRes = await fetch(`${supaUrl}/auth/v1/user`, {
       headers: { 'Authorization': `Bearer ${token}`, 'apikey': anonKey || serviceKey }
     });
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ error: 'too many ids' }));
     }
 
-    // Build PostgREST in() filter list: ("id1","id2")
+    // Construit la liste de filtres PostgREST in() : ("id1","id2")
     const escaped = ids.map(id => String(id).replace(/"/g, '""'));
     const list = `(${escaped.map(id=>`"${id}"`).join(',')})`;
     const q = `${supaUrl}/rest/v1/profiles?select=id,full_name&id=in.${encodeURIComponent(list)}`;

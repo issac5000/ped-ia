@@ -1,3 +1,4 @@
+// Route API dédiée à la mise à jour des profils anonymes via leur code unique
 const KEY_MAP = {
   fullName: 'full_name',
   avatarUrl: 'avatar_url',
@@ -6,6 +7,7 @@ const KEY_MAP = {
 
 const DISALLOWED_FIELDS = new Set(['id', 'user_id', 'code_unique', 'created_at', 'updated_at']);
 
+// Convertit une clé camelCase en snake_case compatible avec la base
 function camelToSnake(key) {
   if (!key) return key;
   if (KEY_MAP[key]) return KEY_MAP[key];
@@ -13,24 +15,28 @@ function camelToSnake(key) {
   return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 }
 
+// Nettoie et limite le nom complet (ou autorise null pour l’effacer)
 function normalizeFullName(value) {
   if (value === null) return null;
   if (typeof value !== 'string') return undefined;
   return value.trim().slice(0, 120);
 }
 
+// Valide et tronque l’URL d’avatar transmise par le parent
 function normalizeAvatarUrl(value) {
   if (value === null) return null;
   if (typeof value !== 'string') return undefined;
   return value.trim().slice(0, 2048);
 }
 
+// Applique le normaliseur spécifique selon le champ ciblé
 function normalizeField(key, value) {
   if (key === 'full_name') return normalizeFullName(value);
   if (key === 'avatar_url') return normalizeAvatarUrl(value);
   return value;
 }
 
+// Récupère le code unique en acceptant plusieurs alias (code, codeUnique, code_unique)
 function extractCode(payload) {
   if (!payload || typeof payload !== 'object') return '';
   const keys = ['code_unique', 'codeUnique', 'code'];
@@ -48,6 +54,7 @@ function extractCode(payload) {
   return '';
 }
 
+// Construit le patch envoyé à Supabase en excluant les champs interdits
 function buildUpdatePayload(payload) {
   const update = {};
   for (const [rawKey, value] of Object.entries(payload || {})) {

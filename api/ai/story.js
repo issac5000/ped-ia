@@ -1,4 +1,4 @@
-// Serverless Function: /api/ai/story
+// Fonction serverless : /api/ai/story (histoires personnalisées)
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -43,6 +43,7 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
   }
 }
 
+// Limite les informations enfant transmises à l’IA pour raconter l’histoire
 function safeChildSummary(child) {
   if (!child) return 'Aucun profil';
   return {
@@ -55,6 +56,7 @@ function safeChildSummary(child) {
   };
 }
 
+// Lit l’intégralité du corps de la requête tout en limitant la taille
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let buf = '';

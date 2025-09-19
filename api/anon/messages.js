@@ -1,5 +1,7 @@
 import { processAnonMessagesRequest } from '../../lib/anon-messages.js';
 
+// Route API Next.js pour la messagerie anonyme (conversation, envoi, suppression)
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
