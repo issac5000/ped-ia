@@ -2143,7 +2143,10 @@ try {
         requestAnimationFrame(() => {
           if (fImage.dataset.runToken !== runToken) return;
           progressBar.style.transition = 'width 7s ease';
-          progressBar.style.width = '90%';
+          setTimeout(() => {
+            if (fImage.dataset.runToken !== runToken) return;
+            progressBar.style.width = '90%';
+          }, 30);
         });
       };
       const finishProgressBar = () => {
@@ -2217,6 +2220,7 @@ try {
         if (sImage) sImage.textContent = '';
       } finally {
         if (loaderImage) loaderImage.hidden = true;
+        delete fImage.dataset.runToken;
         fImage.dataset.busy = '0';
         const submitBtnFinal = fImage.querySelector('button[type="submit"],input[type="submit"]');
         if (submitBtnFinal) submitBtnFinal.disabled = false;
