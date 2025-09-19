@@ -2102,7 +2102,9 @@ try {
         if (hideStatusTimeout) { clearTimeout(hideStatusTimeout); hideStatusTimeout = null; }
       };
       const setStatusText = (text) => {
-        if (!statusMessage || fImage.dataset.runToken !== runToken) return;
+        if (!statusMessage) return;
+        const activeToken = fImage.dataset.runToken;
+        if (activeToken && activeToken !== runToken) return;
         statusMessage.hidden = false;
         statusMessage.textContent = text;
       };
@@ -2117,19 +2119,19 @@ try {
         }, 8000));
       };
       const showSuccessStatus = () => {
-        if (fImage.dataset.runToken !== runToken) return;
         statusActive = false;
         clearStatusTimers();
         setStatusText('✅ Ton image est prête !');
         hideStatusTimeout = setTimeout(() => {
-          if (statusMessage && fImage.dataset.runToken === runToken) {
+          if (!statusMessage) return;
+          const activeToken = fImage.dataset.runToken;
+          if (activeToken && activeToken !== runToken) return;
             statusMessage.hidden = true;
             statusMessage.textContent = '';
           }
         }, 1200);
       };
       const showFailureStatus = () => {
-        if (fImage.dataset.runToken !== runToken) return;
         statusActive = false;
         clearStatusTimers();
         setStatusText('❌ Impossible de générer l’image pour le moment.');
@@ -2141,21 +2143,26 @@ try {
         progressBar.style.width = '0%';
         progressBar.offsetWidth;
         requestAnimationFrame(() => {
-          if (fImage.dataset.runToken !== runToken) return;
+          const activeToken = fImage.dataset.runToken;
+          if (activeToken && activeToken !== runToken) return;
           progressBar.style.transition = 'width 7s ease';
-          setTimeout(() => {
-            if (fImage.dataset.runToken !== runToken) return;
+          requestAnimationFrame(() => {
+            const againToken = fImage.dataset.runToken;
+            if (againToken && againToken !== runToken) return;
             progressBar.style.width = '90%';
-          }, 30);
+          });
         });
       };
       const finishProgressBar = () => {
-        if (!progressWrapper || !progressBar || fImage.dataset.runToken !== runToken) return;
+        if (!progressWrapper || !progressBar) return;
+        const activeToken = fImage.dataset.runToken;
+        if (activeToken && activeToken !== runToken) return;
         progressBar.style.transition = 'width .45s ease';
         progressBar.style.width = '100%';
         if (progressHideTimeout) clearTimeout(progressHideTimeout);
         progressHideTimeout = setTimeout(() => {
-          if (fImage.dataset.runToken !== runToken) return;
+          const latestToken = fImage.dataset.runToken;
+          if (latestToken && latestToken !== runToken) return;
           progressWrapper.hidden = true;
           progressBar.style.transition = 'none';
           progressBar.style.width = '0%';
@@ -2163,6 +2170,8 @@ try {
       };
       const resetProgressBar = () => {
         if (!progressWrapper || !progressBar) return;
+        const activeToken = fImage.dataset.runToken;
+        if (activeToken && activeToken !== runToken) return;
         if (progressHideTimeout) { clearTimeout(progressHideTimeout); progressHideTimeout = null; }
         progressWrapper.hidden = true;
         progressBar.style.transition = 'none';
@@ -2220,7 +2229,6 @@ try {
         if (sImage) sImage.textContent = '';
       } finally {
         if (loaderImage) loaderImage.hidden = true;
-        delete fImage.dataset.runToken;
         fImage.dataset.busy = '0';
         const submitBtnFinal = fImage.querySelector('button[type="submit"],input[type="submit"]');
         if (submitBtnFinal) submitBtnFinal.disabled = false;
