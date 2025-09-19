@@ -2142,7 +2142,7 @@ try {
       }
       fImage.dataset.busy = '1';
       const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      if (sImage) sImage.textContent = 'La génération peut prendre une à deux minutes. Merci de votre patience 🙏';
+      if (sImage) sImage.textContent = 'La génération peut prendre 1 à 2 minutes. Merci de patienter 🙏';
       if (feedback) feedback.hidden = false;
       if (imgPreview) { imgPreview.hidden = true; imgPreview.removeAttribute('src'); }
       if (imgEmpty) {
@@ -2164,7 +2164,8 @@ try {
       } catch (err) {
         console.error('Image generation failed', err);
         if (imgEmpty) {
-          imgEmpty.textContent = 'Génération impossible pour le moment. Réessayez plus tard.';
+          const message = err && err.message ? err.message : 'Génération impossible pour le moment. Réessayez plus tard.';
+          imgEmpty.textContent = message;
           imgEmpty.classList.remove('hidden');
         }
       } finally {
@@ -4333,13 +4334,8 @@ try {
     if (!res.ok) {
       try {
         const j = JSON.parse(raw);
-        const messageParts = [];
-        if (j.details) messageParts.push(j.details);
-        else if (j.error) messageParts.push(j.error);
-        else if (raw) messageParts.push(raw);
-        const modelNote = j.model ? ` (modèle: ${j.model})` : '';
-        const message = messageParts.length ? messageParts.join(' — ') : 'AI backend error';
-        throw new Error(`${message}${modelNote}`);
+        const message = j.details || j.error || raw || 'AI backend error';
+        throw new Error(message);
       } catch {
         throw new Error(raw || 'AI backend error');
       }
@@ -4347,8 +4343,69 @@ try {
     let data;
     try { data = JSON.parse(raw); }
     catch { data = {}; }
-    if (!data.imageUrl) throw new Error('Invalid image payload');
-    return { imageUrl: data.imageUrl, model: data.model };
+    const jobId = typeof data.jobId === 'string' ? data.jobId : '';
+    const initialStatus = typeof data.status === 'string' ? data.status : 'pending';
+    if (!jobId) throw new Error('Aucun identifiant de génération reçu.');
+    if (initialStatus === 'failed') {
+      const msg = typeof data.error_message === 'string' ? data.error_message : 'Génération impossible.';
+      throw new Error(msg);
+    }
+    const parseResult = (result) => {
+      if (!result) return { imageUrl: '', model: '' };
+      if (typeof result === 'string') return { imageUrl: result, model: '' };
+      if (typeof result === 'object') {
+        const imageUrl = typeof result.imageUrl === 'string' && result.imageUrl
+          ? result.imageUrl
+          : (typeof result.url === 'string' ? result.url : '');
+        const model = typeof result.model === 'string' ? result.model : '';
+        return { imageUrl, model };
+      }
+      return { imageUrl: '', model: '' };
+    };
+    if (initialStatus === 'done' && data.result) {
+      const parsedInitial = parseResult(data.result);
+      if (parsedInitial.imageUrl) return parsedInitial;
+    }
+    const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const maxAttempts = 40;
+    const intervalMs = 3000;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (attempt > 0) {
+        await wait(intervalMs);
+      }
+      try {
+        const statusRes = await fetch(`/api/generate-image-status?jobId=${encodeURIComponent(jobId)}`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          cache: 'no-store'
+        });
+        const statusRaw = await statusRes.text();
+        if (!statusRes.ok) {
+          const message = statusRaw || 'Statut indisponible';
+          throw new Error(message);
+        }
+        let statusData;
+        try { statusData = JSON.parse(statusRaw); }
+        catch { statusData = {}; }
+        const status = typeof statusData.status === 'string' ? statusData.status : 'pending';
+        if (status === 'done') {
+          const parsed = parseResult(statusData.result);
+          if (!parsed.imageUrl) throw new Error('Résultat vide.');
+          return parsed;
+        }
+        if (status === 'failed') {
+          const message = typeof statusData.error_message === 'string' && statusData.error_message
+            ? statusData.error_message
+            : 'Génération impossible pour le moment.';
+          throw new Error(message);
+        }
+      } catch (err) {
+        if (attempt === maxAttempts - 1) {
+          throw err instanceof Error ? err : new Error(String(err || 'Erreur inconnue'));
+        }
+      }
+    }
+    throw new Error('Délai dépassé pour la génération d’image.');
   }
 
   // Animations révélées au scroll
