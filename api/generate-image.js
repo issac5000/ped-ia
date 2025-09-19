@@ -414,20 +414,92 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).send(JSON.stringify(payload));
   } catch (e) {
+    console.error('OpenAI image generation failed:', e);
     const status = Number.isInteger(e?.status) ? e.status : 500;
-    const message = e?.message ? String(e.message) : 'Image generation failed';
-    const payload = { error: message };
-    if (e?.details && typeof e.details === 'string') {
-      payload.details = e.details;
-    }
+    const payload = {
+      error: 'Image generation failed',
+      details: await extractErrorDetails(e),
+      model: resolveErrorModel(e),
+    };
     if (Array.isArray(e?.triedModels) && e.triedModels.length) {
       payload.triedModels = e.triedModels;
-      const lastModel = e.triedModels[e.triedModels.length - 1]?.model;
-      if (lastModel && !payload.model) payload.model = lastModel;
     }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(status).send(JSON.stringify(payload));
   }
+}
+
+async function extractErrorDetails(error) {
+  if (!error) return 'Unknown error';
+
+  if (typeof error.details !== 'undefined') {
+    if (typeof error.details === 'string' && error.details) return error.details;
+    if (error.details && typeof error.details === 'object') return error.details;
+  }
+
+  if (error.raw && typeof error.raw === 'object') {
+    return error.raw;
+  }
+
+  if (error.errJson) {
+    return error.errJson;
+  }
+
+  const response = error.response;
+  if (response) {
+    if (typeof response.data !== 'undefined') {
+      return response.data;
+    }
+    if (typeof response.body === 'string' && response.body) {
+      try {
+        return JSON.parse(response.body);
+      } catch {
+        return response.body;
+      }
+    }
+    if (response.body && typeof response.body === 'object') {
+      return response.body;
+    }
+    if (typeof response.json === 'function') {
+      try {
+        const json = await response.json();
+        if (json) return json;
+      } catch {}
+    }
+    if (typeof response.text === 'function') {
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            return JSON.parse(text);
+          } catch {
+            return text;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  if (error.message) {
+    return String(error.message);
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(error));
+  } catch {}
+
+  return String(error);
+}
+
+function resolveErrorModel(error) {
+  if (error?.model && typeof error.model === 'string' && error.model) {
+    return error.model;
+  }
+  if (Array.isArray(error?.triedModels) && error.triedModels.length) {
+    const lastModel = error.triedModels[error.triedModels.length - 1]?.model;
+    if (lastModel) return lastModel;
+  }
+  return DEFAULT_IMAGE_MODEL;
 }
 
 function safeChildSummary(child) {
