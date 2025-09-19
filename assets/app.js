@@ -4325,7 +4325,7 @@ try {
 
   async function askAIImage(prompt, child){
     const payload = { action: 'generate', prompt, child };
-    const res = await fetch('/api/image?action=generate', {
+    const res = await fetch('/api/image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -4372,10 +4372,14 @@ try {
         await wait(intervalMs);
       }
       try {
-        const statusRes = await fetch(`/api/image?action=status&id=${encodeURIComponent(jobId)}`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          cache: 'no-store'
+        const statusRes = await fetch('/api/image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          cache: 'no-store',
+          body: JSON.stringify({ action: 'status', id: jobId, jobId })
         });
         const statusRaw = await statusRes.text();
         let statusPayload;
