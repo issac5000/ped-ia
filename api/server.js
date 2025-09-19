@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { processAnonChildrenRequest } from '../lib/anon-children.js';
 import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
+import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
 import { generateImage as generateImageFromPrompt, IMAGE_MODEL } from './generate-image.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -17,6 +18,12 @@ const ROOT = resolve(__dirname, '..');
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_DIGITS = '23456789';
 const MAX_ANON_ATTEMPTS = 5;
+
+function requireOpenAIConfig() {
+  const config = getOpenAIConfig();
+  if (!config.apiKey) throw new Error('Missing OPENAI_API_KEY');
+  return config;
+}
 
 /**
  * Génère un code lisible pour les profils anonymes en alternant lettres et chiffres.
@@ -63,7 +70,6 @@ async function loadLocalEnv() {
 }
 await loadLocalEnv();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-const API_KEY = process.env.OPENAI_API_KEY || '';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -153,7 +159,7 @@ function safeChildSummary(child) {
  * Les historiques sont tronqués et filtrés côté serveur pour éviter les débordements.
  */
 async function aiAdvice(body) {
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const config = requireOpenAIConfig();
   const question = String(body.question || '').slice(0, 2000);
   const child = safeChildSummary(body.child);
   const history = Array.isArray(body.history) ? body.history.slice(-20) : [];
@@ -167,12 +173,9 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
     { role:'user', content: user }
   ];
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json'
-    },
+    headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.4, messages: convo })
   });
   if (!res.ok) {
@@ -188,7 +191,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
  * Génère des idées de recettes adaptées à l’âge et au contexte nutritionnel de l’enfant.
  */
 async function aiRecipes(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const config = requireOpenAIConfig();
   const child = safeChildSummary(body.child);
   const prefs = String(body.prefs || '').slice(0, 400);
   const system = `Tu es Ped’IA, assistant nutrition 0–7 ans.
@@ -196,8 +199,8 @@ Donne des idées de menus et recettes adaptées à l’âge, en excluant les all
 Prends en compte le type d’alimentation (allaitement/biberon/diversification), le style d’appétit et, si pertinent, les repères de sommeil.
 Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
+  const r = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+    method:'POST', headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
       {role:'system', content: system}, {role:'user', content: user}
     ]})
@@ -212,7 +215,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
  * Crée une histoire personnalisée (durée configurable, ton apaisant ou énergique).
  */
 async function aiStory(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const config = requireOpenAIConfig();
   const child = safeChildSummary(body.child);
   const theme = String(body.theme || '').slice(0, 200);
   const duration = Math.max(1, Math.min(10, Number(body.duration || 3)));
@@ -222,8 +225,8 @@ Rédige une histoire de ${duration} minute(s), adaptée à l’âge, avec le pr�
 Style ${sleepy ? 'très apaisant, vocabulaire doux, propice au coucher' : 'dynamique et bienveillant'}.
 Texte clair, phrases courtes. Termine par une petite morale positive.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
+  const r = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+    method:'POST', headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.7, messages:[
       {role:'system', content: system}, {role:'user', content: user}
     ]})
@@ -238,11 +241,11 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
  * Produit un commentaire très court et positif pour les journaux d’évolution.
  */
 async function aiComment(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const config = requireOpenAIConfig();
   const content = String(body.content || '').slice(0, 2000);
   const system = `Tu es Ped’IA, un assistant bienveillant pour parents. Rédige un commentaire clair, positif et bref (moins de 50 mots) sur la mise à jour fournie.`;
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
+  const r = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+    method:'POST', headers: buildOpenAIHeaders(config),
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
       {role:'system', content: system}, {role:'user', content}
     ]})
@@ -307,7 +310,8 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/generate-image') {
     try {
       const body = await parseJson(req);
-      const out = await generateImageFromPrompt(body);
+      const config = requireOpenAIConfig();
+      const out = await generateImageFromPrompt(body, config);
       return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : Number.isInteger(e?.statusCode) ? e.statusCode : 500;
