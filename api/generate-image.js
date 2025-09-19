@@ -1,12 +1,11 @@
 // Fonction serverless : /api/generate-image
-// Génère une illustration à partir d'un prompt en appelant Gemini 2.5 Flash Image
+// Génère une illustration à partir d'un prompt. Tente d'abord Gemini (si clé fournie),
+// puis bascule sur OpenAI Images en secours si disponible.
 export async function generateImage(body = {}) {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    const err = new Error('Missing GOOGLE_API_KEY');
-    err.status = 500;
-    throw err;
-  }
+  const googleKey = process.env.GOOGLE_API_KEY
+    || process.env.GOOGLE_GENERATIVE_AI_API_KEY
+    || process.env.GEMINI_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
 
   const promptRaw = (body?.prompt ?? '').toString().trim();
   if (!promptRaw) {
@@ -17,10 +16,62 @@ export async function generateImage(body = {}) {
 
   const prompt = promptRaw.slice(0, 600);
   const child = safeChildSummary(body.child);
+  const contextText = buildContextText(child);
 
+  const errors = [];
+  if (googleKey) {
+    try {
+      return await generateWithGoogle({ prompt, contextText, apiKey: googleKey });
+    } catch (err) {
+      errors.push({ provider: 'google', error: err });
+    }
+  }
+
+  if (openaiKey) {
+    try {
+      return await generateWithOpenAI({ prompt, contextText, apiKey: openaiKey });
+    } catch (err) {
+      errors.push({ provider: 'openai', error: err });
+    }
+  }
+
+  if (!googleKey && !openaiKey) {
+    const err = new Error('Missing GOOGLE_API_KEY or OPENAI_API_KEY');
+    err.status = 500;
+    throw err;
+  }
+
+  if (errors.length) {
+    const lastError = errors[errors.length - 1].error;
+    const status = Number.isInteger(lastError?.status)
+      ? lastError.status
+      : Number.isInteger(lastError?.statusCode)
+        ? lastError.statusCode
+        : 502;
+    const details = errors
+      .map(({ provider, error }) => `${provider}: ${String(error?.message || error)}`)
+      .join(' | ');
+    const err = new Error(details || 'Image generation failed');
+    err.status = status;
+    throw err;
+  }
+
+  const err = new Error('Image generation failed');
+  err.status = 500;
+  throw err;
+}
+
+function buildContextText(child) {
+  if (child && child !== 'Aucun profil') {
+    return `Contexte enfant: ${JSON.stringify(child)}`;
+  }
+  return 'Contexte enfant: aucun détail spécifique.';
+}
+
+async function generateWithGoogle({ prompt, contextText, apiKey }) {
   const parts = [
     { text: 'Crée une illustration colorée, douce et rassurante adaptée aux enfants de 0 à 7 ans. Style chaleureux, sans violence ni éléments effrayants.' },
-    { text: child && child !== 'Aucun profil' ? `Contexte enfant: ${JSON.stringify(child)}` : 'Contexte enfant: aucun détail spécifique.' },
+    { text: contextText },
     { text: `Description à illustrer: ${prompt}` }
   ];
 
@@ -73,6 +124,58 @@ export async function generateImage(body = {}) {
 
   const mimeType = inlineData.mimeType || 'image/png';
   return { imageBase64: inlineData.data, mimeType };
+}
+
+async function generateWithOpenAI({ prompt, contextText, apiKey }) {
+  const description = [
+    'Crée une illustration colorée, douce et rassurante adaptée aux enfants de 0 à 7 ans. Style chaleureux, sans violence ni éléments effrayants.',
+    contextText,
+    `Description à illustrer: ${prompt}`
+  ].join('\n');
+
+  const resp = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt: description,
+      size: '1024x1024',
+      response_format: 'b64_json'
+    })
+  });
+
+  const text = await resp.text();
+  if (!resp.ok) {
+    let details = text;
+    try {
+      const errJson = JSON.parse(text);
+      details = errJson?.error?.message || errJson?.error?.type || details;
+    } catch {}
+    const err = new Error(`OpenAI error: ${details}`);
+    err.status = resp.status >= 400 ? resp.status : 502;
+    throw err;
+  }
+
+  let data;
+  try { data = JSON.parse(text); }
+  catch {
+    const err = new Error('Invalid response from OpenAI');
+    err.status = 502;
+    throw err;
+  }
+
+  const image = data?.data?.[0]?.b64_json;
+  if (!image) {
+    const err = new Error('No image data returned from OpenAI');
+    err.status = 502;
+    throw err;
+  }
+
+  const mimeType = data?.data?.[0]?.mime_type || 'image/png';
+  return { imageBase64: image, mimeType };
 }
 
 export default async function handler(req, res) {
