@@ -5,6 +5,10 @@
       "memory": 512,
       "maxDuration": 60
     },
+    "api/generate-image-worker.js": {
+      "memory": 512,
+      "maxDuration": 60
+    },
     "api/**/*.js": {
       "memory": 256,
       "maxDuration": 15

@@ -11,7 +11,9 @@ import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
 import { buildOpenAIUrl } from './openai-url.js';
-import { generateImage as generateImageFromPrompt, IMAGE_MODEL, getImageModelCandidates } from './generate-image.js';
+import { enqueueImageJob } from './generate-image.js';
+import { runImageGenerationWorker } from './generate-image-worker.js';
+import { getImageJobStatus } from './generate-image-status.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -315,18 +317,55 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/generate-image') {
     try {
       const body = await parseJson(req);
-      const config = requireOpenAIConfig();
-      const out = await generateImageFromPrompt(body, config);
-      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
+      const job = await enqueueImageJob(body);
+      return send(res, 202, JSON.stringify(job), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
-      const status = Number.isInteger(e?.status) ? e.status : Number.isInteger(e?.statusCode) ? e.statusCode : 500;
+      const isJsonError = e?.name === 'SyntaxError';
+      const status = isJsonError ? 400 : Number.isInteger(e?.status) ? e.status : 500;
       const details = e?.details ? String(e.details) : String(e?.message || e);
-      const triedModels = Array.isArray(e?.triedModels) ? e.triedModels : undefined;
-      const fallbackModels = getImageModelCandidates();
-      const lastTriedModel = triedModels?.length ? triedModels[triedModels.length - 1]?.model : undefined;
-      const payload = { error: 'Image generation failed', details, model: lastTriedModel || fallbackModels[0] || IMAGE_MODEL };
-      if (triedModels?.length) payload.triedModels = triedModels;
+      const payload = {
+        error: isJsonError ? 'Invalid JSON body' : 'Image job enqueue failed',
+        details,
+      };
       return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/generate-image-worker') {
+    try {
+      let body = {};
+      try {
+        body = await parseJson(req);
+      } catch (err) {
+        if (err?.name === 'SyntaxError') {
+          return send(res, 400, JSON.stringify({ error: 'Invalid JSON body' }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        throw err;
+      }
+      const limitValue = Number(url.searchParams.get('limit') ?? url.searchParams.get('batchSize') ?? body.limit ?? body.batchSize);
+      const normalizedLimit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(Math.floor(limitValue), 10) : undefined;
+      const summary = await runImageGenerationWorker({ limit: normalizedLimit });
+      const payload = normalizedLimit ? { ...summary, limit: normalizedLimit } : summary;
+      return send(res, 200, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      const details = e?.details ? String(e.details) : String(e?.message || e);
+      return send(res, status, JSON.stringify({ error: 'Image worker failed', details }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/generate-image-status') {
+    try {
+      const jobId = url.searchParams.get('jobId') || url.searchParams.get('jobid');
+      if (!jobId || !jobId.trim()) {
+        return send(res, 400, JSON.stringify({ error: 'jobId query parameter required' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+      const status = await getImageJobStatus(jobId.trim());
+      return send(res, 200, JSON.stringify({ jobId: jobId.trim(), ...status }), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (e) {
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      const details = e?.details ? String(e.details) : String(e?.message || e);
+      return send(res, status, JSON.stringify({ error: 'Status lookup failed', details }), { 'Content-Type': 'application/json; charset=utf-8' });
     }
   }
 

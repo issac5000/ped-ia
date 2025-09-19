@@ -1,8 +1,11 @@
 // Fonction serverless : /api/generate-image
 // Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
 
+import { randomUUID } from 'crypto';
+
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
 import { buildOpenAIUrl, resolveOpenAIBaseUrl } from './openai-url.js';
+import { insertImageJob } from './image-job-store.js';
 
 const IMAGES_PATH = 'images/generations';
 const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
@@ -66,6 +69,57 @@ export async function generateImage(body = {}, configOverrides = undefined) {
   if (error.status == null) error.status = 500;
   error.triedModels = triedModels;
   throw error;
+}
+
+function sanitizeChildForJob(child) {
+  if (!child || typeof child !== 'object') {
+    return null;
+  }
+  const out = {};
+  if (typeof child.firstName === 'string') out.firstName = child.firstName.slice(0, 120);
+  if (typeof child.sex === 'string') out.sex = child.sex.slice(0, 40);
+  if (typeof child.dob === 'string') out.dob = child.dob.slice(0, 40);
+  if (typeof child.context === 'string') out.context = child.context.slice(0, 2000);
+  if (Array.isArray(child.milestones)) out.milestones = child.milestones.slice(0, 120);
+  if (child.growth !== undefined) out.growth = child.growth;
+  return out;
+}
+
+export async function enqueueImageJob(body = {}) {
+  const promptRaw = (body?.prompt ?? '').toString().trim();
+  if (!promptRaw) {
+    const err = new Error('prompt required');
+    err.status = 400;
+    throw err;
+  }
+
+  const prompt = promptRaw.slice(0, 600);
+  const sanitizedChild = sanitizeChildForJob(body.child);
+  const payload = { prompt, child: sanitizedChild };
+
+  let serializedPayload;
+  try {
+    serializedPayload = JSON.stringify(payload);
+  } catch (error) {
+    const err = new Error('Invalid job payload');
+    err.status = 400;
+    err.cause = error;
+    throw err;
+  }
+
+  const jobId = randomUUID();
+  const jobRecord = {
+    id: jobId,
+    prompt: serializedPayload,
+    status: 'pending',
+    result: null,
+    error_message: null,
+  };
+
+  const inserted = await insertImageJob(jobRecord);
+  const finalId = inserted?.id || jobId;
+  const finalStatus = inserted?.status || 'pending';
+  return { jobId: finalId, status: finalStatus };
 }
 
 function buildContextText(child) {
@@ -405,31 +459,30 @@ export default async function handler(req, res) {
 
   try {
     const raw = await readBody(req);
-    const body = JSON.parse(raw || '{}');
-    const result = await generateImage(body);
-    const payload = {
-      imageUrl: typeof result?.imageUrl === 'string' ? result.imageUrl : '',
-      model: DEFAULT_IMAGE_MODEL,
-    };
+    let body = {};
+    if (raw) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return res.status(400).json({ error: 'Invalid JSON body' });
+      }
+    }
+    const job = await enqueueImageJob(body);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.status(200).send(JSON.stringify(payload));
+    return res.status(202).send(JSON.stringify(job));
   } catch (e) {
-    console.error('OpenAI image generation failed:', e);
+    console.error('Image job enqueue failed:', e);
     const status = Number.isInteger(e?.status) ? e.status : 500;
     const payload = {
-      error: 'Image generation failed',
+      error: 'Image job enqueue failed',
       details: await extractErrorDetails(e),
-      model: resolveErrorModel(e),
     };
-    if (Array.isArray(e?.triedModels) && e.triedModels.length) {
-      payload.triedModels = e.triedModels;
-    }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(status).send(JSON.stringify(payload));
   }
 }
 
-async function extractErrorDetails(error) {
+export async function extractErrorDetails(error) {
   if (!error) return 'Unknown error';
 
   if (typeof error.details !== 'undefined') {
@@ -491,7 +544,7 @@ async function extractErrorDetails(error) {
   return String(error);
 }
 
-function resolveErrorModel(error) {
+export function resolveErrorModel(error) {
   if (error?.model && typeof error.model === 'string' && error.model) {
     return error.model;
   }
