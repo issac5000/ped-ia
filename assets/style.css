@@ -1476,6 +1476,30 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
   text-align:center;
   padding-block:4px 8px;
 }
+.ai-image-progress{
+  width:100%;
+  max-width:420px;
+  height:10px;
+  background:rgba(255,255,255,.12);
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);
+  overflow:hidden;
+  box-shadow:0 10px 26px rgba(0,0,0,.25);
+}
+.ai-image-progress-bar{
+  width:0%;
+  height:100%;
+  background:#ff9900;
+  border-radius:999px;
+  box-shadow:0 0 16px rgba(255,153,0,.45);
+  transition:width .4s ease;
+}
+.generation-status{
+  margin:0;
+  font-size:14px;
+  color:#ffffff;
+  letter-spacing:.1px;
+}
 .ai-image-loader{
   display:flex;
   align-items:center;

@@ -2069,6 +2069,9 @@ try {
     const errorImage = document.getElementById('ai-image-error');
     const figureImage = document.getElementById('ai-image-result');
     const imgPreview = figureImage?.querySelector('img');
+    const progressWrapper = document.getElementById('ai-image-progress-wrapper');
+    const progressBar = document.getElementById('ai-image-progress-bar');
+    const statusMessage = document.getElementById('generation-status');
     if (fImage && !fImage.dataset.bound) fImage.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (fImage.dataset.busy === '1') return;
@@ -2080,12 +2083,92 @@ try {
       }
       console.info('[AI image] Génération demandée', { promptLength: prompt.length, preview: prompt.slice(0, 80) });
       fImage.dataset.busy = '1';
+      const runToken = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      fImage.dataset.runToken = runToken;
       const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      if (sImage) sImage.textContent = 'Génération en cours…';
+      if (sImage) sImage.textContent = '';
       if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
       if (figureImage) figureImage.hidden = true;
       if (imgPreview) imgPreview.removeAttribute('src');
-      if (loaderImage) loaderImage.hidden = false;
+      if (loaderImage) loaderImage.hidden = true;
+
+      const statusTimers = [];
+      let hideStatusTimeout = null;
+      let statusActive = false;
+      let progressHideTimeout = null;
+      const clearStatusTimers = () => {
+        statusTimers.forEach(clearTimeout);
+        statusTimers.length = 0;
+        if (hideStatusTimeout) { clearTimeout(hideStatusTimeout); hideStatusTimeout = null; }
+      };
+      const setStatusText = (text) => {
+        if (!statusMessage || fImage.dataset.runToken !== runToken) return;
+        statusMessage.hidden = false;
+        statusMessage.textContent = text;
+      };
+      const startStatusSequence = () => {
+        statusActive = true;
+        setStatusText('✨ Ton image est en préparation…');
+        statusTimers.push(setTimeout(() => {
+          if (statusActive) setStatusText('⌛ Ça prend quelques secondes, merci de ta patience 🙏');
+        }, 4000));
+        statusTimers.push(setTimeout(() => {
+          if (statusActive) setStatusText('🎨 L’IA met les dernières touches à ton illustration…');
+        }, 8000));
+      };
+      const showSuccessStatus = () => {
+        if (fImage.dataset.runToken !== runToken) return;
+        statusActive = false;
+        clearStatusTimers();
+        setStatusText('✅ Ton image est prête !');
+        hideStatusTimeout = setTimeout(() => {
+          if (statusMessage && fImage.dataset.runToken === runToken) {
+            statusMessage.hidden = true;
+            statusMessage.textContent = '';
+          }
+        }, 1200);
+      };
+      const showFailureStatus = () => {
+        if (fImage.dataset.runToken !== runToken) return;
+        statusActive = false;
+        clearStatusTimers();
+        setStatusText('❌ Impossible de générer l’image pour le moment.');
+      };
+      const startProgressBar = () => {
+        if (!progressWrapper || !progressBar) return;
+        progressWrapper.hidden = false;
+        progressBar.style.transition = 'none';
+        progressBar.style.width = '0%';
+        progressBar.offsetWidth;
+        requestAnimationFrame(() => {
+          if (fImage.dataset.runToken !== runToken) return;
+          progressBar.style.transition = 'width 7s ease';
+          progressBar.style.width = '90%';
+        });
+      };
+      const finishProgressBar = () => {
+        if (!progressWrapper || !progressBar || fImage.dataset.runToken !== runToken) return;
+        progressBar.style.transition = 'width .45s ease';
+        progressBar.style.width = '100%';
+        if (progressHideTimeout) clearTimeout(progressHideTimeout);
+        progressHideTimeout = setTimeout(() => {
+          if (fImage.dataset.runToken !== runToken) return;
+          progressWrapper.hidden = true;
+          progressBar.style.transition = 'none';
+          progressBar.style.width = '0%';
+        }, 500);
+      };
+      const resetProgressBar = () => {
+        if (!progressWrapper || !progressBar) return;
+        if (progressHideTimeout) { clearTimeout(progressHideTimeout); progressHideTimeout = null; }
+        progressWrapper.hidden = true;
+        progressBar.style.transition = 'none';
+        progressBar.style.width = '0%';
+      };
+
+      startProgressBar();
+      startStatusSequence();
+
       try {
         const res = await fetch('/api/image', {
           method: 'POST',
@@ -2118,7 +2201,10 @@ try {
           imgPreview.src = dataUrl;
         }
         if (figureImage) figureImage.hidden = false;
-        if (sImage) sImage.textContent = 'Illustration prête 🎨';
+        if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
+        finishProgressBar();
+        showSuccessStatus();
+        if (sImage) sImage.textContent = '';
       } catch (err) {
         console.error('[AI image] Erreur', err);
         const message = err instanceof Error ? err.message : 'Illustration indisponible.';
@@ -2126,6 +2212,8 @@ try {
           errorImage.textContent = message;
           errorImage.hidden = false;
         }
+        resetProgressBar();
+        showFailureStatus();
         if (sImage) sImage.textContent = '';
       } finally {
         if (loaderImage) loaderImage.hidden = true;
