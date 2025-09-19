@@ -9,7 +9,15 @@ function normalizeString(value) {
 function normalizeBaseUrl(value) {
   const raw = normalizeString(value);
   if (!raw) return DEFAULT_BASE_URL;
-  return raw.replace(/\/+$/, '') || DEFAULT_BASE_URL;
+
+  const trimmed = raw.replace(/\/+$/, '');
+  const lower = trimmed.toLowerCase();
+  if (lower.endsWith('/v1')) {
+    const withoutVersion = trimmed.slice(0, -3).replace(/\/+$/, '');
+    return withoutVersion || DEFAULT_BASE_URL;
+  }
+
+  return trimmed || DEFAULT_BASE_URL;
 }
 
 export function getOpenAIConfig(overrides = {}) {

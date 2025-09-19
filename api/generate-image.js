@@ -99,7 +99,13 @@ function buildImagesEndpoint(config) {
 function normalizeBaseUrl(value) {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (!raw) return 'https://api.openai.com';
-  return raw.replace(/\/+$/, '') || 'https://api.openai.com';
+  const trimmed = raw.replace(/\/+$/, '');
+  const lower = trimmed.toLowerCase();
+  if (lower.endsWith('/v1')) {
+    const withoutVersion = trimmed.slice(0, -3).replace(/\/+$/, '');
+    return withoutVersion || 'https://api.openai.com';
+  }
+  return trimmed || 'https://api.openai.com';
 }
 
 export default async function handler(req, res) {
