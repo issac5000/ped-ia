@@ -2129,6 +2129,8 @@ try {
     const sImage = document.getElementById('ai-image-status');
     const imgPreview = document.getElementById('ai-image-preview');
     const imgEmpty = document.getElementById('ai-image-empty');
+    const feedback = document.getElementById('ai-image-feedback');
+    const imgEmptyDefaultText = imgEmpty?.textContent ?? '';
     if (fImage && !fImage.dataset.bound) fImage.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (fImage.dataset.busy === '1') return;
@@ -2141,8 +2143,12 @@ try {
       fImage.dataset.busy = '1';
       const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
       if (sImage) sImage.textContent = 'La génération peut prendre une à deux minutes. Merci de votre patience 🙏';
+      if (feedback) feedback.hidden = false;
       if (imgPreview) { imgPreview.hidden = true; imgPreview.removeAttribute('src'); }
-      if (imgEmpty) imgEmpty.classList.remove('hidden');
+      if (imgEmpty) {
+        imgEmpty.textContent = imgEmptyDefaultText;
+        imgEmpty.classList.remove('hidden');
+      }
       try {
         const result = await askAIImage(prompt, currentChild);
         const src = result.imageUrl || '';
@@ -2155,18 +2161,19 @@ try {
           imgPreview.hidden = false;
         }
         if (imgEmpty) imgEmpty.classList.add('hidden');
-        if (sImage) {
-          sImage.textContent = '';
-        }
       } catch (err) {
         console.error('Image generation failed', err);
-        if (imgEmpty) imgEmpty.classList.remove('hidden');
-        if (sImage) {
-          sImage.textContent = 'Génération impossible pour le moment. Réessayez plus tard.';
+        if (imgEmpty) {
+          imgEmpty.textContent = 'Génération impossible pour le moment. Réessayez plus tard.';
+          imgEmpty.classList.remove('hidden');
         }
       } finally {
         fImage.dataset.busy = '0';
         if (submitBtn) submitBtn.disabled = false;
+        if (sImage) {
+          sImage.textContent = '';
+        }
+        if (feedback) feedback.hidden = true;
       }
     }); fImage && (fImage.dataset.bound='1');
 
