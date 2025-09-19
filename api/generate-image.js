@@ -84,11 +84,13 @@ async function generateWithOpenAI({ prompt, contextText, config }) {
 function resolveConfig(overrides) {
   if (overrides && typeof overrides === 'object' && overrides.apiKey) {
     const baseUrl = overrides.baseUrl || overrides.baseURL;
-    const { baseUrl: normalizedBase, version } = resolveOpenAIBaseUrl(baseUrl);
+    const { baseUrl: normalizedBase, version, searchParams } = resolveOpenAIBaseUrl(baseUrl);
+    const queryString = searchParams?.toString() || '';
+    const rebuiltBase = queryString ? `${normalizedBase}?${queryString}` : normalizedBase;
     const versionOverride = overrides.apiVersion ?? overrides.version;
     return {
       ...overrides,
-      baseUrl: normalizedBase,
+      baseUrl: rebuiltBase,
       apiVersion: versionOverride ?? version ?? undefined,
     };
   }
