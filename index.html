@@ -576,8 +576,8 @@
 
           <div class="card stack">
             <div class="card-header">
-              <h3>Générateur d’images&nbsp;: donne vie à l’imagination de votre enfant</h3>
-              <p class="muted">Parents et enfants peuvent décrire la scène qu’ils souhaitent explorer. L’IA traduit ces idées en illustrations joyeuses et adaptées à leur univers. Chaque image devient une invitation à rêver et à raconter de nouvelles histoires.</p>
+              <h3>Générateur d’images</h3>
+              <p class="muted">donnez vie à l’imagination de votre enfant&nbsp;! Décrivez une scène que votre enfant souhaite explorer et notre IA en fera une illustration joyeuse et adaptée</p>
             </div>
             <form id="form-ai-image" class="form-grid">
               <label>Description de l’image
@@ -586,7 +586,10 @@
               <div class="hstack">
                 <button class="btn btn-primary" type="submit">Générer</button>
               </div>
-              <p id="ai-image-status" class="muted"></p>
+              <div id="ai-image-feedback" class="ai-image-feedback" hidden>
+                <p id="ai-image-status" class="muted"></p>
+                <div id="ai-image-spinner" class="ai-image-spinner" aria-hidden="true"></div>
+              </div>
             </form>
             <div id="ai-image-output" class="card ai-image-output">
               <p id="ai-image-empty" class="muted">L’image générée s’affichera ici.</p>
