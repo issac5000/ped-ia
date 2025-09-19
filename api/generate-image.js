@@ -1,9 +1,12 @@
 // Fonction serverless : /api/generate-image
 // Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
+import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
+
 export const IMAGE_MODEL = (process.env.OPENAI_IMAGE_MODEL || '').trim() || 'gpt-image-1';
 
-export async function generateImage(body = {}) {
-  const openaiKey = process.env.OPENAI_API_KEY;
+export async function generateImage(body = {}, overrides = {}) {
+  const config = getOpenAIConfig(overrides);
+  const openaiKey = config.apiKey;
 
   const promptRaw = (body?.prompt ?? '').toString().trim();
   if (!promptRaw) {
@@ -22,7 +25,11 @@ export async function generateImage(body = {}) {
     throw err;
   }
 
-  return await generateWithOpenAI({ prompt, contextText, apiKey: openaiKey });
+  return await generateWithOpenAI({
+    prompt,
+    contextText,
+    config,
+  });
 }
 
 function buildContextText(child) {
@@ -32,7 +39,7 @@ function buildContextText(child) {
   return 'Contexte enfant: aucun détail spécifique.';
 }
 
-async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 55000 }) {
+async function generateWithOpenAI({ prompt, contextText, config, timeoutMs = 55000 }) {
   const description = [
     'Crée une illustration colorée, douce et rassurante adaptée aux enfants de 0 à 7 ans. Style chaleureux, sans violence ni éléments effrayants.',
     contextText,
@@ -44,12 +51,11 @@ async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 550
 
   let resp;
   try {
-    resp = await fetch('https://api.openai.com/v1/images/generations', {
+    const url = `${config.baseUrl}/v1/images/generations`;
+    const headers = buildOpenAIHeaders(config, { 'Content-Type': 'application/json' });
+    resp = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers,
       body: JSON.stringify({
         model: IMAGE_MODEL,
         prompt: description,
@@ -65,7 +71,8 @@ async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 550
       err.status = 504;
       throw err;
     }
-    const err = new Error(`Failed to reach OpenAI: ${error?.message || error}`);
+    const detail = error?.message || error;
+    const err = new Error(`Failed to reach OpenAI: ${detail}`);
     err.status = 502;
     throw err;
   } finally {
@@ -105,10 +112,11 @@ async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 550
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
     return res.status(204).end();
   }
   if (req.method !== 'POST') {
@@ -120,13 +128,13 @@ export default async function handler(req, res) {
     const raw = await readBody(req);
     const body = JSON.parse(raw || '{}');
     const result = await generateImage(body);
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).send(JSON.stringify(result));
   } catch (e) {
     const status = Number.isInteger(e?.status) ? e.status : Number.isInteger(e?.statusCode) ? e.statusCode : 500;
     const details = e?.details ? String(e.details) : String(e?.message || e);
-    return res.status(status).json({ error: 'Image generation failed', details, model: IMAGE_MODEL });
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.status(status).send(JSON.stringify({ error: 'Image generation failed', details, model: IMAGE_MODEL }));
   }
 }
 

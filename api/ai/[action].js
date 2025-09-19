@@ -1,6 +1,8 @@
 // Route serverless dynamique : /api/ai/[action]
 // Regroupe les anciens endpoints /api/ai/advice, /api/ai/recipes, /api/ai/story et /api/ai/comment
 
+import { buildOpenAIHeaders, getOpenAIConfig } from '../openai-config.js';
+
 const ACTION_HANDLERS = {
   advice: handleAdvice,
   recipes: handleRecipes,
@@ -28,15 +30,15 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Not Found' });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  const config = getOpenAIConfig();
+  if (!config.apiKey) {
     return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
   }
 
   try {
     const raw = await readBody(req);
     const body = parseJson(raw);
-    const payload = await actionHandler(body, apiKey);
+    const payload = await actionHandler(body, config);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).send(JSON.stringify(payload));
   } catch (error) {
@@ -61,7 +63,7 @@ function getActionName(req) {
   return undefined;
 }
 
-async function handleAdvice(body, apiKey) {
+async function handleAdvice(body, config) {
   const question = String(body?.question || '').slice(0, 2000);
   const child = safeChildSummary(body?.child);
   const history = Array.isArray(body?.history) ? body.history.slice(-20) : [];
@@ -72,12 +74,9 @@ Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
 Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.4,
@@ -101,7 +100,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
   return { text };
 }
 
-async function handleRecipes(body, apiKey) {
+async function handleRecipes(body, config) {
   const child = safeChildSummary(body?.child);
   const prefs = String(body?.prefs || '').slice(0, 400);
 
@@ -111,12 +110,9 @@ Prends en compte le type d’alimentation (allaitement/biberon/diversification),
 Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.4,
@@ -137,7 +133,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
   return { text };
 }
 
-async function handleStory(body, apiKey) {
+async function handleStory(body, config) {
   const child = safeChildSummary(body?.child);
   const theme = String(body?.theme || '').slice(0, 200);
   const duration = Math.max(1, Math.min(10, Number(body?.duration || 3)));
@@ -149,12 +145,9 @@ Style ${sleepy ? 'très apaisant, vocabulaire doux, propice au coucher' : 'dynam
 Texte clair, phrases courtes. Termine par une petite morale positive.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.7,
@@ -175,16 +168,13 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
   return { text };
 }
 
-async function handleComment(body, apiKey) {
+async function handleComment(body, config) {
   const content = String(body?.content || '').slice(0, 2000);
   const system = 'Tu es Ped’IA, un assistant bienveillant pour parents. Rédige un commentaire clair, positif et bref (moins de 50 mots) sur la mise à jour fournie.';
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.4,
