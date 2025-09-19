@@ -19,6 +19,40 @@ import { DEV_QUESTIONS } from './questions-dev.js';
     const pathOnly = withoutHash.split('?')[0].split('&')[0] || '/';
     return pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`;
   };
+  const parseHashQuery = (hash) => {
+    if (typeof hash !== 'string') return null;
+    const idx = hash.indexOf('?');
+    if (idx === -1) return null;
+    const query = hash.slice(idx + 1);
+    try { return new URLSearchParams(query); }
+    catch { return null; }
+  };
+  let aiFocusCleanupTimer = null;
+  const aiFocusMap = {
+    chat: 'form-ai-chat',
+    story: 'form-ai-story',
+    recipes: 'form-ai-recipes',
+    images: 'form-ai-image'
+  };
+  function clearAiFocusHighlight(){
+    document.querySelectorAll('.ai-focus-highlight').forEach(node => node.classList.remove('ai-focus-highlight'));
+    if (aiFocusCleanupTimer) { clearTimeout(aiFocusCleanupTimer); aiFocusCleanupTimer = null; }
+  }
+  function focusAIToolSection(key){
+    if (!key) return;
+    const targetId = aiFocusMap[key];
+    if (!targetId) return;
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const card = el.closest('.card') || el;
+    clearAiFocusHighlight();
+    card.classList.add('ai-focus-highlight');
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+    aiFocusCleanupTimer = setTimeout(() => {
+      card.classList.remove('ai-focus-highlight');
+      aiFocusCleanupTimer = null;
+    }, 1600);
+  }
   const routeSections = new Map();
   document.querySelectorAll('section[data-route]').forEach(section => {
     const key = normalizeRoutePath(section.dataset.route || '/');
@@ -357,6 +391,8 @@ try {
   function setActiveRoute(hash) {
     const requestedPath = normalizeRoutePath(hash);
     const path = routeSections.has(requestedPath) ? requestedPath : '/';
+    const queryParams = parseHashQuery(typeof hash === 'string' ? hash : '');
+    const focusParam = queryParams?.get('focus') || '';
     const targetSection = routeSections.get(path) || null;
     if (targetSection && activeRouteEl !== targetSection) {
       activeRouteEl?.classList.remove('active');
@@ -391,7 +427,14 @@ try {
     if (path === '/dashboard') { renderDashboard(); }
     if (path === '/community') { renderCommunity(); }
     if (path === '/settings') { renderSettings(); }
-    if (path === '/ai') { setupAIPage(); }
+    if (path === '/ai') {
+      setupAIPage();
+      if (focusParam) {
+        setTimeout(() => focusAIToolSection(focusParam), 60);
+      }
+    } else {
+      clearAiFocusHighlight();
+    }
     if (path === '/contact') { setupContact(); }
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(setupScrollAnimations);
@@ -2065,13 +2108,11 @@ try {
     // Générateur d'images
     const fImage = document.getElementById('form-ai-image');
     const sImage = document.getElementById('ai-image-status');
-    const loaderImage = document.getElementById('ai-image-loader');
     const errorImage = document.getElementById('ai-image-error');
     const figureImage = document.getElementById('ai-image-result');
     const imgPreview = figureImage?.querySelector('img');
-    const progressWrapper = document.getElementById('ai-image-progress-wrapper');
-    const progressBar = document.getElementById('ai-image-progress-bar');
     const statusMessage = document.getElementById('generation-status');
+    const spinnerImage = document.getElementById('ai-image-spinner');
     if (fImage && !fImage.dataset.bound) fImage.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (fImage.dataset.busy === '1') return;
@@ -2090,12 +2131,11 @@ try {
       if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
       if (figureImage) figureImage.hidden = true;
       if (imgPreview) imgPreview.removeAttribute('src');
-      if (loaderImage) loaderImage.hidden = true;
+      if (spinnerImage) spinnerImage.hidden = false;
 
       const statusTimers = [];
       let hideStatusTimeout = null;
       let statusActive = false;
-      let progressHideTimeout = null;
       const clearStatusTimers = () => {
         statusTimers.forEach(clearTimeout);
         statusTimers.length = 0;
@@ -2135,49 +2175,20 @@ try {
         clearStatusTimers();
         setStatusText('❌ Impossible de générer l’image pour le moment.');
       };
-      const startProgressBar = () => {
-        if (!progressWrapper || !progressBar) return;
-        progressWrapper.hidden = false;
-        progressBar.style.transition = 'none';
-        progressBar.style.width = '0%';
-        progressBar.offsetWidth;
-        requestAnimationFrame(() => {
-          const activeToken = fImage.dataset.runToken;
-          if (activeToken && activeToken !== runToken) return;
-          progressBar.style.transition = 'width 7s ease';
-          requestAnimationFrame(() => {
-            const againToken = fImage.dataset.runToken;
-            if (againToken && againToken !== runToken) return;
-            progressBar.style.width = '90%';
-          });
-        });
-      };
-      const finishProgressBar = () => {
-        if (!progressWrapper || !progressBar) return;
+      const showSpinner = () => {
+        if (!spinnerImage) return;
         const activeToken = fImage.dataset.runToken;
         if (activeToken && activeToken !== runToken) return;
-        progressBar.style.transition = 'width .45s ease';
-        progressBar.style.width = '100%';
-        if (progressHideTimeout) clearTimeout(progressHideTimeout);
-        progressHideTimeout = setTimeout(() => {
-          const latestToken = fImage.dataset.runToken;
-          if (latestToken && latestToken !== runToken) return;
-          progressWrapper.hidden = true;
-          progressBar.style.transition = 'none';
-          progressBar.style.width = '0%';
-        }, 500);
+        spinnerImage.hidden = false;
       };
-      const resetProgressBar = () => {
-        if (!progressWrapper || !progressBar) return;
+      const hideSpinner = () => {
+        if (!spinnerImage) return;
         const activeToken = fImage.dataset.runToken;
         if (activeToken && activeToken !== runToken) return;
-        if (progressHideTimeout) { clearTimeout(progressHideTimeout); progressHideTimeout = null; }
-        progressWrapper.hidden = true;
-        progressBar.style.transition = 'none';
-        progressBar.style.width = '0%';
+        spinnerImage.hidden = true;
       };
 
-      startProgressBar();
+      showSpinner();
       startStatusSequence();
 
       try {
@@ -2213,7 +2224,7 @@ try {
         }
         if (figureImage) figureImage.hidden = false;
         if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
-        finishProgressBar();
+        hideSpinner();
         showSuccessStatus();
         if (sImage) sImage.textContent = '';
       } catch (err) {
@@ -2223,11 +2234,11 @@ try {
           errorImage.textContent = message;
           errorImage.hidden = false;
         }
-        resetProgressBar();
+        hideSpinner();
         showFailureStatus();
         if (sImage) sImage.textContent = '';
       } finally {
-        if (loaderImage) loaderImage.hidden = true;
+        hideSpinner();
         fImage.dataset.busy = '0';
         const submitBtnFinal = fImage.querySelector('button[type="submit"],input[type="submit"]');
         if (submitBtnFinal) submitBtnFinal.disabled = false;
