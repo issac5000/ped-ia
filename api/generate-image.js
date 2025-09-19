@@ -1,12 +1,13 @@
 // Fonction serverless : /api/generate-image
 // Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
 
-const OPENAI_IMAGES_ENDPOINT = 'https://api.openai.com/v1/images/generations';
+import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
+
+const IMAGES_PATH = '/v1/images/generations';
 export const IMAGE_MODEL = 'gpt-image-1';
 
-export async function generateImage(body = {}) {
-  const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
-
+export async function generateImage(body = {}, configOverrides = undefined) {
+  const config = resolveConfig(configOverrides);
   const promptRaw = (body?.prompt ?? '').toString().trim();
   if (!promptRaw) {
     const err = new Error('prompt required');
@@ -18,13 +19,13 @@ export async function generateImage(body = {}) {
   const child = safeChildSummary(body.child);
   const contextText = buildContextText(child);
 
-  if (!openaiKey) {
+  if (!config.apiKey) {
     const err = new Error('Missing OPENAI_API_KEY');
     err.status = 500;
     throw err;
   }
 
-  return await generateWithOpenAI({ prompt, contextText, openaiKey });
+  return await generateWithOpenAI({ prompt, contextText, config });
 }
 
 function buildContextText(child) {
@@ -34,19 +35,17 @@ function buildContextText(child) {
   return 'Contexte enfant: aucun détail spécifique.';
 }
 
-async function generateWithOpenAI({ prompt, contextText, openaiKey }) {
+async function generateWithOpenAI({ prompt, contextText, config }) {
   const description = [
     'Crée une illustration colorée, douce et rassurante adaptée aux enfants de 0 à 7 ans. Style chaleureux, sans violence ni éléments effrayants.',
     contextText,
     `Description à illustrer: ${prompt}`
   ].join('\n');
 
-  const response = await fetch(OPENAI_IMAGES_ENDPOINT, {
+  const endpoint = buildImagesEndpoint(config);
+  const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${openaiKey}`,
-    },
+    headers: buildOpenAIHeaders(config),
     body: JSON.stringify({
       model: IMAGE_MODEL,
       prompt: description,
@@ -79,6 +78,28 @@ async function generateWithOpenAI({ prompt, contextText, openaiKey }) {
   }
 
   return { imageBase64: image, mimeType: 'image/png', model: IMAGE_MODEL };
+}
+
+function resolveConfig(overrides) {
+  if (overrides && typeof overrides === 'object' && overrides.apiKey) {
+    const baseUrl = overrides.baseUrl || overrides.baseURL;
+    return {
+      ...overrides,
+      baseUrl: normalizeBaseUrl(baseUrl),
+    };
+  }
+  return getOpenAIConfig(overrides || {});
+}
+
+function buildImagesEndpoint(config) {
+  const base = normalizeBaseUrl(config?.baseUrl || config?.baseURL);
+  return `${base}${IMAGES_PATH}`;
+}
+
+function normalizeBaseUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return 'https://api.openai.com';
+  return raw.replace(/\/+$/, '') || 'https://api.openai.com';
 }
 
 export default async function handler(req, res) {
