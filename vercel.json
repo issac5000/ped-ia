@@ -1,11 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/generate-image.js": {
-      "memory": 512,
-      "maxDuration": 60
-    },
-    "api/generate-image-worker.js": {
+    "api/image.js": {
       "memory": 512,
       "maxDuration": 60
     },

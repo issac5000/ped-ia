@@ -1,11 +1,17 @@
-// Fonction serverless : /api/generate-image
-// Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
+// Fonction serverless : /api/image
+// Route unique pour gérer la génération d'illustrations, le suivi de statut et le worker.
 
 import { randomUUID } from 'crypto';
 
 import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
 import { buildOpenAIUrl, resolveOpenAIBaseUrl } from './openai-url.js';
-import { insertImageJob } from './image-job-store.js';
+import {
+  insertImageJob,
+  fetchPendingImageJobs,
+  parseJobPayload,
+  updateImageJob,
+  fetchImageJobById,
+} from './image-job-store.js';
 
 const IMAGES_PATH = 'images/generations';
 const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
@@ -15,6 +21,8 @@ const AZURE_PATH_HINT_REGEX = /\/openai\//i;
 const AZURE_IMAGE_POLL_TIMEOUT_MS = 60_000;
 const AZURE_IMAGE_POLL_INITIAL_DELAY_MS = 1_000;
 const AZURE_IMAGE_POLL_MAX_DELAY_MS = 5_000;
+const DEFAULT_BATCH_LIMIT = 3;
+const MAX_ERROR_MESSAGE_LENGTH = 2_000;
 
 export const IMAGE_MODEL = DEFAULT_IMAGE_MODEL;
 
@@ -119,7 +127,135 @@ export async function enqueueImageJob(body = {}) {
   const inserted = await insertImageJob(jobRecord);
   const finalId = inserted?.id || jobId;
   const finalStatus = inserted?.status || 'pending';
-  return { jobId: finalId, status: finalStatus };
+  const parsedResult = parseJobResult(inserted?.result);
+  const errorMessage = typeof inserted?.error_message === 'string' ? inserted.error_message : null;
+  return {
+    id: finalId,
+    jobId: finalId,
+    status: finalStatus,
+    result: parsedResult,
+    error_message: errorMessage,
+  };
+}
+
+function parseJobResult(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'object') return raw;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed;
+  } catch {}
+  return trimmed;
+}
+
+export async function getImageJobStatus(jobId) {
+  if (!jobId) {
+    const err = new Error('jobId required');
+    err.status = 400;
+    throw err;
+  }
+  const job = await fetchImageJobById(jobId);
+  if (!job) {
+    const err = new Error('Job not found');
+    err.status = 404;
+    throw err;
+  }
+  return {
+    status: job.status || 'pending',
+    result: parseJobResult(job.result),
+    error_message: job.error_message ?? null,
+  };
+}
+
+function pickBatchLimit({ searchParams, body }) {
+  if (body && typeof body === 'object' && body !== null) {
+    const fromBody = Number(body.limit ?? body.batchSize);
+    if (Number.isFinite(fromBody) && fromBody > 0) {
+      return Math.min(Math.floor(fromBody), 10);
+    }
+  }
+  if (searchParams) {
+    const fromQuery = Number(searchParams.get('limit') ?? searchParams.get('batchSize'));
+    if (Number.isFinite(fromQuery) && fromQuery > 0) {
+      return Math.min(Math.floor(fromQuery), 10);
+    }
+  }
+  return DEFAULT_BATCH_LIMIT;
+}
+
+function normalizeResultPayload(result) {
+  if (!result || typeof result !== 'object') {
+    return {
+      imageUrl: typeof result === 'string' ? result : '',
+      model: IMAGE_MODEL,
+    };
+  }
+  return {
+    imageUrl: typeof result.imageUrl === 'string' ? result.imageUrl : '',
+    model: typeof result.model === 'string' && result.model ? result.model : IMAGE_MODEL,
+  };
+}
+
+function serializeResultPayload(result) {
+  const payload = normalizeResultPayload(result);
+  return JSON.stringify(payload);
+}
+
+function truncateErrorMessage(message) {
+  if (typeof message !== 'string') {
+    try {
+      return truncateErrorMessage(JSON.stringify(message));
+    } catch {
+      return 'Unknown error';
+    }
+  }
+  if (message.length <= MAX_ERROR_MESSAGE_LENGTH) return message;
+  return `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH - 3)}...`;
+}
+
+export async function runImageGenerationWorker(options = {}) {
+  const { limit = DEFAULT_BATCH_LIMIT } = options;
+  const jobs = await fetchPendingImageJobs(limit);
+  const summaries = [];
+  for (const job of jobs) {
+    if (!job || !job.id) continue;
+    const payload = parseJobPayload(job.prompt);
+    const jobBody = {
+      prompt: payload.prompt,
+      child: payload.child,
+    };
+    try {
+      const result = await generateImage(jobBody);
+      const serializedResult = serializeResultPayload(result);
+      await updateImageJob(job.id, {
+        status: 'done',
+        result: serializedResult,
+        error_message: null,
+      }).catch((err) => {
+        console.error('Failed to update job as done:', err);
+      });
+      summaries.push({ id: job.id, status: 'done', model: result?.model ?? IMAGE_MODEL });
+    } catch (error) {
+      console.error(`Image generation failed for job ${job.id}:`, error);
+      const details = await extractErrorDetails(error);
+      const fallbackModel = resolveErrorModel(error);
+      const message = truncateErrorMessage(
+        typeof details === 'string' ? details : JSON.stringify(details)
+      );
+      await updateImageJob(job.id, {
+        status: 'failed',
+        result: null,
+        error_message: message,
+      }).catch((err) => {
+        console.error('Failed to mark job as failed:', err);
+      });
+      summaries.push({ id: job.id, status: 'failed', error: message, model: fallbackModel });
+    }
+  }
+  return { processed: summaries.length, jobs: summaries };
 }
 
 function buildContextText(child) {
@@ -446,40 +582,131 @@ function shouldFallbackToNextModel(error) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
 
   if (req.method === 'OPTIONS') {
+    res.setHeader('Allow', 'GET,POST,OPTIONS');
     return res.status(204).end();
   }
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method Not Allowed' });
+
+  const url = new URL(req.url || '', 'http://localhost');
+  const raw = await readBody(req);
+  let body = {};
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return sendJson(res, 400, { ok: false, data: { message: 'Invalid JSON body' } });
+    }
+  }
+
+  const action = normalizeAction(body?.action ?? url.searchParams.get('action'));
+  if (!action) {
+    return sendJson(res, 400, { ok: false, data: { message: 'Missing action parameter' } });
   }
 
   try {
-    const raw = await readBody(req);
-    let body = {};
-    if (raw) {
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        return res.status(400).json({ error: 'Invalid JSON body' });
+    switch (action) {
+      case 'generate': {
+        if (req.method !== 'POST') {
+          res.setHeader('Allow', 'POST,OPTIONS');
+          return sendJson(res, 405, { ok: false, data: { message: 'Method Not Allowed' } });
+        }
+        const job = await enqueueImageJob(body);
+        return sendJson(res, 202, { ok: true, data: job });
       }
+      case 'status': {
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          res.setHeader('Allow', 'GET,POST,OPTIONS');
+          return sendJson(res, 405, { ok: false, data: { message: 'Method Not Allowed' } });
+        }
+        const jobId = parseJobId({ searchParams: url.searchParams, body });
+        if (!jobId) {
+          return sendJson(res, 400, { ok: false, data: { message: 'jobId query parameter required' } });
+        }
+        const status = await getImageJobStatus(jobId);
+        return sendJson(res, 200, { ok: true, data: { id: jobId, jobId, ...status } });
+      }
+      case 'worker': {
+        if (req.method !== 'POST') {
+          res.setHeader('Allow', 'POST,OPTIONS');
+          return sendJson(res, 405, { ok: false, data: { message: 'Method Not Allowed' } });
+        }
+        const limit = pickBatchLimit({ searchParams: url.searchParams, body });
+        const summary = await runImageGenerationWorker({ limit });
+        return sendJson(res, 200, { ok: true, data: { ...summary, limit } });
+      }
+      default:
+        return sendJson(res, 400, { ok: false, data: { message: 'Unknown action' } });
     }
-    const job = await enqueueImageJob(body);
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.status(202).send(JSON.stringify(job));
-  } catch (e) {
-    console.error('Image job enqueue failed:', e);
-    const status = Number.isInteger(e?.status) ? e.status : 500;
-    const payload = {
-      error: 'Image job enqueue failed',
-      details: await extractErrorDetails(e),
-    };
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.status(status).send(JSON.stringify(payload));
+  } catch (error) {
+    console.error('Image API error:', error);
+    const status = resolveErrorStatus(error);
+    const payload = await buildErrorResponse(error, status);
+    return sendJson(res, status, payload);
   }
+}
+
+function normalizeAction(value) {
+  if (!value) return '';
+  return String(value).trim().toLowerCase();
+}
+
+function parseJobId({ searchParams, body }) {
+  if (body && typeof body === 'object' && body !== null) {
+    const fromBody = body.id ?? body.jobId ?? body.jobid;
+    if (typeof fromBody === 'string' && fromBody.trim()) {
+      return fromBody.trim();
+    }
+  }
+  if (!searchParams) return null;
+  const fromQuery =
+    searchParams.get('id') ?? searchParams.get('jobId') ?? searchParams.get('jobid');
+  if (typeof fromQuery === 'string' && fromQuery.trim()) {
+    return fromQuery.trim();
+  }
+  return null;
+}
+
+function sendJson(res, status, payload) {
+  res.status(status);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.send(JSON.stringify(payload));
+}
+
+function resolveErrorStatus(error, fallback = 500) {
+  const status =
+    typeof error?.status === 'number'
+      ? error.status
+      : typeof error?.statusCode === 'number'
+        ? error.statusCode
+        : null;
+  if (Number.isInteger(status) && status >= 100 && status <= 599) {
+    return status;
+  }
+  return fallback;
+}
+
+async function buildErrorResponse(error, status) {
+  const message =
+    typeof error?.message === 'string' && error.message
+      ? error.message
+      : status >= 500
+        ? 'Internal Server Error'
+        : 'Bad Request';
+  const data = { message };
+
+  if (error?.details) {
+    data.details = error.details;
+  } else if (status >= 500) {
+    const details = await extractErrorDetails(error);
+    if (details && details !== message) {
+      data.details = details;
+    }
+  }
+
+  return { ok: false, data };
 }
 
 export async function extractErrorDetails(error) {

@@ -4324,30 +4324,28 @@ try {
   }
 
   async function askAIImage(prompt, child){
-    const payload = { prompt, child };
-    const res = await fetch('/api/generate-image', {
+    const payload = { action: 'generate', prompt, child };
+    const res = await fetch('/api/image?action=generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     const raw = await res.text();
-    if (!res.ok) {
-      try {
-        const j = JSON.parse(raw);
-        const message = j.details || j.error || raw || 'AI backend error';
-        throw new Error(message);
-      } catch {
-        throw new Error(raw || 'AI backend error');
-      }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = null; }
+    if (!res.ok || !parsed || parsed.ok !== true) {
+      const message = parsed?.data?.message || parsed?.data?.details || parsed?.error || parsed?.details || raw || 'AI backend error';
+      throw new Error(message);
     }
-    let data;
-    try { data = JSON.parse(raw); }
-    catch { data = {}; }
-    const jobId = typeof data.jobId === 'string' ? data.jobId : '';
+    const data = parsed.data || {};
+    const jobId = typeof data.id === 'string' && data.id ? data.id : (typeof data.jobId === 'string' ? data.jobId : '');
     const initialStatus = typeof data.status === 'string' ? data.status : 'pending';
+    const initialResult = data.result;
+    const initialError = typeof data.error_message === 'string' ? data.error_message : '';
     if (!jobId) throw new Error('Aucun identifiant de génération reçu.');
     if (initialStatus === 'failed') {
-      const msg = typeof data.error_message === 'string' ? data.error_message : 'Génération impossible.';
+      const msg = initialError || 'Génération impossible.';
       throw new Error(msg);
     }
     const parseResult = (result) => {
@@ -4362,8 +4360,8 @@ try {
       }
       return { imageUrl: '', model: '' };
     };
-    if (initialStatus === 'done' && data.result) {
-      const parsedInitial = parseResult(data.result);
+    if (initialStatus === 'done' && initialResult) {
+      const parsedInitial = parseResult(initialResult);
       if (parsedInitial.imageUrl) return parsedInitial;
     }
     const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -4374,19 +4372,20 @@ try {
         await wait(intervalMs);
       }
       try {
-        const statusRes = await fetch(`/api/generate-image-status?jobId=${encodeURIComponent(jobId)}`, {
+        const statusRes = await fetch(`/api/image?action=status&id=${encodeURIComponent(jobId)}`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
           cache: 'no-store'
         });
         const statusRaw = await statusRes.text();
-        if (!statusRes.ok) {
-          const message = statusRaw || 'Statut indisponible';
+        let statusPayload;
+        try { statusPayload = JSON.parse(statusRaw); }
+        catch { statusPayload = null; }
+        if (!statusRes.ok || !statusPayload || statusPayload.ok !== true) {
+          const message = statusPayload?.data?.message || statusPayload?.data?.details || statusRaw || 'Statut indisponible';
           throw new Error(message);
         }
-        let statusData;
-        try { statusData = JSON.parse(statusRaw); }
-        catch { statusData = {}; }
+        const statusData = statusPayload.data || {};
         const status = typeof statusData.status === 'string' ? statusData.status : 'pending';
         if (status === 'done') {
           const parsed = parseResult(statusData.result);
