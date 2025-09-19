@@ -2140,35 +2140,29 @@ try {
       }
       fImage.dataset.busy = '1';
       const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      if (sImage) sImage.textContent = 'Génération en cours…';
+      if (sImage) sImage.textContent = 'La génération peut prendre une à deux minutes. Merci de votre patience 🙏';
       if (imgPreview) { imgPreview.hidden = true; imgPreview.removeAttribute('src'); }
       if (imgEmpty) imgEmpty.classList.remove('hidden');
       try {
         const result = await askAIImage(prompt, currentChild);
         const src = result.imageUrl || '';
+        if (!src) {
+          throw new Error('EMPTY_IMAGE_URL');
+        }
         if (imgPreview) {
           imgPreview.src = src;
           imgPreview.alt = `Illustration générée pour : ${prompt}`;
-          imgPreview.hidden = !src;
+          imgPreview.hidden = false;
         }
         if (imgEmpty) imgEmpty.classList.add('hidden');
         if (sImage) {
-          const modelLabel = result.model ? ` via ${result.model}` : '';
-          const successMsg = `Image générée${modelLabel} !`;
-          sImage.textContent = successMsg;
-          setTimeout(() => { if (sImage.textContent === successMsg) sImage.textContent = ''; }, 4000);
+          sImage.textContent = '';
         }
       } catch (err) {
         console.error('Image generation failed', err);
+        if (imgEmpty) imgEmpty.classList.remove('hidden');
         if (sImage) {
-          const rawMsg = typeof err?.message === 'string' ? err.message : '';
-          let friendly = 'Génération impossible pour le moment.';
-          if (/missing openai/i.test(rawMsg)) {
-            friendly = 'Configuration serveur incomplète pour la génération d’images.';
-          } else if (/model/i.test(rawMsg) && /(not available|does not exist|no access)/i.test(rawMsg)) {
-            friendly = 'Modèle d’image indisponible pour cette clé API.';
-          }
-          sImage.textContent = friendly;
+          sImage.textContent = 'Génération impossible pour le moment. Réessayez plus tard.';
         }
       } finally {
         fImage.dataset.busy = '0';
