@@ -2154,8 +2154,10 @@ try {
         }
         if (imgEmpty) imgEmpty.classList.add('hidden');
         if (sImage) {
-          sImage.textContent = 'Image générée !';
-          setTimeout(() => { if (sImage.textContent === 'Image générée !') sImage.textContent = ''; }, 4000);
+          const modelLabel = result.model ? ` via ${result.model}` : '';
+          const successMsg = `Image générée${modelLabel} !`;
+          sImage.textContent = successMsg;
+          setTimeout(() => { if (sImage.textContent === successMsg) sImage.textContent = ''; }, 4000);
         }
       } catch (err) {
         if (sImage) sImage.textContent = 'Génération impossible pour le moment.';
@@ -4321,7 +4323,13 @@ try {
     if (!res.ok) {
       try {
         const j = JSON.parse(raw);
-        throw new Error(j.error || j.details || raw || 'AI backend error');
+        const messageParts = [];
+        if (j.details) messageParts.push(j.details);
+        else if (j.error) messageParts.push(j.error);
+        else if (raw) messageParts.push(raw);
+        const modelNote = j.model ? ` (modèle: ${j.model})` : '';
+        const message = messageParts.length ? messageParts.join(' — ') : 'AI backend error';
+        throw new Error(`${message}${modelNote}`);
       } catch {
         throw new Error(raw || 'AI backend error');
       }
@@ -4330,7 +4338,7 @@ try {
     try { data = JSON.parse(raw); }
     catch { data = {}; }
     if (!data.imageBase64) throw new Error('Invalid image payload');
-    return { imageBase64: data.imageBase64, mimeType: data.mimeType || 'image/png' };
+    return { imageBase64: data.imageBase64, mimeType: data.mimeType || 'image/png', model: data.model };
   }
 
   // Animations révélées au scroll

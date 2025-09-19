@@ -1,5 +1,7 @@
 // Fonction serverless : /api/generate-image
 // Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
+export const IMAGE_MODEL = (process.env.OPENAI_IMAGE_MODEL || '').trim() || 'gpt-image-1';
+
 export async function generateImage(body = {}) {
   const openaiKey = process.env.OPENAI_API_KEY;
 
@@ -49,10 +51,11 @@ async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 550
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-image-1',
+        model: IMAGE_MODEL,
         prompt: description,
         size: '1024x1024',
-        response_format: 'b64_json'
+        response_format: 'b64_json',
+        n: 1
       }),
       signal: controller?.signal
     });
@@ -78,6 +81,7 @@ async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 550
     } catch {}
     const err = new Error(`OpenAI error: ${details}`);
     err.status = resp.status >= 400 ? resp.status : 502;
+    err.details = details;
     throw err;
   }
 
@@ -97,7 +101,7 @@ async function generateWithOpenAI({ prompt, contextText, apiKey, timeoutMs = 550
   }
 
   const mimeType = data?.data?.[0]?.mime_type || 'image/png';
-  return { imageBase64: image, mimeType };
+  return { imageBase64: image, mimeType, model: IMAGE_MODEL };
 }
 
 export default async function handler(req, res) {
@@ -122,7 +126,7 @@ export default async function handler(req, res) {
   } catch (e) {
     const status = Number.isInteger(e?.status) ? e.status : Number.isInteger(e?.statusCode) ? e.statusCode : 500;
     const details = e?.details ? String(e.details) : String(e?.message || e);
-    return res.status(status).json({ error: 'Image generation failed', details });
+    return res.status(status).json({ error: 'Image generation failed', details, model: IMAGE_MODEL });
   }
 }
 
