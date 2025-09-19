@@ -3871,10 +3871,10 @@ try {
 
   async function generateAiComment(content) {
     try {
-      const res = await fetch('/api/ai/comment', {
+      const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ type: 'comment', content })
       });
       if (!res.ok) return '';
       const j = await res.json();
@@ -4236,8 +4236,8 @@ try {
 
   // --- Helpers d’appels IA ---
   async function askAI(question, child, history){
-    const payload = { question, child, history };
-    const res = await fetch('/api/ai/advice', {
+    const payload = { question, child, history, type: 'advice' };
+    const res = await fetch('/api/ai', {
       method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
     });
     const raw = await res.text();
@@ -4250,8 +4250,8 @@ try {
   }
 
   async function askAIRecipes(child, prefs){
-    const payload = { child, prefs };
-    const res = await fetch('/api/ai/recipes', {
+    const payload = { child, prefs, type: 'recipes' };
+    const res = await fetch('/api/ai', {
       method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('AI backend error');
@@ -4260,8 +4260,8 @@ try {
   }
 
   async function askAIStory(child, opts){
-    const payload = { child, ...opts };
-    const res = await fetch('/api/ai/story', {
+    const payload = { child, ...opts, type: 'story' };
+    const res = await fetch('/api/ai', {
       method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('AI backend error');

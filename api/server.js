@@ -263,40 +263,28 @@ const server = createServer(async (req, res) => {
     });
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/ai/advice') {
+  if (req.method === 'POST' && url.pathname === '/api/ai') {
     try {
       const body = await parseJson(req);
-      const out = await aiAdvice(body);
-      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
-    }
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/ai/recipes') {
-    try {
-      const body = await parseJson(req);
-      const out = await aiRecipes(body);
-      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
-    }
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/ai/story') {
-    try {
-      const body = await parseJson(req);
-      const out = await aiStory(body);
-      return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
-    }
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/ai/comment') {
-    try {
-      const body = await parseJson(req);
-      const out = await aiComment(body);
+      const typeFromQuery = url.searchParams.get('type');
+      const type = typeof body?.type === 'string' && body.type ? body.type : (typeof typeFromQuery === 'string' ? typeFromQuery : '');
+      let out;
+      switch (type) {
+        case 'advice':
+          out = await aiAdvice(body);
+          break;
+        case 'recipes':
+          out = await aiRecipes(body);
+          break;
+        case 'story':
+          out = await aiStory(body);
+          break;
+        case 'comment':
+          out = await aiComment(body);
+          break;
+        default:
+          return send(res, 400, JSON.stringify({ error: 'Type non reconnu' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
       return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
       return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
