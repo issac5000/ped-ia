@@ -27,11 +27,24 @@ export default async function handler(req, res) {
 
     console.info('[api/image] Appel Gemini', { promptPreview: prompt.slice(0, 80), promptLength: prompt.length });
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateImage?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: { text: prompt } })
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: 'image/png'
+        },
+        imageGenerationConfig: {
+          numberOfImages: 1
+        }
+      })
     });
     const payloadText = await response.text();
     console.info('[api/image] Réponse Gemini', { status: response.status, ok: response.ok });
@@ -40,7 +53,7 @@ export default async function handler(req, res) {
       try { parsed = JSON.parse(payloadText || '{}'); } catch {}
       console.error('[api/image] Erreur Gemini', { status: response.status, body: payloadText });
       const message = parsed?.error?.message || parsed?.error || payloadText || 'Image service error';
-      return res.status(response.status).json({ error: message });
+      return res.status(response.status).json({ error: message, details: parsed?.error });
     }
 
     let payload = null;

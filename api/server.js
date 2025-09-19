@@ -285,12 +285,25 @@ async function aiComment(body){
 async function generateImage(prompt){
   if (!GOOGLE_KEY) throw createHttpError(500, 'Missing GOOGLE_API_KEY');
   const cleanPrompt = prompt.trim().slice(0, 800);
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateImage?key=${GOOGLE_KEY}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${GOOGLE_KEY}`;
   console.info('[api/image] Envoi Gemini', { model: GEMINI_IMAGE_MODEL, promptLength: cleanPrompt.length });
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: { text: cleanPrompt } })
+    body: JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: cleanPrompt }]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: 'image/png'
+      },
+      imageGenerationConfig: {
+        numberOfImages: 1
+      }
+    })
   });
   const text = await response.text();
   console.info('[api/image] Statut Gemini', { status: response.status, ok: response.ok });

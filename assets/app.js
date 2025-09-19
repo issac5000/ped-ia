@@ -2098,7 +2098,9 @@ try {
           let msg = 'Impossible de générer l’illustration pour le moment.';
           try {
             const payload = JSON.parse(raw || '{}');
-            msg = payload?.error || payload?.message || msg;
+            const basic = payload?.error || payload?.message;
+            const detail = payload?.details || payload?.error?.message;
+            msg = [basic || msg, detail].filter(Boolean).join(' — ');
           } catch {}
           throw new Error(msg);
         }
