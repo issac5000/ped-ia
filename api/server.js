@@ -296,10 +296,7 @@ async function generateImage(prompt){
           role: 'user',
           parts: [{ text: cleanPrompt }]
         }
-      ],
-      generationConfig: {
-        responseMimeType: 'image/png'
-      }
+      ]
     })
   });
   const text = await response.text();

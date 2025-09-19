@@ -37,10 +37,7 @@ export default async function handler(req, res) {
             role: 'user',
             parts: [{ text: prompt }]
           }
-        ],
-        generationConfig: {
-          responseMimeType: 'image/png'
-        }
+        ]
       })
     });
     const payloadText = await response.text();
