@@ -40,9 +40,6 @@ export default async function handler(req, res) {
         ],
         generationConfig: {
           responseMimeType: 'image/png'
-        },
-        imageGenerationConfig: {
-          numberOfImages: 1
         }
       })
     });

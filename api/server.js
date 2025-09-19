@@ -299,9 +299,6 @@ async function generateImage(prompt){
       ],
       generationConfig: {
         responseMimeType: 'image/png'
-      },
-      imageGenerationConfig: {
-        numberOfImages: 1
       }
     })
   });
