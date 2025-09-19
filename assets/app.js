@@ -2145,12 +2145,11 @@ try {
       if (imgEmpty) imgEmpty.classList.remove('hidden');
       try {
         const result = await askAIImage(prompt, currentChild);
-        const mime = result.mimeType || 'image/png';
-        const src = `data:${mime};base64,${result.imageBase64}`;
+        const src = result.imageUrl || '';
         if (imgPreview) {
           imgPreview.src = src;
           imgPreview.alt = `Illustration générée pour : ${prompt}`;
-          imgPreview.hidden = false;
+          imgPreview.hidden = !src;
         }
         if (imgEmpty) imgEmpty.classList.add('hidden');
         if (sImage) {
@@ -4347,8 +4346,8 @@ try {
     let data;
     try { data = JSON.parse(raw); }
     catch { data = {}; }
-    if (!data.imageBase64) throw new Error('Invalid image payload');
-    return { imageBase64: data.imageBase64, mimeType: data.mimeType || 'image/png', model: data.model };
+    if (!data.imageUrl) throw new Error('Invalid image payload');
+    return { imageUrl: data.imageUrl, model: data.model };
   }
 
   // Animations révélées au scroll
