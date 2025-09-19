@@ -2126,9 +2126,8 @@ try {
           if (!statusMessage) return;
           const activeToken = fImage.dataset.runToken;
           if (activeToken && activeToken !== runToken) return;
-            statusMessage.hidden = true;
-            statusMessage.textContent = '';
-          }
+          statusMessage.hidden = true;
+          statusMessage.textContent = '';
         }, 1200);
       };
       const showFailureStatus = () => {
