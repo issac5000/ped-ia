@@ -35,7 +35,7 @@ test('generateImage fallback behaviour', async (t) => {
         ok: true,
         status: 200,
         async json() {
-          return { data: [{ b64_json: 'ZmFrZUJhc2U2NA==' }] };
+          return { data: [{ url: 'https://example.com/image-default.png' }] };
         },
       };
     };
@@ -45,12 +45,13 @@ test('generateImage fallback behaviour', async (t) => {
       { apiKey: 'test', baseUrl: 'https://example.com' }
     );
 
-    assert.equal(result.imageBase64, 'ZmFrZUJhc2U2NA==');
-    assert.equal(result.mimeType, 'image/png');
+    assert.equal(result.imageUrl, 'https://example.com/image-default.png');
     assert.equal(result.model, IMAGE_MODEL);
     assert.equal(calls.length, 1);
     const sentBody = JSON.parse(calls[0].options.body);
     assert.equal(sentBody.model, IMAGE_MODEL);
+    assert.deepEqual(Object.keys(sentBody).sort(), ['model', 'prompt', 'size']);
+    assert.equal(sentBody.size, '1024x1024');
     assert.match(calls[0].url, /\/v1\/images\/generations$/);
   });
 
@@ -80,7 +81,7 @@ test('generateImage fallback behaviour', async (t) => {
         ok: true,
         status: 200,
         async json() {
-          return { data: [{ b64_json: 'YmFy' }] };
+          return { data: [{ url: 'https://example.com/fallback.png' }] };
         },
       },
     ];
@@ -96,8 +97,7 @@ test('generateImage fallback behaviour', async (t) => {
       { apiKey: 'test', baseUrl: 'https://example.com' }
     );
 
-    assert.equal(result.imageBase64, 'YmFy');
-    assert.equal(result.mimeType, 'image/png');
+    assert.equal(result.imageUrl, 'https://example.com/fallback.png');
     assert.equal(result.model, 'dall-e-3');
     assert.deepEqual(triedModels, ['gpt-image-1', 'dall-e-3']);
   });
@@ -177,7 +177,7 @@ test('generateImage fallback behaviour', async (t) => {
         status: 200,
         headers: headersMap(),
         async json() {
-          return { status: 'succeeded', result: { data: [{ b64_json: 'YXp1cmVCYXNlNjQ=' }] } };
+          return { status: 'succeeded', result: { data: [{ url: 'https://example.com/azure.png' }] } };
         },
       };
     };
@@ -187,8 +187,7 @@ test('generateImage fallback behaviour', async (t) => {
       { apiKey: 'test', baseUrl: 'https://demo-resource.openai.azure.com/openai', apiVersion: '2024-02-01' }
     );
 
-    assert.equal(result.imageBase64, 'YXp1cmVCYXNlNjQ=');
-    assert.equal(result.mimeType, 'image/png');
+    assert.equal(result.imageUrl, 'https://example.com/azure.png');
     assert.equal(result.model, IMAGE_MODEL);
     assert.equal(calls.length, 2);
     assert.equal(calls[0].options.method, 'POST');

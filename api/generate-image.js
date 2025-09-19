@@ -90,7 +90,6 @@ async function generateWithOpenAI({ prompt, contextText, config, model }) {
       model,
       prompt: description,
       size: '1024x1024',
-      response_format: 'b64_json',
     }),
   });
 
@@ -115,9 +114,9 @@ async function generateWithOpenAI({ prompt, contextText, config, model }) {
     err.endpoint = endpoint;
     throw err;
   }
-  const imageDirect = extractImagePayload(data);
+  const imageDirect = extractImageUrl(data);
   if (imageDirect) {
-    return { imageBase64: imageDirect, mimeType: 'image/png', model };
+    return { imageUrl: imageDirect, model };
   }
 
   if (isAzureConfig(config)) {
@@ -213,14 +212,16 @@ function normalizeOpenAIError(error, model) {
   return error;
 }
 
-function extractImagePayload(data) {
+function extractImageUrl(data) {
   if (!data || typeof data !== 'object') return '';
-  const direct = data?.data?.[0]?.b64_json;
+  const direct = typeof data?.data?.[0]?.url === 'string' ? data.data[0].url.trim() : '';
   if (direct) return direct;
-  const nested = data?.result?.data?.[0]?.b64_json;
+  const nested = typeof data?.result?.data?.[0]?.url === 'string' ? data.result.data[0].url.trim() : '';
   if (nested) return nested;
-  const alt = data?.result?.image_base64;
-  if (typeof alt === 'string' && alt.trim()) return alt.trim();
+  const contentUrl = typeof data?.result?.contentUrl === 'string' ? data.result.contentUrl.trim() : '';
+  if (contentUrl) return contentUrl;
+  const alt = typeof data?.result?.image_url === 'string' ? data.result.image_url.trim() : '';
+  if (alt) return alt;
   return '';
 }
 
@@ -237,9 +238,9 @@ function isAzureConfig(config) {
 async function pollAzureImageOperation({ config, response, payload, model }) {
   const operationUrl = resolveAzureOperationUrl({ config, response, payload });
   const status = typeof payload?.status === 'string' ? payload.status.toLowerCase() : '';
-  const directImage = extractImagePayload(payload);
+  const directImage = extractImageUrl(payload);
   if (directImage && (!status || status === 'succeeded')) {
-    return { imageBase64: directImage, mimeType: 'image/png', model };
+    return { imageUrl: directImage, model };
   }
   if (!operationUrl) {
     return null;
@@ -265,7 +266,7 @@ async function pollAzureImageOperation({ config, response, payload, model }) {
       throw err;
     }
 
-    const image = extractImagePayload(pollData);
+    const image = extractImageUrl(pollData);
     const pollStatus = typeof pollData?.status === 'string' ? pollData.status.toLowerCase() : '';
 
     if (!pollRes.ok && pollStatus !== 'running' && pollStatus !== 'notrunning') {
@@ -280,7 +281,7 @@ async function pollAzureImageOperation({ config, response, payload, model }) {
     }
 
     if (pollStatus === 'succeeded') {
-      if (image) return { imageBase64: image, mimeType: 'image/png', model };
+      if (image) return { imageUrl: image, model };
       const err = new Error('No image data returned from OpenAI');
       err.status = 502;
       err.raw = pollData;
@@ -299,7 +300,7 @@ async function pollAzureImageOperation({ config, response, payload, model }) {
     }
 
     if (image && !pollStatus) {
-      return { imageBase64: image, mimeType: 'image/png', model };
+      return { imageUrl: image, model };
     }
 
     delayMs = computeNextAzureDelay(delayMs, pollRes);
