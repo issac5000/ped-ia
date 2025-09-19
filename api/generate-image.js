@@ -1,13 +1,13 @@
 // Fonction serverless : /api/generate-image
 // Génère une illustration à partir d'un prompt via l'API Images d'OpenAI.
 
-import { buildOpenAIHeaders, getOpenAIConfig } from './openai-config.js';
+import { buildOpenAIHeaders, buildOpenAIUrl, getOpenAIConfig } from './openai-config.js';
 
 const IMAGES_PATH = '/v1/images/generations';
 export const IMAGE_MODEL = 'gpt-image-1';
 
 export async function generateImage(body = {}, configOverrides = undefined) {
-  const config = resolveConfig(configOverrides);
+  const config = getOpenAIConfig(configOverrides || {});
   const promptRaw = (body?.prompt ?? '').toString().trim();
   if (!promptRaw) {
     const err = new Error('prompt required');
@@ -80,26 +80,8 @@ async function generateWithOpenAI({ prompt, contextText, config }) {
   return { imageBase64: image, mimeType: 'image/png', model: IMAGE_MODEL };
 }
 
-function resolveConfig(overrides) {
-  if (overrides && typeof overrides === 'object' && overrides.apiKey) {
-    const baseUrl = overrides.baseUrl || overrides.baseURL;
-    return {
-      ...overrides,
-      baseUrl: normalizeBaseUrl(baseUrl),
-    };
-  }
-  return getOpenAIConfig(overrides || {});
-}
-
 function buildImagesEndpoint(config) {
-  const base = normalizeBaseUrl(config?.baseUrl || config?.baseURL);
-  return `${base}${IMAGES_PATH}`;
-}
-
-function normalizeBaseUrl(value) {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  if (!raw) return 'https://api.openai.com';
-  return raw.replace(/\/+$/, '') || 'https://api.openai.com';
+  return buildOpenAIUrl(config, IMAGES_PATH);
 }
 
 export default async function handler(req, res) {
