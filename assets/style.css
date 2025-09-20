@@ -1081,9 +1081,11 @@ section[data-route="/community"] .topic{
   overflow:hidden;
   border-radius:28px;
   padding:22px 24px;
-  border:1px solid rgba(255,255,255,.16);
-  background:linear-gradient(135deg, rgba(255,225,200,.16), rgba(183,211,255,.14));
-  box-shadow:0 24px 48px rgba(0,0,0,.48);
+  border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(145deg, rgba(13,18,30,.82), rgba(6,9,15,.66));
+  box-shadow:0 28px 60px rgba(0,0,0,.55);
+  backdrop-filter:blur(16px) saturate(130%);
+  -webkit-backdrop-filter:blur(16px) saturate(130%);
   transition:transform .24s ease, box-shadow .3s ease, border-color .3s ease, background .35s ease;
 }
 section[data-route="/community"] .topic::before{
@@ -1091,8 +1093,8 @@ section[data-route="/community"] .topic::before{
   position:absolute;
   inset:auto -40% 0 -40%;
   height:240px;
-  background:radial-gradient(ellipse at top, rgba(255,255,255,.25) 0%, rgba(255,255,255,0) 70%);
-  opacity:.45;
+  background:radial-gradient(ellipse at top, rgba(255,255,255,.18) 0%, rgba(255,255,255,0) 70%);
+  opacity:.4;
   transform:translateY(40%);
   transition:opacity .35s ease, transform .35s ease;
   pointer-events:none;
@@ -1100,8 +1102,9 @@ section[data-route="/community"] .topic::before{
 section[data-route="/community"] .topic[data-open="1"],
 section[data-route="/community"] .topic:hover{
   transform:translateY(-4px);
-  box-shadow:0 32px 60px rgba(0,0,0,.58);
-  border-color:rgba(255,255,255,.26);
+  box-shadow:0 36px 72px rgba(0,0,0,.62);
+  border-color:rgba(255,255,255,.22);
+  background:linear-gradient(145deg, rgba(18,24,38,.88), rgba(8,11,19,.74));
 }
 section[data-route="/community"] .topic[data-open="1"]::before,
 section[data-route="/community"] .topic:hover::before{
@@ -2158,7 +2161,6 @@ body.force-mobile .nav-toggle{
 .feature, .feature:hover,
 .step, .step:hover,
 .qitem, .qitem:hover,
-.topic, .topic:hover,
 .faq-item,
 .pillar, .pillar:hover,
 .hero-stats .stat{
