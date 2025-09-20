@@ -3858,6 +3858,55 @@ try {
     };
 
 
+    const bindReplyForms = (root = document) => {
+      root.querySelectorAll('.form-reply').forEach((form) => {
+        if (form.dataset.bound) return;
+        form.dataset.bound = '1';
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const currentForm = e.currentTarget;
+          if (currentForm.dataset.busy === '1') return;
+          currentForm.dataset.busy = '1';
+          const submitBtn = currentForm.querySelector('button[type="submit"],input[type="submit"]');
+          if (submitBtn) submitBtn.disabled = true;
+          try {
+            const id = currentForm.getAttribute('data-id');
+            const fd = new FormData(currentForm);
+            const rawContent = fd.get('content');
+            const content = rawContent == null ? '' : rawContent.toString().trim();
+            if (!content) return;
+            if (useRemote()) {
+              try {
+                if (isAnonProfile()) {
+                  await anonCommunityRequest('reply', { topicId: id, content });
+                  renderCommunity();
+                  return;
+                }
+                const uid = getActiveProfileId();
+                if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
+                await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
+                renderCommunity();
+                return;
+              } catch {}
+            }
+            // Repli local
+            const forum = store.get(K.forum);
+            const topic = forum.topics.find(x=>x.id===id);
+            const user = store.get(K.user);
+            const children = store.get(K.children, []);
+            const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
+            const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
+            topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
+            store.set(K.forum, forum);
+            renderCommunity();
+          } finally {
+            currentForm.dataset.busy='0';
+            if (submitBtn) submitBtn.disabled = false;
+          }
+        });
+      });
+    };
+
     const renderTopics = (topics, replies, authorsMap) => {
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
@@ -3967,48 +4016,8 @@ try {
         `;
         list.appendChild(el);
       });
+      bindReplyForms(list);
     };
-    $$('.form-reply').forEach(f => {
-      if (f.dataset.bound) return;
-      f.dataset.bound = '1';
-      f.addEventListener('submit', async (e)=>{
-        e.preventDefault();
-        const form = e.currentTarget;
-        if (form.dataset.busy === '1') return;
-        form.dataset.busy = '1';
-        const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-        try {
-          const id = form.getAttribute('data-id');
-          const fd = new FormData(form);
-          const content = fd.get('content').toString().trim();
-          if (!content) return;
-          if (useRemote()) {
-            try {
-              if (isAnonProfile()) {
-                await anonCommunityRequest('reply', { topicId: id, content });
-                renderCommunity();
-                return;
-              }
-              const uid = getActiveProfileId();
-              if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
-              await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
-              renderCommunity();
-              return;
-            } catch {}
-          }
-          // Repli local
-          const forum = store.get(K.forum);
-          const topic = forum.topics.find(x=>x.id===id);
-          const user = store.get(K.user);
-          const children = store.get(K.children, []);
-          const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-          const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
-          topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
-          store.set(K.forum, forum);
-          renderCommunity();
-        } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
-      });
-    });
     // Actions déléguées : pliage/dépliage et suppression (avec garde d’occupation)
     if (!list.dataset.delBound) {
       list.addEventListener('click', async (e)=>{
