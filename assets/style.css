@@ -1029,10 +1029,21 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 }
 .milestone-toggle{
   display:flex;
-  justify-content:flex-end;
+  justify-content:center;
 }
 .milestone-toggle .btn{
   min-width:190px;
+}
+.form-actions-center{
+  display:flex;
+  justify-content:center;
+  gap:12px;
+}
+.dashboard-focus-highlight{
+  outline:3px solid var(--turquoise);
+  box-shadow:0 0 0 6px rgba(255, 194, 214, 0.35);
+  border-radius:18px;
+  transition:box-shadow 0.3s ease, outline-color 0.3s ease;
 }
 .stack{display:grid; gap:12px}
 .hstack{display:flex; gap:12px; align-items:center; flex-wrap:wrap}

@@ -53,6 +53,30 @@ import { DEV_QUESTIONS } from './questions-dev.js';
       aiFocusCleanupTimer = null;
     }, 1600);
   }
+  let pendingDashboardFocus = null;
+  let dashboardFocusCleanupTimer = null;
+  function maybeFocusDashboardSection(){
+    if (!pendingDashboardFocus) return;
+    if (pendingDashboardFocus === 'history') {
+      const target = document.getElementById('dashboard-history');
+      if (!target) return;
+      try {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch {
+        target.scrollIntoView();
+      }
+      target.classList.add('dashboard-focus-highlight');
+      if (dashboardFocusCleanupTimer) {
+        clearTimeout(dashboardFocusCleanupTimer);
+        dashboardFocusCleanupTimer = null;
+      }
+      dashboardFocusCleanupTimer = setTimeout(() => {
+        target.classList.remove('dashboard-focus-highlight');
+        dashboardFocusCleanupTimer = null;
+      }, 1800);
+      pendingDashboardFocus = null;
+    }
+  }
   const routeSections = new Map();
   document.querySelectorAll('section[data-route]').forEach(section => {
     const key = normalizeRoutePath(section.dataset.route || '/');
@@ -432,7 +456,12 @@ try {
       return;
     }
     if (path === '/onboarding') { renderOnboarding(); }
-    if (path === '/dashboard') { renderDashboard(); }
+    if (path === '/dashboard') {
+      pendingDashboardFocus = focusParam || null;
+      renderDashboard();
+    } else if (path !== '/ai') {
+      pendingDashboardFocus = null;
+    }
     if (path === '/community') { renderCommunity(); }
     if (path === '/settings') { renderSettings(); }
     if (path === '/ai') {
@@ -538,7 +567,15 @@ try {
   }
   function showNotification(opts){
     try {
-      const { title = 'Notification', text = '', actionHref = '', actionLabel = 'Voir', onAcknowledge } = opts || {};
+      const {
+        title = 'Notification',
+        text = '',
+        actionHref = '',
+        actionLabel = 'Voir',
+        onAcknowledge,
+        onAction,
+        durationMs = 4000
+      } = opts || {};
       const host = getToastHost();
       // Limite la pile à 4 éléments en supprimant le plus ancien
       while (host.children.length >= 4) host.removeChild(host.firstElementChild);
@@ -550,25 +587,64 @@ try {
           <p class="nt-text"></p>
           <div class="nt-actions">
             <button type="button" class="btn btn-secondary nt-close">Fermer</button>
-            <a class="btn btn-primary nt-link" href="#">${actionLabel}</a>
+            <button type="button" class="btn btn-primary nt-link">${actionLabel}</button>
           </div>
         </div>
       `;
       toast.querySelector('.nt-title').textContent = title;
       toast.querySelector('.nt-text').textContent = text;
       const link = toast.querySelector('.nt-link');
-      if (actionHref) { link.setAttribute('href', actionHref); link.hidden = false; }
-      else { link.hidden = true; }
-      const hide = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } };
-      const acknowledge = () => { try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); } catch { toast.remove(); } finally { try { onAcknowledge && onAcknowledge(); } catch {} } };
+      let timer = null;
+      const hide = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+        try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); }
+        catch { toast.remove(); }
+      };
+      const acknowledge = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+        try { toast.classList.add('hide'); setTimeout(()=>toast.remove(), 250); }
+        catch { toast.remove(); }
+        finally {
+          try { onAcknowledge && onAcknowledge(); }
+          catch {}
+        }
+      };
       toast.querySelector('.nt-close').addEventListener('click', acknowledge);
-      link.addEventListener('click', acknowledge);
+      if (onAction || actionHref) {
+        link.hidden = false;
+        link.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          acknowledge();
+          try {
+            if (typeof onAction === 'function') {
+              onAction();
+            } else if (actionHref) {
+              if (actionHref.startsWith('http')) {
+                window.location.href = actionHref;
+              } else {
+                window.location.href = actionHref;
+              }
+            }
+          } catch {}
+        });
+      } else {
+        link.hidden = true;
+      }
       host.appendChild(toast);
       // Son discret lors d’une notification
       playNotifySound();
-      const timer = setTimeout(hide, 4000);
-      toast.addEventListener('mouseenter', () => clearTimeout(timer));
-      toast.addEventListener('mouseleave', () => setTimeout(hide, 1500));
+      const delay = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 4000;
+      if (delay > 0) {
+        timer = setTimeout(hide, delay);
+        toast.addEventListener('mouseenter', () => {
+          if (timer) { clearTimeout(timer); timer = null; }
+        });
+        toast.addEventListener('mouseleave', () => {
+          if (!toast.classList.contains('hide')) {
+            timer = setTimeout(hide, 1500);
+          }
+        });
+      }
     } catch {}
   }
 
@@ -2834,7 +2910,7 @@ try {
           <button type="button" class="btn btn-secondary" id="toggle-milestones" data-expanded="0" aria-expanded="false">Afficher les jalons</button>
         </div>
         <div id="edit-milestones" hidden>${milestonesHtml}</div>
-        <div class="hstack" style="justify-content:flex-end;"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
+        <div class="form-actions-center"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
       </form>
     `;
     const form = container.querySelector('#form-edit-child');
@@ -2979,6 +3055,16 @@ try {
     renderSettings();
   }
 
+  function notifyChildProfileUpdated(){
+    showNotification({
+      title: 'Profil enfant mis à jour',
+      text: 'Rendez-vous dans le Dashboard à la section « historique de l’évolution » pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
+      actionHref: '#/dashboard?focus=history',
+      actionLabel: 'Voir',
+      durationMs: 5000
+    });
+  }
+
   async function handleChildFormSubmit(e) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -3051,7 +3137,7 @@ try {
       settingsState.children = settingsState.children.map((child) => (String(child.id) === String(childId) ? updated : child));
       settingsState.snapshots.set(childId, nextSnapshot);
       await logChildUpdate(childId, 'profil', { prev: prevSnapshot, next: nextSnapshot, summary });
-      alert('Profil enfant mis à jour.');
+      notifyChildProfileUpdated();
       renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
     } catch (err) {
       console.warn('handleChildFormSubmit failed', err);
@@ -3253,6 +3339,7 @@ try {
       if (rid !== renderDashboard._rid) return;
       const hist = document.createElement('div');
       hist.className = 'card stack';
+      hist.id = 'dashboard-history';
       hist.style.marginTop = '20px';
       const timelineHtml = updates.map(u => {
         const created = new Date(u.created_at);
@@ -3330,6 +3417,7 @@ try {
       }
       if (rid !== renderDashboard._rid) return;
       dom.appendChild(hist);
+      maybeFocusDashboardSection();
     } catch {}
 
     // Ajouter le bloc de conseils après l’historique
@@ -3344,6 +3432,7 @@ try {
     `;
     if (rid !== renderDashboard._rid) return;
     dom.appendChild(adviceWrap);
+    maybeFocusDashboardSection();
 
     // Gérer le formulaire de mesures (interface retirée ; garde au cas où)
     const formMeasure = $('#form-measure');
