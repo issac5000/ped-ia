@@ -4724,6 +4724,12 @@ const TIMELINE_MILESTONES = [
 
     return `
       ${header}
+        <button type="button" class="timeline-1000__nav timeline-1000__nav--prev" aria-label="Défiler vers la gauche">
+          <span class="timeline-1000__nav-icon">‹</span>
+        </button>
+        <button type="button" class="timeline-1000__nav timeline-1000__nav--next" aria-label="Défiler vers la droite">
+          <span class="timeline-1000__nav-icon">›</span>
+        </button>
         <div class="timeline-1000__scroll" role="region" aria-label="Frise des 1000 jours">
           <div class="timeline-1000__track">
             <span class="timeline-1000__line" aria-hidden="true"></span>
@@ -4762,6 +4768,29 @@ const TIMELINE_MILESTONES = [
     const tooltip = track.querySelector('.timeline-1000__tooltip');
     const points = Array.from(track.querySelectorAll('.timeline-1000__point'));
     if (!tooltip || !points.length) return;
+
+    const navPrev = root.querySelector('.timeline-1000__nav--prev');
+    const navNext = root.querySelector('.timeline-1000__nav--next');
+
+    const updateNavState = () => {
+      const maxScroll = track.scrollWidth - scroller.clientWidth;
+      if (navPrev) navPrev.disabled = scroller.scrollLeft <= 8;
+      if (navNext) navNext.disabled = scroller.scrollLeft >= maxScroll - 8;
+    };
+
+    const scrollByDelta = (delta) => {
+      const target = scroller.scrollLeft + delta;
+      const maxScroll = track.scrollWidth - scroller.clientWidth;
+      const next = clamp(target, 0, Math.max(0, maxScroll));
+      scroller.scrollTo({ left: next, behavior: 'smooth' });
+    };
+
+    const step = () => Math.max(200, Math.round(scroller.clientWidth * 0.6));
+
+    navPrev?.addEventListener('click', () => scrollByDelta(-step()));
+    navNext?.addEventListener('click', () => scrollByDelta(step()));
+
+    updateNavState();
 
     let activePoint = null;
     let hideTimer = null;
@@ -4839,6 +4868,7 @@ const TIMELINE_MILESTONES = [
     tooltip.addEventListener('mouseleave', scheduleHide);
 
     scroller.addEventListener('scroll', () => {
+      updateNavState();
       if (!tooltip.hidden) positionTooltip();
     }, { passive: true });
 

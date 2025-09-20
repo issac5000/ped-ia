@@ -1029,7 +1029,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 }
 
 /* 1000-day timeline */
-.timeline-1000{ margin-top:20px; position:relative; }
+.timeline-1000{ margin-top:20px; position:relative; overflow:visible; }
 .timeline-1000__header p{ margin:6px 0 0; color:var(--muted); }
 .timeline-1000__scroll{
   position:relative;
@@ -1043,27 +1043,36 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   background:rgba(255,255,255,.18);
   border-radius:999px;
 }
-.timeline-1000__scroll::before,
-.timeline-1000__scroll::after{
-  content:'';
+.timeline-1000__nav{
   position:absolute;
-  top:50%;
-  width:26px;
-  height:26px;
+  top:120px;
+  transform:translateY(-50%);
+  width:32px;
+  height:32px;
   border-radius:50%;
   border:1px solid rgba(255,255,255,.18);
-  background:rgba(8,10,18,.8);
-  box-shadow:0 10px 24px rgba(0,0,0,.45);
-  transform:translateY(-50%);
+  background:rgba(8,10,18,.82);
   display:grid;
   place-items:center;
-  pointer-events:none;
-  color:rgba(255,255,255,.7);
-  font-size:14px;
+  color:rgba(255,255,255,.78);
+  font-size:16px;
   font-weight:700;
+  cursor:pointer;
+  box-shadow:0 12px 28px rgba(0,0,0,.45);
+  transition:transform .18s ease, box-shadow .2s ease, border-color .2s ease, background .2s ease;
+  z-index:6;
 }
-.timeline-1000__scroll::before{ content:'‹'; left:8px; }
-.timeline-1000__scroll::after{ content:'›'; right:8px; }
+.timeline-1000__nav:hover,
+.timeline-1000__nav:focus-visible{
+  transform:translateY(-50%) scale(1.05);
+  border-color:rgba(255,255,255,.28);
+  box-shadow:0 16px 34px rgba(0,0,0,.5);
+}
+.timeline-1000__nav:focus-visible{ outline:2px solid var(--orange-strong); outline-offset:2px; }
+.timeline-1000__nav[disabled]{ opacity:.4; pointer-events:none; }
+.timeline-1000__nav--prev{ left:6px; }
+.timeline-1000__nav--next{ right:6px; }
+.timeline-1000__nav-icon{ pointer-events:none; }
 .timeline-1000__track{
   position:relative;
   min-width:1100px;
@@ -1193,7 +1202,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 .timeline-1000__tooltip{
   position:absolute;
   top:120px;
-  transform:translate(calc(-50% + var(--timeline-tooltip-shift,0px)), calc(-100% - 26px));
+  transform:translate(calc(-50% + var(--timeline-tooltip-shift,0px)), 32px);
   background:rgba(7,10,16,.95);
   border:1px solid rgba(255,255,255,.16);
   border-radius:18px;
