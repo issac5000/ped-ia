@@ -4685,38 +4685,40 @@ const TIMELINE_MILESTONES = [
     const currentAlign = progressPercent <= 8 ? ' is-start' : (progressPercent >= 92 ? ' is-end' : '');
 
     const stageHtml = TIMELINE_STAGES.map((stage, idx) => {
-      const nextStage = TIMELINE_STAGES[idx + 1];
       const stagePercent = clamp((stage.day / 1000) * 100, 0, 100);
       const alignClass = idx === 0 ? ' is-start' : (idx === TIMELINE_STAGES.length - 1 ? ' is-end' : '');
-      const upperBound = nextStage ? nextStage.day : 1000;
-      const relevantMilestones = TIMELINE_MILESTONES.filter(m => m.day >= stage.day && m.day < upperBound + (idx === TIMELINE_STAGES.length - 1 ? 1 : 0));
-      const milestonesHtml = relevantMilestones.map(m => {
-        const isDone = milestoneStatus.get(m.key) === true;
-        const state = isDone ? 'is-done' : (rawAgeDays >= m.day ? 'is-pending' : 'is-upcoming');
-        const approxMonths = m.day ? Math.round(m.day / 30) : 0;
-        const metaParts = [];
-        if (m.day) metaParts.push(`${m.day} j`);
-        if (approxMonths) metaParts.push(`≈ ${approxMonths} mois`);
-        const meta = metaParts.length ? `<span class="timeline-1000__milestone-meta">${metaParts.join(' • ')}</span>` : '';
-        const range = m.range ? `<span class="timeline-1000__milestone-range">🤖 La plupart des enfants atteignent ce jalon entre ${escapeHtml(m.range)}.</span>` : '';
-        return `
-          <div class="timeline-1000__milestone ${state}">
-            <span class="timeline-1000__milestone-dot" aria-hidden="true"></span>
-            <div class="timeline-1000__milestone-text">
-              <span class="timeline-1000__milestone-title">${escapeHtml(m.label)}</span>
-              ${meta}
-              ${range}
-            </div>
-          </div>
-        `;
-      }).join('');
       const subtitle = stage.subtitle ? `<span>${escapeHtml(stage.subtitle)}</span>` : '';
       return `
         <div class="timeline-1000__stage${alignClass}" style="left:${stagePercent}%">
-          <span class="timeline-1000__tick" aria-hidden="true"></span>
           <div class="timeline-1000__stage-label"><strong>${escapeHtml(stage.label)}</strong>${subtitle}</div>
-          <div class="timeline-1000__milestones">${milestonesHtml}</div>
+          <span class="timeline-1000__tick" aria-hidden="true"></span>
         </div>
+      `;
+    }).join('');
+
+    const pointsHtml = TIMELINE_MILESTONES.map((m) => {
+      const percent = clamp((m.day / 1000) * 100, 0, 100);
+      const isDone = milestoneStatus.get(m.key) === true;
+      const state = isDone ? 'done' : 'upcoming';
+      const stateClass = isDone ? 'is-done' : 'is-upcoming';
+      const statusLabel = isDone ? 'Atteint' : 'À venir';
+      const approxMonths = m.day ? Math.round(m.day / 30) : 0;
+      const metaParts = [];
+      if (m.day) metaParts.push(`${m.day} j`);
+      if (approxMonths) metaParts.push(`≈ ${approxMonths} mois`);
+      const metaText = metaParts.join(' • ');
+      const predictionText = m.range ? `La plupart des enfants atteignent ce jalon entre ${m.range}.` : '';
+      const ariaParts = [m.label, statusLabel, metaText].filter(Boolean).join(' • ');
+      return `
+        <button type="button" class="timeline-1000__point ${stateClass}" style="left:${percent}%"
+          data-title="${escapeHtml(m.label)}"
+          data-meta="${escapeHtml(metaText)}"
+          data-pred="${escapeHtml(predictionText)}"
+          data-status="${escapeHtml(statusLabel)}"
+          data-state="${state}">
+          <span aria-hidden="true"></span>
+          <span class="sr-only">${escapeHtml(ariaParts || m.label)}</span>
+        </button>
       `;
     }).join('');
 
@@ -4727,10 +4729,12 @@ const TIMELINE_MILESTONES = [
             <span class="timeline-1000__line" aria-hidden="true"></span>
             <span class="timeline-1000__progress" style="width:${progressPercent}%" aria-hidden="true"></span>
             ${stageHtml}
+            ${pointsHtml}
             <div class="timeline-1000__current${currentAlign}" style="left:${progressPercent}%">
               <span class="timeline-1000__current-dot" aria-hidden="true"></span>
               <span class="timeline-1000__current-label">${safeName} • ${daysDisplay}</span>
             </div>
+            <div class="timeline-1000__tooltip" role="dialog" aria-live="polite" hidden></div>
           </div>
         </div>
       </section>
@@ -4740,12 +4744,13 @@ const TIMELINE_MILESTONES = [
   function setupTimelineScroller(root) {
     if (!root) return;
     const scroller = root.querySelector('.timeline-1000__scroll');
-    const current = scroller?.querySelector('.timeline-1000__current');
-    if (!scroller || !current) return;
+    const track = scroller?.querySelector('.timeline-1000__track');
+    const current = track?.querySelector('.timeline-1000__current');
+    if (!scroller || !track || !current) return;
     requestAnimationFrame(() => {
       const target = current.offsetLeft + current.offsetWidth / 2;
       const desired = target - scroller.clientWidth / 2;
-      const maxScroll = Math.max(0, current.parentElement.scrollWidth - scroller.clientWidth);
+      const maxScroll = Math.max(0, track.scrollWidth - scroller.clientWidth);
       const nextLeft = clamp(desired, 0, maxScroll);
       try {
         scroller.scrollTo({ left: nextLeft, behavior: 'smooth' });
@@ -4753,6 +4758,90 @@ const TIMELINE_MILESTONES = [
         scroller.scrollLeft = nextLeft;
       }
     });
+
+    const tooltip = track.querySelector('.timeline-1000__tooltip');
+    const points = Array.from(track.querySelectorAll('.timeline-1000__point'));
+    if (!tooltip || !points.length) return;
+
+    let activePoint = null;
+    let hideTimer = null;
+
+    const positionTooltip = () => {
+      if (!activePoint || tooltip.hidden) return;
+      const center = activePoint.offsetLeft + (activePoint.offsetWidth / 2);
+      tooltip.style.left = `${center}px`;
+      tooltip.style.setProperty('--timeline-tooltip-shift', '0px');
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      let shift = 0;
+      if (tooltipRect.left < scrollerRect.left + 18) {
+        shift = (scrollerRect.left + 18) - tooltipRect.left;
+      } else if (tooltipRect.right > scrollerRect.right - 18) {
+        shift = (scrollerRect.right - 18) - tooltipRect.right;
+      }
+      tooltip.style.setProperty('--timeline-tooltip-shift', `${shift}px`);
+    };
+
+    const showTooltip = (btn) => {
+      if (!btn) return;
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      activePoint = btn;
+      const title = btn.dataset.title || '';
+      const meta = btn.dataset.meta || '';
+      const pred = btn.dataset.pred || '';
+      const status = btn.dataset.status || '';
+      const state = btn.dataset.state || 'upcoming';
+      tooltip.dataset.state = state;
+      const statusClass = state === 'done' ? 'is-done' : '';
+      const metaHtml = meta ? `<p class="timeline-1000__tooltip-meta">${escapeHtml(meta)}</p>` : '';
+      const predHtml = pred ? `<p class="timeline-1000__tooltip-pred">${escapeHtml(pred)}</p>` : '';
+      tooltip.innerHTML = `
+        <div class="timeline-1000__tooltip-header">
+          <span class="timeline-1000__status ${statusClass}">${escapeHtml(status)}</span>
+          <h4>${escapeHtml(title)}</h4>
+        </div>
+        ${metaHtml}
+        ${predHtml}
+      `;
+      tooltip.hidden = false;
+      positionTooltip();
+      requestAnimationFrame(positionTooltip);
+    };
+
+    const scheduleHide = () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        tooltip.hidden = true;
+        activePoint = null;
+      }, 160);
+    };
+
+    const cancelHide = () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    };
+
+    points.forEach((btn) => {
+      btn.addEventListener('mouseenter', () => showTooltip(btn));
+      btn.addEventListener('focus', () => showTooltip(btn));
+      btn.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        showTooltip(btn);
+      });
+      btn.addEventListener('mouseleave', scheduleHide);
+      btn.addEventListener('blur', scheduleHide);
+    });
+
+    tooltip.addEventListener('mouseenter', cancelHide);
+    tooltip.addEventListener('mouseleave', scheduleHide);
+
+    scroller.addEventListener('scroll', () => {
+      if (!tooltip.hidden) positionTooltip();
+    }, { passive: true });
+
+    scroller.addEventListener('mouseleave', scheduleHide);
   }
 
   function milestonesInputsHtml(values = []) {
