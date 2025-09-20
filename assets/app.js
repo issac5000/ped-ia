@@ -736,7 +736,13 @@ try {
         const topicId = topicIdRaw != null ? String(topicIdRaw) : '';
         const whoIdRaw = r.user_id ?? r.userId;
         const whoId = whoIdRaw != null ? String(whoIdRaw) : '';
-        const who = authors[whoId] || 'Un parent';
+        const authorEntry = authors[whoId];
+        let who = 'Un parent';
+        if (authorEntry && typeof authorEntry === 'object') {
+          who = authorEntry.full_name || authorEntry.name || who;
+        } else if (authorEntry != null) {
+          who = String(authorEntry) || who;
+        }
         const rawTitle = topics[topicId] || '';
         const cleanTitle = rawTitle ? rawTitle.replace(/^\[(.*?)\]\s*/, '') : '';
         const notifId = `reply:${r.id}`;
@@ -2668,7 +2674,7 @@ try {
           if (uid) {
             const { data: profileRow } = await supabase
               .from('profiles')
-              .select('id,full_name,parent_role')
+              .select('id,full_name,parent_role,show_children_count,allow_messages')
               .eq('id', uid)
               .maybeSingle();
             if (profileRow) {
@@ -2677,6 +2683,11 @@ try {
                 ...user,
                 pseudo,
                 role: profileRow.parent_role || user.role || 'maman',
+              };
+              privacy = {
+                ...privacy,
+                showStats: profileRow.show_children_count != null ? !!profileRow.show_children_count : privacy.showStats,
+                allowMessages: profileRow.allow_messages != null ? !!profileRow.allow_messages : privacy.allowMessages,
               };
               if (profileRow.id) {
                 setActiveProfile({ ...activeProfile, id: profileRow.id, full_name: pseudo });
@@ -2977,7 +2988,13 @@ try {
             await fetch('/api/profiles/update-anon', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code, fullName: pseudo, role }),
+              body: JSON.stringify({
+                code,
+                fullName: pseudo,
+                role,
+                showChildrenCount: showStats,
+                allowMessages,
+              }),
             });
           }
         } else {
@@ -2986,14 +3003,35 @@ try {
             try {
               await supabase
                 .from('profiles')
-                .update({ full_name: pseudo, parent_role: role })
+                .update({
+                  full_name: pseudo,
+                  parent_role: role,
+                  show_children_count: showStats,
+                  allow_messages: allowMessages,
+                })
                 .eq('id', uid);
             } catch (err) {
-              console.warn('Profil: mise à jour du rôle impossible, tentative sans le champ', err);
-              await supabase
-                .from('profiles')
-                .update({ full_name: pseudo })
-                .eq('id', uid);
+              console.warn('Profil: mise à jour complète impossible, tentative sans parent_role', err);
+              try {
+                await supabase
+                  .from('profiles')
+                  .update({
+                    full_name: pseudo,
+                    show_children_count: showStats,
+                    allow_messages: allowMessages,
+                  })
+                  .eq('id', uid);
+              } catch (errFallback) {
+                console.warn('Profil: mise à jour sans role impossible', errFallback);
+                try {
+                  await supabase
+                    .from('profiles')
+                    .update({ full_name: pseudo })
+                    .eq('id', uid);
+                } catch (err2) {
+                  console.warn('Profil: mise à jour minimale impossible', err2);
+                }
+              }
             }
           }
         }
@@ -4012,6 +4050,22 @@ try {
       });
     };
 
+    const normalizeAuthorMeta = (raw) => {
+      if (!raw) return null;
+      if (typeof raw === 'string') {
+        return { name: raw, childCount: null, showChildCount: false };
+      }
+      if (typeof raw === 'object') {
+        const name = raw.name || raw.full_name || raw.fullName || '';
+        const rawCount = raw.child_count ?? raw.childCount ?? raw.children_count ?? null;
+        const count = Number(rawCount);
+        const childCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
+        const showChildCount = !!(raw.show_children_count ?? raw.showChildCount ?? raw.show_stats ?? raw.showStats);
+        return { name: name || 'Utilisateur', childCount, showChildCount };
+      }
+      return null;
+    };
+
     const renderTopics = (topics, replies, authorsMap) => {
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
@@ -4056,9 +4110,16 @@ try {
           return (value || '').toString().trim().toLowerCase();
         }
       };
-      const formatAuthorName = (rawName, rawUserId) => {
+      const formatAuthorName = (rawName, rawUserId, authorMeta) => {
         const baseName = (rawName == null ? '' : String(rawName)).trim();
         const safeName = baseName || 'Anonyme';
+        const meta = normalizeAuthorMeta(authorMeta) || {};
+        const metaWantsStats = meta.showChildCount && Number.isFinite(meta.childCount);
+        if (metaWantsStats) {
+          const metaLabel = meta.childCount > 1 ? `${meta.childCount} enfants` : `${meta.childCount} enfant`;
+          if (/\(\s*\d+\s+enfant/i.test(safeName)) return safeName;
+          return `${safeName} (${metaLabel})`;
+        }
         if (!shouldShowChildStats) return safeName;
         let matchesCurrent = false;
         if (rawUserId != null && activeUserId != null && String(rawUserId) === String(activeUserId)) {
@@ -4091,7 +4152,9 @@ try {
         if (activeCat !== 'all' && cat !== activeCat) return;
         const el = document.createElement('div');
         el.className = 'topic';
-        const rawAuthorName = authorsMap.get(t.user_id) || t.author || 'Anonyme';
+        const authorMeta = authorsMap.get(String(t.user_id)) || authorsMap.get(t.user_id) || null;
+        const normalizedAuthor = normalizeAuthorMeta(authorMeta);
+        const rawAuthorName = (normalizedAuthor && normalizedAuthor.name) || authorMeta || t.author || 'Anonyme';
         const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
         const openSet = (renderCommunity._open = renderCommunity._open || new Set());
         const tid = String(t.id);
@@ -4101,14 +4164,16 @@ try {
         const toggleCount = repliesCount ? ` (${repliesCount})` : '';
         const isMobile = document.body.classList.contains('force-mobile');
         const { label: createdLabel, iso: createdIso } = formatDateParts(t.created_at || t.createdAt);
-        const displayAuthor = formatAuthorName(rawAuthorName, t.user_id);
+        const displayAuthor = formatAuthorName(rawAuthorName, t.user_id, authorMeta);
         const initials = initialsFrom(rawAuthorName);
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
         const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
         const repliesHtml = rs.map(r=>{
-          const rawReplyAuthor = authorsMap.get(r.user_id) || r.author || 'Anonyme';
-          const replyAuthor = formatAuthorName(rawReplyAuthor, r.user_id);
+          const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
+          const normalizedReply = normalizeAuthorMeta(replyMeta);
+          const rawReplyAuthor = (normalizedReply && normalizedReply.name) || replyMeta || r.author || 'Anonyme';
+          const replyAuthor = formatAuthorName(rawReplyAuthor, r.user_id, replyMeta);
           const replyInitials = initialsFrom(rawReplyAuthor);
           const { label: replyLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
           const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
@@ -4235,7 +4300,12 @@ try {
             const topics = Array.isArray(res.topics) ? res.topics : [];
             const repliesArr = Array.isArray(res.replies) ? res.replies : [];
             const authorsRaw = res.authors || {};
-            const authorsMap = new Map(Object.entries(authorsRaw).map(([id, name]) => [String(id), name || 'Utilisateur']));
+            const authorsMap = new Map();
+            Object.entries(authorsRaw).forEach(([id, value]) => {
+              const meta = normalizeAuthorMeta(value);
+              const entry = meta || { name: (value == null ? '' : String(value)) || 'Utilisateur', childCount: null, showChildCount: false };
+              authorsMap.set(String(id), entry);
+            });
             const repliesMap = new Map();
             repliesArr.forEach(r => {
               if (!r || !r.topic_id) return;
@@ -4273,14 +4343,65 @@ try {
               });
               if (r.ok) {
                 const j = await r.json();
-                authorsMap = new Map((j.profiles||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+                authorsMap = new Map((j.profiles||[]).map((p)=>{
+                  const id = p?.id != null ? String(p.id) : '';
+                  if (!id) return null;
+                  const entry = normalizeAuthorMeta({
+                    name: p.full_name || p.name || 'Utilisateur',
+                    child_count: p.child_count ?? p.children_count ?? null,
+                    show_children_count: p.show_children_count ?? p.showChildCount ?? p.show_stats ?? p.showStats
+                  }) || { name: p.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                  return [id, entry];
+                }).filter(Boolean));
               } else {
-                const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds));
-                authorsMap = new Map((profs||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+                const { data: profs } = await supabase.from('profiles').select('id,full_name,show_children_count').in('id', Array.from(userIds));
+                const idsArr = Array.from(userIds).map((x)=>String(x));
+                let childRows = [];
+                try {
+                  const { data: rows } = await supabase.from('children').select('user_id').in('user_id', idsArr);
+                  childRows = rows || [];
+                } catch {}
+                const counts = new Map();
+                childRows.forEach((row)=>{
+                  const key = row?.user_id != null ? String(row.user_id) : '';
+                  if (!key) return;
+                  counts.set(key, (counts.get(key)||0)+1);
+                });
+                authorsMap = new Map((profs||[]).map((p)=>{
+                  const id = p?.id != null ? String(p.id) : '';
+                  if (!id) return null;
+                  const entry = normalizeAuthorMeta({
+                    name: p.full_name || 'Utilisateur',
+                    child_count: counts.get(id) ?? null,
+                    show_children_count: p.show_children_count
+                  }) || { name: p.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                  return [id, entry];
+                }).filter(Boolean));
               }
             } catch {
-              const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', Array.from(userIds));
-              authorsMap = new Map((profs||[]).map(p=>[p.id, p.full_name || 'Utilisateur']));
+              const { data: profs } = await supabase.from('profiles').select('id,full_name,show_children_count').in('id', Array.from(userIds));
+              const idsArr = Array.from(userIds).map((x)=>String(x));
+              let childRows = [];
+              try {
+                const { data: rows } = await supabase.from('children').select('user_id').in('user_id', idsArr);
+                childRows = rows || [];
+              } catch {}
+              const counts = new Map();
+              childRows.forEach((row)=>{
+                const key = row?.user_id != null ? String(row.user_id) : '';
+                if (!key) return;
+                counts.set(key, (counts.get(key)||0)+1);
+              });
+              authorsMap = new Map((profs||[]).map((p)=>{
+                const id = p?.id != null ? String(p.id) : '';
+                if (!id) return null;
+                const entry = normalizeAuthorMeta({
+                  name: p.full_name || 'Utilisateur',
+                  child_count: counts.get(id) ?? null,
+                  show_children_count: p.show_children_count
+                }) || { name: p.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                return [id, entry];
+              }).filter(Boolean));
             }
           }
           const repliesMap = new Map();
