@@ -1097,7 +1097,7 @@ section[data-route="/community"] .topic::before{
   height:240px;
   background:radial-gradient(ellipse at top, rgba(255,255,255,.18) 0%, rgba(255,255,255,0) 70%);
   opacity:.4;
-  transform:translateY(40%);
+  transform:translateY(68%);
   transition:opacity .35s ease, transform .35s ease;
   pointer-events:none;
   z-index:0;
