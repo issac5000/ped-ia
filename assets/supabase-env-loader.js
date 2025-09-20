@@ -7,29 +7,49 @@ function normalize(raw = {}) {
   return { url, anonKey };
 }
 
-export function setSupabaseEnv(url, anonKey) {
-  cache = normalize({ url, anonKey });
+function remember(env) {
+  cache = normalize(env);
+  if (typeof window !== 'undefined') {
+    window.__SUPABASE_ENV__ = cache;
+  }
   return cache;
 }
 
+export function setSupabaseEnv(url, anonKey) {
+  return remember({ url, anonKey });
+}
+
+async function fetchEnvCandidate(src) {
+  try {
+    const res = await fetch(src, { cache: 'no-store' });
+    if (!res?.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    return normalize(data);
+  } catch {
+    return null;
+  }
+}
+
 export async function loadSupabaseEnv() {
-  if (cache) return cache;
+  if (cache && cache.url && cache.anonKey) return cache;
   if (typeof window !== 'undefined' && window.__SUPABASE_ENV__) {
-    cache = normalize(window.__SUPABASE_ENV__);
-    return cache;
+    return remember(window.__SUPABASE_ENV__);
   }
   if (!loadingPromise) {
-    const src = '/assets/supabase-env.json';
-    loadingPromise = fetch(src, { cache: 'no-store' })
-      .then(res => res.ok ? res.json() : {})
-      .catch(() => ({}))
-      .then(data => {
-        cache = normalize(data);
-        if (typeof window !== 'undefined') {
-          window.__SUPABASE_ENV__ = cache;
-        }
-        return cache;
-      });
+    loadingPromise = (async () => {
+      const sources = ['/api/env', '/assets/supabase-env.json'];
+      for (const src of sources) {
+        const candidate = await fetchEnvCandidate(src);
+        if (!candidate) continue;
+        remember(candidate);
+        if (candidate.url && candidate.anonKey) break;
+      }
+      if (!cache) remember({});
+      return cache;
+    })();
   }
-  return loadingPromise;
+  return loadingPromise.then(env => {
+    if (!cache && env) remember(env);
+    return cache || env || remember({});
+  });
 }

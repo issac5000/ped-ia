@@ -3,6 +3,7 @@ const NOTIF_LAST_KEY = 'pedia_notif_last';
 const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 // Synap'Kids SPA — Prototype 100 % front avec localStorage + authentification Supabase (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
+import { loadSupabaseEnv } from './supabase-env-loader.js';
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 (async () => {
   document.body.classList.remove('no-js');
@@ -124,6 +125,7 @@ import { DEV_QUESTIONS } from './questions-dev.js';
     "/", "/signup", "/login", "/onboarding", "/dashboard",
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
+  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
   // Clés utilisées pour le stockage local du modèle de données
   const K = {
     user: 'pedia_user',
@@ -298,109 +300,103 @@ import { DEV_QUESTIONS } from './questions-dev.js';
   }
 
   try {
-    const env = await fetch('/api/env').then(r => r.json());
-    if (env?.url && env?.anonKey) {
-      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      supabase = createClient(env.url, env.anonKey, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-      });
-
-
+    const env = await loadSupabaseEnv();
+    if (!env?.url || !env?.anonKey) throw new Error('Missing Supabase environment variables');
+    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
+    supabase = createClient(env.url, env.anonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
 
     // Cas robuste : si Google renvoie ?code dans l’URL, on échange immédiatement contre une session
-try {
-  const urlNow = new URL(window.location.href);
-  if (urlNow.searchParams.get('code')) {
-    // Supabase veut l’URL sans hash (#/dashboard), donc on nettoie
-    const cleanUrl = window.location.origin + urlNow.pathname + urlNow.search;
-    const { error: xErr } = await supabase.auth.exchangeCodeForSession(cleanUrl);
-    if (xErr) {
-      console.warn('exchangeCodeForSession error', xErr);
+    try {
+      const urlNow = new URL(window.location.href);
+      if (urlNow.searchParams.get('code')) {
+        // Supabase veut l’URL sans hash (#/dashboard), donc on nettoie
+        const cleanUrl = window.location.origin + urlNow.pathname + urlNow.search;
+        const { error: xErr } = await supabase.auth.exchangeCodeForSession(cleanUrl);
+        if (xErr) {
+          console.warn('exchangeCodeForSession error', xErr);
+        }
+        // On enlève juste le ?code de l’URL, mais on garde le hash
+        urlNow.search = '';
+        history.replaceState({}, '', urlNow.toString());
+      }
+    } catch (e) {
+      console.warn('exchangeCodeForSession failed', e);
     }
-    // On enlève juste le ?code de l’URL, mais on garde le hash
-    urlNow.search = '';
-    history.replaceState({}, '', urlNow.toString());
-  }
-} catch (e) {
-  console.warn('exchangeCodeForSession failed', e);
-}
 
+    // Vérifier si un utilisateur est déjà connecté après redirection OAuth
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      authSession = { user };
+      await ensureProfile(user);
+      await syncUserFromSupabase();
+      updateHeaderAuth();
+      // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
+      // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
+      // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
+      if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
+        location.hash = '#/dashboard';
+      } else {
+        setActiveRoute(location.hash);
+      }
+    }
 
-
-
-  
-      // Vérifier si un utilisateur est déjà connecté après redirection OAuth
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        authSession = { user };
-        await ensureProfile(user);
+    // Récupérer la session en cours (utile si pas d'user direct)
+    const { data: { session } } = await supabase.auth.getSession();
+    authSession = session || authSession;
+    if (authSession?.user && !isProfileLoggedIn()) {
+      await ensureProfile(authSession.user);
+      await syncUserFromSupabase();
+    }
+    if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
+      location.hash = '#/dashboard';
+    }
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      authSession = session || null;
+      if (session?.user) {
+        await ensureProfile(session.user);
         await syncUserFromSupabase();
-        updateHeaderAuth();
-        // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
-        // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
-        // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
-        if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
-          location.hash = '#/dashboard';
-        } else {
-          setActiveRoute(location.hash);
+      } else {
+        if (!isAnonProfile()) {
+          setActiveProfile(null);
         }
       }
-  
-      // Récupérer la session en cours (utile si pas d'user direct)
-      const { data: { session } } = await supabase.auth.getSession();
-      authSession = session || authSession;
-      if (authSession?.user && !isProfileLoggedIn()) {
-        await ensureProfile(authSession.user);
-        await syncUserFromSupabase();
-      }
+      updateHeaderAuth();
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
-      }
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-        authSession = session || null;
-        if (session?.user) {
-          await ensureProfile(session.user);
-          await syncUserFromSupabase();
-        } else {
-          if (!isAnonProfile()) {
-            setActiveProfile(null);
-          }
-        }
-        updateHeaderAuth();
-        if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
-          location.hash = '#/dashboard';
-        } else {
-          setActiveRoute(location.hash);
-        }
-        // Ré-attache les notifications temps réel à chaque changement d’authentification
-        if (authSession?.user) {
-          setupRealtimeNotifications();
-          updateBadgeFromStore();
-          // Récupère systématiquement les notifications manquées après connexion (lacunes possibles après OAuth)
-          fetchMissedNotifications();
-          // Ne rejoue les toasts qu’une seule fois par session
-          if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
-        } else {
-          // Nettoie les canaux lors de la déconnexion
-          try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
-          notifChannels = [];
-        }
-      });
-      // Routage initial une fois l’état d’authentification déterminé
-      if (location.hash) {
-        setActiveRoute(location.hash);
       } else {
-        location.hash = isProfileLoggedIn() ? '#/dashboard' : '#/';
+        setActiveRoute(location.hash);
       }
-      // Abonne les notifications pour une session déjà active et rejoue les toasts une fois
+      // Ré-attache les notifications temps réel à chaque changement d’authentification
       if (authSession?.user) {
         setupRealtimeNotifications();
         updateBadgeFromStore();
-        // Récupère systématiquement les notifications manquées à l’ouverture si déjà connecté
+        // Récupère systématiquement les notifications manquées après connexion (lacunes possibles après OAuth)
         fetchMissedNotifications();
-        // Ne rejoue les toasts qu’une fois par session
+        // Ne rejoue les toasts qu’une seule fois par session
         if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
+      } else {
+        // Nettoie les canaux lors de la déconnexion
+        try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
+        notifChannels = [];
       }
+    });
+    // Routage initial une fois l’état d’authentification déterminé
+    if (location.hash) {
+      setActiveRoute(location.hash);
+    } else {
+      location.hash = isProfileLoggedIn() ? '#/dashboard' : '#/';
+    }
+    // Abonne les notifications pour une session déjà active et rejoue les toasts une fois
+    if (authSession?.user) {
+      setupRealtimeNotifications();
+      updateBadgeFromStore();
+      // Récupère systématiquement les notifications manquées à l’ouverture si déjà connecté
+      fetchMissedNotifications();
+      // Ne rejoue les toasts qu’une fois par session
+      if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
     }
   } catch (e) {
     console.warn('Supabase init failed (env or import)', e);
@@ -419,7 +415,6 @@ try {
   }
 
   // Gestion du routage
-  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
   function setActiveRoute(hash) {
     const requestedPath = normalizeRoutePath(hash);
     const path = routeSections.has(requestedPath) ? requestedPath : '/';
@@ -1682,21 +1677,22 @@ try {
       if (DEBUG_AUTH) console.warn('syncUserFromSupabase failed', e);
     }
   }
-  async function ensureSupabaseClient() {
-    if (supabase) return true;
-    try {
-      const env = await fetch('/api/env').then(r => r.json());
-      if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
-      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      supabase = createClient(env.url, env.anonKey, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-      });
-      return true;
-    } catch (e) {
-      console.warn('ensureSupabaseClient failed', e);
-      return false;
+    async function ensureSupabaseClient() {
+      if (supabase) return true;
+      try {
+        const env = await loadSupabaseEnv();
+        if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
+        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+        if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
+        supabase = createClient(env.url, env.anonKey, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+        });
+        return true;
+      } catch (e) {
+        console.warn('ensureSupabaseClient failed', e);
+        return false;
+      }
     }
-  }
 
   async function signInGoogle(){
     try {

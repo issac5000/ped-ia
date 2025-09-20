@@ -1,3 +1,5 @@
+import { loadSupabaseEnv } from './supabase-env-loader.js';
+
 document.body.classList.remove('no-js');
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -55,9 +57,10 @@ updateHeaderAuth();
 async function signInGoogle(){
   try{
     if(!supabase){
-      const env = await fetch('/api/env').then(r=>r.json());
+      const env = await loadSupabaseEnv();
       if(!env?.url || !env?.anonKey) throw new Error('Env manquante');
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
       supabase = createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
     }
     await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin } });
@@ -126,9 +129,10 @@ function setupHeader(){
 
 async function initAuth(){
   try{
-    const env = await fetch('/api/env').then(r=>r.json());
+    const env = await loadSupabaseEnv();
     if(env?.url && env?.anonKey){
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
       supabase = createClient(env.url, env.anonKey, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }});
       const { data:{ session } } = await supabase.auth.getSession();
       authSession = session;
