@@ -1088,8 +1088,6 @@ section[data-route="/community"] .topic{
   border:1px solid rgba(255,255,255,.12);
   background:linear-gradient(145deg, rgba(13,18,30,.82), rgba(6,9,15,.66));
   box-shadow:0 28px 60px rgba(0,0,0,.55);
-  backdrop-filter:blur(16px) saturate(130%);
-  -webkit-backdrop-filter:blur(16px) saturate(130%);
   transition:transform .24s ease, box-shadow .3s ease, border-color .3s ease, background .35s ease;
 }
 section[data-route="/community"] .topic::before{
@@ -1102,6 +1100,21 @@ section[data-route="/community"] .topic::before{
   transform:translateY(40%);
   transition:opacity .35s ease, transform .35s ease;
   pointer-events:none;
+  z-index:0;
+}
+section[data-route="/community"] .topic::after{
+  content:"";
+  position:absolute;
+  inset:-18%;
+  border-radius:inherit;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255,255,255,.16), transparent 58%),
+    radial-gradient(circle at 82% -6%, rgba(255,255,255,.1), transparent 60%),
+    linear-gradient(150deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  opacity:.55;
+  pointer-events:none;
+  z-index:0;
+  transition:opacity .35s ease;
 }
 section[data-route="/community"] .topic[data-open="1"],
 section[data-route="/community"] .topic:hover{
@@ -1114,6 +1127,10 @@ section[data-route="/community"] .topic[data-open="1"]::before,
 section[data-route="/community"] .topic:hover::before{
   opacity:.75;
   transform:translateY(10%);
+}
+section[data-route="/community"] .topic[data-open="1"]::after,
+section[data-route="/community"] .topic:hover::after{
+  opacity:.75;
 }
 section[data-route="/community"] .topic > *{position:relative; z-index:1}
 section[data-route="/community"] .topic-header{display:flex; align-items:center; gap:18px; flex-wrap:wrap}
