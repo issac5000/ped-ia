@@ -3989,7 +3989,7 @@ try {
   function setupScrollAnimations(){
     try { revealObserver?.disconnect(); } catch {}
     const root = document.querySelector('.route.active') || document;
-    const targets = [
+    const baseTargets = [
       ...$$('.card', root),
       ...$$('.feature', root),
       ...$$('.step', root),
@@ -3998,12 +3998,21 @@ try {
       ...$$('.pillar', root),
       ...$$('.chart-card', root)
     ];
+    const sectionTargets = [
+      ...$$('section', root),
+      ...$$('.section', root)
+    ].filter((el) => el !== root && !el.classList.contains('route'));
+    const targets = Array.from(new Set([...baseTargets, ...sectionTargets]));
     targets.forEach((el, i) => {
+      const isSection = el.matches('section') || el.classList.contains('section');
+      const isSlideRight = el.classList.contains('feature') || el.classList.contains('step');
       if (!el.classList.contains('reveal')) {
         el.classList.add('reveal');
-        if (el.classList.contains('feature') || el.classList.contains('step')) el.classList.add('fade-right');
-        el.setAttribute('data-delay', String(Math.min(4, (i % 5))));
+        if (isSlideRight) el.classList.add('fade-right');
+        else if (isSection) el.classList.add('fade-in');
       }
+      const delay = isSection ? '0' : String(Math.min(4, (i % 5)));
+      if (!el.hasAttribute('data-delay') || isSection) el.setAttribute('data-delay', delay);
     });
     revealObserver = new IntersectionObserver((entries) => {
       for (const e of entries){
