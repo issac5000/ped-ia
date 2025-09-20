@@ -3726,6 +3726,129 @@ try {
       cats.dataset.bound='1';
     }
     const activeCat = cats?.getAttribute('data-active') || 'all';
+    const topicDialog = $('#dialog-topic');
+    const topicForm = $('#form-topic');
+    const topicCancelBtn = $('#btn-cancel-topic');
+    const topicNewBtn = $('#btn-new-topic');
+    const resetTopicForm = () => {
+      if (!topicForm) return;
+      try { topicForm.reset(); } catch {}
+      topicForm.dataset.busy = '0';
+      const submit = topicForm.querySelector('button[value="submit"], button[type="submit"]');
+      if (submit) submit.disabled = false;
+    };
+    const closeTopicDialog = () => {
+      if (!topicDialog) return;
+      try {
+        if (typeof topicDialog.close === 'function') topicDialog.close();
+        else topicDialog.removeAttribute('open');
+      } catch {
+        topicDialog.removeAttribute('open');
+      }
+    };
+    const focusTopicTitle = () => {
+      if (!topicForm) return;
+      const titleEl = topicForm.elements?.namedItem?.('title');
+      if (titleEl && typeof titleEl.focus === 'function') {
+        setTimeout(() => { try { titleEl.focus(); } catch {} }, 30);
+      }
+    };
+    const openTopicDialog = () => {
+      if (!topicDialog) return;
+      resetTopicForm();
+      try {
+        if (typeof topicDialog.showModal === 'function') topicDialog.showModal();
+        else topicDialog.setAttribute('open', '');
+      } catch {
+        topicDialog.setAttribute('open', '');
+      }
+      focusTopicTitle();
+    };
+    if (topicDialog && !topicDialog.dataset.resetBound) {
+      topicDialog.addEventListener('close', resetTopicForm);
+      topicDialog.dataset.resetBound = '1';
+    }
+    if (topicNewBtn && topicDialog && !topicNewBtn.dataset.bound) {
+      topicNewBtn.dataset.bound = '1';
+      topicNewBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openTopicDialog();
+      });
+    }
+    if (topicCancelBtn && !topicCancelBtn.dataset.bound) {
+      topicCancelBtn.dataset.bound = '1';
+      topicCancelBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeTopicDialog();
+      });
+    }
+    if (topicForm && !topicForm.dataset.bound) {
+      topicForm.dataset.bound = '1';
+      topicForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (topicForm.dataset.busy === '1') return;
+        if (typeof topicForm.reportValidity === 'function' && !topicForm.reportValidity()) return;
+        topicForm.dataset.busy = '1';
+        const submit = topicForm.querySelector('button[value="submit"], button[type="submit"]');
+        if (submit) submit.disabled = true;
+        const fd = new FormData(topicForm);
+        const catRaw = (fd.get('category') || '').toString().trim();
+        const cat = catRaw || 'Divers';
+        const titleRaw = (fd.get('title') || '').toString();
+        const titleClean = titleRaw.replace(/^\s*\[[^\]]*\]\s*/,'').trim();
+        const content = (fd.get('content') || '').toString().trim();
+        if (!titleClean || !content) {
+          topicForm.dataset.busy = '0';
+          if (submit) submit.disabled = false;
+          return;
+        }
+        const fullTitle = `[${cat}] ${titleClean}`;
+        let newTopicId = '';
+        try {
+          if (useRemote()) {
+            if (isAnonProfile()) {
+              const res = await anonCommunityRequest('create-topic', { title: fullTitle, content });
+              newTopicId = res?.topic?.id != null ? String(res.topic.id) : '';
+            } else {
+              const uid = getActiveProfileId();
+              if (!uid) throw new Error('Pas de user_id');
+              const { data, error } = await supabase
+                .from('forum_topics')
+                .insert([{ user_id: uid, title: fullTitle, content }])
+                .select('id')
+                .single();
+              if (error) throw error;
+              if (data?.id != null) newTopicId = String(data.id);
+            }
+          } else {
+            const forum = store.get(K.forum, { topics: [] });
+            const user = store.get(K.user);
+            const children = store.get(K.children, []);
+            const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
+            const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
+            const id = genId();
+            forum.topics.push({ id, title: fullTitle, content, author: whoAmI, createdAt: Date.now(), replies: [] });
+            store.set(K.forum, forum);
+            newTopicId = id;
+          }
+        } catch (err) {
+          console.error('create-topic failed', err);
+          alert('Impossible de publier le sujet pour le moment. Veuillez réessayer.');
+          topicForm.dataset.busy = '0';
+          if (submit) submit.disabled = false;
+          return;
+        } finally {
+          topicForm.dataset.busy = '0';
+          if (submit) submit.disabled = false;
+        }
+        if (newTopicId) {
+          const openSet = (renderCommunity._open = renderCommunity._open || new Set());
+          openSet.add(String(newTopicId));
+        }
+        closeTopicDialog();
+        renderCommunity();
+      });
+    }
     const showEmpty = () => {
       if (rid !== renderCommunity._rid) return;
       const empty = document.createElement('div');
