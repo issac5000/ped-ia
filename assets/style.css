@@ -1179,7 +1179,24 @@ section[data-route="/community"] .topic-cat{
   border:1px solid rgba(255,255,255,.26);
   color:#ffffff;
 }
-section[data-route="/community"] .topic-author{font-weight:600; color:#ffffff}
+section[data-route="/community"] .topic-author,
+section[data-route="/community"] .reply-author{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:2px;
+}
+section[data-route="/community"] .topic-author-name,
+section[data-route="/community"] .reply-author-name{
+  font-weight:600;
+  color:#ffffff;
+}
+section[data-route="/community"] .author-meta{
+  font-size:11px;
+  font-weight:400;
+  color:rgba(226,233,255,.72);
+  line-height:1.2;
+}
 section[data-route="/community"] .topic-title{margin:0; font-size:clamp(22px, 3vw, 28px); font-weight:800; color:#ffffff; text-shadow:0 4px 18px rgba(0,0,0,.5)}
 section[data-route="/community"] .topic-actions{margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
 section[data-route="/community"] .topic-pill{
@@ -1262,7 +1279,6 @@ section[data-route="/community"] .reply-avatar{
   box-shadow:0 10px 20px rgba(0,0,0,.38);
 }
 section[data-route="/community"] .reply-meta{display:grid; gap:4px; min-width:0}
-section[data-route="/community"] .reply-author{font-weight:600; color:#ffffff}
 section[data-route="/community"] .reply-meta time{font-size:12px; color:rgba(226,233,255,.7)}
 section[data-route="/community"] .reply-body{font-size:14px; line-height:1.6; color:#f0f3ff; word-break:break-word}
 section[data-route="/community"] .btn-message{background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); color:#ffffff; box-shadow:none}

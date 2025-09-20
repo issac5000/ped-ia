@@ -4140,10 +4140,14 @@ try {
       }
       if (typeof raw === 'object') {
         const name = raw.name || raw.full_name || raw.fullName || '';
-        const rawCount = raw.child_count ?? raw.childCount ?? raw.children_count ?? null;
+        let rawCount = raw.child_count ?? raw.childCount ?? raw.children_count ?? raw.childrenCount ?? null;
+        if (Array.isArray(raw.children)) {
+          rawCount = raw.children.length;
+        }
         const count = Number(rawCount);
         const childCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
-        const showChildCount = !!(raw.show_children_count ?? raw.showChildCount ?? raw.show_stats ?? raw.showStats);
+        const rawShow = raw.show_children_count ?? raw.showChildCount ?? raw.show_stats ?? raw.showStats;
+        const showChildCount = typeof rawShow === 'string' ? rawShow === 'true' : !!rawShow;
         return { name: name || 'Utilisateur', childCount, showChildCount };
       }
       return null;
@@ -4178,16 +4182,22 @@ try {
         const time = date.getTime();
         return Number.isFinite(time) ? time : 0;
       };
-      const formatAuthorName = (rawName, rawUserId, authorMeta) => {
+      const formatAuthorName = (rawName) => {
         const baseName = (rawName == null ? '' : String(rawName)).trim();
         const safeName = baseName || 'Anonyme';
-        const meta = normalizeAuthorMeta(authorMeta) || {};
-        if (meta.showChildCount && Number.isFinite(meta.childCount)) {
-          const metaLabel = meta.childCount > 1 ? `${meta.childCount} enfants` : `${meta.childCount} enfant`;
-          if (/\(\s*\d+\s+enfant/i.test(safeName)) return safeName;
-          return `${safeName} (${metaLabel})`;
-        }
         return safeName;
+      };
+      const renderAuthorMetaInfo = (meta) => {
+        if (!meta) return '';
+        const normalized = (typeof meta === 'object' && meta !== null && 'childCount' in meta && 'showChildCount' in meta)
+          ? meta
+          : normalizeAuthorMeta(meta);
+        if (!normalized || !normalized.showChildCount) return '';
+        if (!Number.isFinite(normalized.childCount)) return '';
+        const count = normalized.childCount;
+        const suffix = count > 1 ? 'enfants' : 'enfant';
+        const label = `Parent de ${count} ${suffix}`;
+        return `<span class="author-meta">${escapeHtml(label)}</span>`;
       };
       topics.slice().forEach(t => {
         let title = t.title || '';
@@ -4199,7 +4209,10 @@ try {
         el.className = 'topic';
         const authorMeta = authorsMap.get(String(t.user_id)) || authorsMap.get(t.user_id) || null;
         const normalizedAuthor = normalizeAuthorMeta(authorMeta);
-        const rawAuthorName = (normalizedAuthor && normalizedAuthor.name) || authorMeta || t.author || 'Anonyme';
+        const rawAuthorName = (normalizedAuthor && normalizedAuthor.name)
+          || (typeof authorMeta === 'string' ? authorMeta : authorMeta?.full_name || authorMeta?.name)
+          || t.author
+          || 'Anonyme';
         const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
         const openSet = (renderCommunity._open = renderCommunity._open || new Set());
         const tid = String(t.id);
@@ -4209,7 +4222,14 @@ try {
         const toggleCount = repliesCount ? ` (${repliesCount})` : '';
         const isMobile = document.body.classList.contains('force-mobile');
         const { label: createdLabel, iso: createdIso } = formatDateParts(t.created_at || t.createdAt);
-        const displayAuthor = formatAuthorName(rawAuthorName, t.user_id, authorMeta);
+        const displayAuthor = formatAuthorName(rawAuthorName);
+        const topicAuthorMetaHtml = renderAuthorMetaInfo(normalizedAuthor || authorMeta);
+        const topicAuthorBlock = `
+          <span class="topic-author">
+            <span class="topic-author-name">${escapeHtml(displayAuthor)}</span>
+            ${topicAuthorMetaHtml}
+          </span>
+        `.trim();
         const initials = initialsFrom(rawAuthorName);
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
@@ -4217,8 +4237,18 @@ try {
         const repliesHtml = rs.map(r=>{
           const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
           const normalizedReply = normalizeAuthorMeta(replyMeta);
-          const rawReplyAuthor = (normalizedReply && normalizedReply.name) || replyMeta || r.author || 'Anonyme';
-          const replyAuthor = formatAuthorName(rawReplyAuthor, r.user_id, replyMeta);
+          const rawReplyAuthor = (normalizedReply && normalizedReply.name)
+            || (typeof replyMeta === 'string' ? replyMeta : replyMeta?.full_name || replyMeta?.name)
+            || r.author
+            || 'Anonyme';
+          const replyAuthor = formatAuthorName(rawReplyAuthor);
+          const replyAuthorMetaHtml = renderAuthorMetaInfo(normalizedReply || replyMeta);
+          const replyAuthorBlock = `
+            <span class="reply-author">
+              <span class="reply-author-name">${escapeHtml(replyAuthor)}</span>
+              ${replyAuthorMetaHtml}
+            </span>
+          `.trim();
           const replyInitials = initialsFrom(rawReplyAuthor);
           const { label: replyLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
           const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
@@ -4228,7 +4258,7 @@ try {
               <div class="reply-head">
                 <div class="reply-avatar" aria-hidden="true">${escapeHtml(replyInitials)}</div>
                 <div class="reply-meta">
-                  <span class="reply-author">${escapeHtml(replyAuthor)}</span>
+                  ${replyAuthorBlock}
                   ${replyTime}
                 </div>
                 ${replyMessageBtn}
@@ -4250,7 +4280,7 @@ try {
             <div class="topic-heading">
               <div class="topic-meta">
                 <span class="topic-cat">${escapeHtml(cat)}</span>
-                <span class="topic-author">${escapeHtml(displayAuthor)}</span>
+                ${topicAuthorBlock}
                 ${timeMeta}
               </div>
               <h3 class="topic-title">${escapeHtml(title)}</h3>
