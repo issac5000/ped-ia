@@ -2708,8 +2708,12 @@ try {
 
     if (rid !== renderSettings._rid) return;
 
-    if (!primaryId && children.length) primaryId = children[0].id;
-    user = { ...user, primaryChildId: primaryId || null };
+    const childIdSet = new Set(children.map((child) => String(child.id)));
+    const primaryIdStr = primaryId != null ? String(primaryId) : null;
+    if (!primaryIdStr || !childIdSet.has(primaryIdStr)) {
+      primaryId = children.length ? children[0].id : null;
+    }
+    user = { ...user, primaryChildId: primaryId ?? null };
     store.set(K.user, user);
     store.set(K.privacy, privacy);
     store.set(K.children, children);
@@ -2719,10 +2723,14 @@ try {
     settingsState.children = children;
     settingsState.childrenMap = new Map(children.map((child) => [String(child.id), child]));
     settingsState.snapshots = new Map();
-    const selectedId = settingsState.selectedChildId && settingsState.childrenMap.has(String(settingsState.selectedChildId))
-      ? settingsState.selectedChildId
-      : (primaryId || (children[0]?.id ?? null));
-    settingsState.selectedChildId = selectedId ? String(selectedId) : null;
+    const previousSelectedStr = settingsState.selectedChildId ? String(settingsState.selectedChildId) : null;
+    const fallbackSelected = primaryId != null
+      ? String(primaryId)
+      : (children[0]?.id != null ? String(children[0].id) : null);
+    const selectedId = previousSelectedStr && childIdSet.has(previousSelectedStr)
+      ? previousSelectedStr
+      : fallbackSelected;
+    settingsState.selectedChildId = selectedId || null;
 
     const pseudoInput = form.elements.namedItem('pseudo');
     if (pseudoInput) pseudoInput.value = user.pseudo || '';
