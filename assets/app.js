@@ -2328,7 +2328,7 @@ try {
       const ageTxt = formatAge(child.dob);
       const selectedId = child.id;
       const opts = slim.map(c => `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${escapeHtml(c.firstName)}${c.dob?` • ${formatAge(c.dob)}`:''}</option>`).join('');
-      box.className = 'card ai-child-selector';
+      box.className = 'ai-child-selector';
       const ctx = child.context || {};
       const safeAge = ageTxt ? escapeHtml(ageTxt) : '';
       const allergies = (ctx.allergies || '').trim();
