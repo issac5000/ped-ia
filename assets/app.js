@@ -2328,16 +2328,30 @@ try {
       const ageTxt = formatAge(child.dob);
       const selectedId = child.id;
       const opts = slim.map(c => `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${escapeHtml(c.firstName)}${c.dob?` • ${formatAge(c.dob)}`:''}</option>`).join('');
+      box.className = 'card ai-child-selector';
+      const ctx = child.context || {};
+      const safeAge = ageTxt ? escapeHtml(ageTxt) : '';
+      const allergies = (ctx.allergies || '').trim();
+      const safeAllergies = allergies ? escapeHtml(allergies) : '';
+      const feeding = labelFeedingType(ctx.feedingType);
+      const safeFeeding = feeding && feeding !== '—' ? escapeHtml(feeding) : '';
+      const summaryParts = [];
+      if (safeAge) summaryParts.push(`Âge : ${safeAge}`);
+      if (safeAllergies) summaryParts.push(`Allergies : ${safeAllergies}`);
+      if (safeFeeding) summaryParts.push(`Alimentation : ${safeFeeding}`);
+      const summary = summaryParts.join(' • ');
+      const safeName = escapeHtml(child.firstName);
       box.innerHTML = `
-        <div class="hstack">
-          <strong>Profil IA:</strong>
-          <label style="margin-left:6px">Enfant
-            <select id="ai-child-switcher">${opts}</select>
+        <div class="ai-child-switcher">
+          <label for="ai-child-switcher">
+            <span class="ai-child-label">Enfant suivi</span>
+            <div class="ai-child-select">
+              <span class="ai-child-icon" aria-hidden="true">👶</span>
+              <select id="ai-child-switcher" aria-label="Sélectionner un enfant">${opts}</select>
+              <span class="ai-child-caret" aria-hidden="true">▾</span>
+            </div>
           </label>
-          <span class="chip">${escapeHtml(child.firstName)} • ${ageTxt}</span>
-          <span class="chip">Allergies: ${escapeHtml(child.context.allergies||'—')}</span>
-          <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
-          <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
+          <p class="ai-child-hint">${summary ? `${safeName} • ${summary}` : safeName}</p>
         </div>`;
       const sel = box.querySelector('#ai-child-switcher');
       if (sel && !sel.dataset.bound) {

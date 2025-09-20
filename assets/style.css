@@ -1329,6 +1329,92 @@ section[data-route="/ai"] #ai-profile-indicator{
   box-shadow: none !important;
   background: transparent !important;
 }
+section[data-route="/ai"] #ai-profile-indicator.ai-child-selector{
+  border: none !important;
+  padding: 0;
+}
+section[data-route="/ai"] .ai-child-switcher{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: linear-gradient(135deg, rgba(255,225,200,.18), rgba(183,211,255,.16));
+  box-shadow: 0 24px 56px rgba(0,0,0,.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+section[data-route="/ai"] .ai-child-switcher label{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  cursor: pointer;
+}
+section[data-route="/ai"] .ai-child-label{
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.72);
+  font-weight: 700;
+}
+section[data-route="/ai"] .ai-child-select{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.26);
+  background: rgba(0,0,0,.38);
+  box-shadow: 0 18px 42px rgba(0,0,0,.38);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+section[data-route="/ai"] .ai-child-select:focus-within{
+  border-color: var(--orange-strong);
+  box-shadow: 0 24px 52px rgba(0,0,0,.48), 0 0 0 1px rgba(255,255,255,.05);
+  transform: translateY(-1px);
+}
+section[data-route="/ai"] .ai-child-icon{
+  font-size: 20px;
+}
+section[data-route="/ai"] .ai-child-select select{
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  appearance: none;
+  padding: 0;
+  min-width: 0;
+}
+section[data-route="/ai"] .ai-child-select select:focus{
+  outline: none;
+}
+section[data-route="/ai"] .ai-child-select select option{
+  color: #000000;
+}
+section[data-route="/ai"] .ai-child-caret{
+  margin-left: auto;
+  font-size: 14px;
+  opacity: .66;
+  pointer-events: none;
+}
+section[data-route="/ai"] .ai-child-hint{
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255,255,255,.76);
+}
+@media(max-width:600px){
+  section[data-route="/ai"] .ai-child-switcher{
+    padding: 16px;
+    border-radius: 18px;
+  }
+  section[data-route="/ai"] .ai-child-hint{
+    font-size: 13px;
+  }
+}
 /* Make only the “Créer un profil” link orange inside the indicator */
 section[data-route="/ai"] #ai-profile-indicator a[href*="/onboarding"]{
   color: var(--orange-strong) !important;
