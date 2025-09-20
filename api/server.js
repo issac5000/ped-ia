@@ -66,6 +66,29 @@ const API_KEY = process.env.OPENAI_API_KEY || '';
 const GOOGLE_KEY = process.env.GOOGLE_API_KEY || '';
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image-preview';
 
+let cachedSupabaseEnv = null;
+
+async function resolveSupabaseEnv() {
+  if (cachedSupabaseEnv) return cachedSupabaseEnv;
+  const fromEnv = {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+  };
+  let url = fromEnv.url;
+  let anonKey = fromEnv.anonKey;
+  if (!url || !anonKey) {
+    try {
+      const filePath = resolve(ROOT, 'assets/supabase-env.json');
+      const content = await readFile(filePath, 'utf8');
+      const parsed = JSON.parse(content || '{}');
+      url = url || parsed.url || parsed.SUPABASE_URL || '';
+      anonKey = anonKey || parsed.anonKey || parsed.SUPABASE_ANON_KEY || '';
+    } catch {}
+  }
+  cachedSupabaseEnv = { url: url || '', anonKey: anonKey || '' };
+  return cachedSupabaseEnv;
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -332,6 +355,17 @@ const server = createServer(async (req, res) => {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+    });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/env') {
+    const env = await resolveSupabaseEnv().catch(err => {
+      console.warn('resolveSupabaseEnv failed', err);
+      return { url: '', anonKey: '' };
+    });
+    return send(res, 200, JSON.stringify(env), {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
     });
   }
 

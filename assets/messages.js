@@ -1,3 +1,5 @@
+import { loadSupabaseEnv } from './supabase-env-loader.js';
+
 document.body.classList.remove('no-js');
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -55,9 +57,10 @@ async function ensureSupabase(){
   if (supabase) return true;
   if (!supabaseInitPromise) {
     supabaseInitPromise = (async () => {
-      const env = await fetch('/api/env').then(r=>r.json());
+      const env = await loadSupabaseEnv();
       if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
       return createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true } });
     })();
   }
