@@ -4774,10 +4774,11 @@ const TIMELINE_MILESTONES = [
       const tooltipRect = tooltip.getBoundingClientRect();
       const scrollerRect = scroller.getBoundingClientRect();
       let shift = 0;
-      if (tooltipRect.left < scrollerRect.left + 18) {
-        shift = (scrollerRect.left + 18) - tooltipRect.left;
-      } else if (tooltipRect.right > scrollerRect.right - 18) {
-        shift = (scrollerRect.right - 18) - tooltipRect.right;
+      const edgePad = 36;
+      if (tooltipRect.left < scrollerRect.left + edgePad) {
+        shift = (scrollerRect.left + edgePad) - tooltipRect.left;
+      } else if (tooltipRect.right > scrollerRect.right - edgePad) {
+        shift = (scrollerRect.right - edgePad) - tooltipRect.right;
       }
       tooltip.style.setProperty('--timeline-tooltip-shift', `${shift}px`);
     };

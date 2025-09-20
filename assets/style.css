@@ -1032,16 +1032,38 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 .timeline-1000{ margin-top:20px; position:relative; }
 .timeline-1000__header p{ margin:6px 0 0; color:var(--muted); }
 .timeline-1000__scroll{
+  position:relative;
   overflow-x:auto;
+  overflow-y:visible;
   padding-bottom:12px;
   margin-top:12px;
-  mask-image:linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent);
 }
 .timeline-1000__scroll::-webkit-scrollbar{ height:6px; }
 .timeline-1000__scroll::-webkit-scrollbar-thumb{
   background:rgba(255,255,255,.18);
   border-radius:999px;
 }
+.timeline-1000__scroll::before,
+.timeline-1000__scroll::after{
+  content:'';
+  position:absolute;
+  top:50%;
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,10,18,.8);
+  box-shadow:0 10px 24px rgba(0,0,0,.45);
+  transform:translateY(-50%);
+  display:grid;
+  place-items:center;
+  pointer-events:none;
+  color:rgba(255,255,255,.7);
+  font-size:14px;
+  font-weight:700;
+}
+.timeline-1000__scroll::before{ content:'‹'; left:8px; }
+.timeline-1000__scroll::after{ content:'›'; right:8px; }
 .timeline-1000__track{
   position:relative;
   min-width:1100px;
