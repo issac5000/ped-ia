@@ -1014,7 +1014,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 }
 .timeline-comment{
   font-size:13px;
-  color:rgba(226,233,255,.72);
+  color:rgba(0,0,0,.72);
 }
 .timeline-comment strong{
   font-weight:600;
@@ -1076,6 +1076,10 @@ input[type="checkbox"]{width:auto}
 
 /* Forum */
 section[data-route="/community"] #forum-list{display:grid; gap:24px}
+section[data-route="/community"] > .route-canvas{
+  mix-blend-mode:screen;
+  opacity:.95;
+}
 section[data-route="/community"] .topic{
   position:relative;
   overflow:hidden;
@@ -1210,8 +1214,8 @@ section[data-route="/community"] .reply{
   gap:10px;
   padding:16px 18px;
   border-radius:20px;
-  background:linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
-  border:1px solid rgba(255,255,255,.16);
+  background:linear-gradient(160deg, rgba(0,0,0,.58), rgba(8,12,22,.42));
+  border:1px solid rgba(255,255,255,.12);
   box-shadow:0 18px 36px rgba(0,0,0,.45);
 }
 section[data-route="/community"] .reply-head{display:flex; align-items:center; gap:12px; justify-content:flex-start; flex-wrap:wrap}
