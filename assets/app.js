@@ -3061,7 +3061,7 @@ try {
       text: 'Rendez-vous dans le Dashboard à la section « historique de l’évolution » pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
       actionHref: '#/dashboard?focus=history',
       actionLabel: 'Voir',
-      durationMs: 5000
+      durationMs: 10000
     });
   }
 
@@ -4025,6 +4025,48 @@ try {
         const time = date.getTime();
         return Number.isFinite(time) ? time : 0;
       };
+      const privacyPrefs = store.get(K.privacy, {});
+      const childrenRaw = store.get(K.children, []);
+      const childrenList = Array.isArray(childrenRaw) ? childrenRaw : [];
+      const childCount = childrenList.length;
+      const childCountLabel = childCount > 1 ? `${childCount} enfants` : (childCount === 1 ? '1 enfant' : '0 enfant');
+      const currentUser = store.get(K.user) || {};
+      const activeUserId = getActiveProfileId();
+      const shouldShowChildStats = !!(privacyPrefs && privacyPrefs.showStats) && !!childCountLabel;
+      const normalizeKey = (value) => {
+        try {
+          return (value || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+        } catch {
+          return (value || '').toString().trim().toLowerCase();
+        }
+      };
+      const formatAuthorName = (rawName, rawUserId) => {
+        const baseName = (rawName == null ? '' : String(rawName)).trim();
+        const safeName = baseName || 'Anonyme';
+        if (!shouldShowChildStats) return safeName;
+        let matchesCurrent = false;
+        if (rawUserId != null && activeUserId != null && String(rawUserId) === String(activeUserId)) {
+          matchesCurrent = true;
+        } else if (rawUserId == null) {
+          const baseKey = normalizeKey(safeName);
+          const pseudoKey = normalizeKey(currentUser?.pseudo || '');
+          if (pseudoKey && pseudoKey === baseKey) {
+            matchesCurrent = true;
+          } else if (!pseudoKey) {
+            const primaryChild =
+              childrenList.find((c) => String(c.id) === String(currentUser.primaryChildId)) || childrenList[0];
+            const fallbackName = currentUser
+              ? `${currentUser.role} de ${primaryChild ? (primaryChild.firstName || '—') : '—'}`
+              : 'Anonyme';
+            if (normalizeKey(fallbackName) === baseKey) {
+              matchesCurrent = true;
+            }
+          }
+        }
+        if (!matchesCurrent) return safeName;
+        if (/\(\s*\d+\s+enfant/i.test(safeName)) return safeName;
+        return `${safeName} (${childCountLabel})`;
+      };
       topics.slice().forEach(t => {
         let title = t.title || '';
         let cat = 'Divers';
@@ -4033,7 +4075,7 @@ try {
         if (activeCat !== 'all' && cat !== activeCat) return;
         const el = document.createElement('div');
         el.className = 'topic';
-        const author = authorsMap.get(t.user_id) || t.author || 'Anonyme';
+        const rawAuthorName = authorsMap.get(t.user_id) || t.author || 'Anonyme';
         const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
         const openSet = (renderCommunity._open = renderCommunity._open || new Set());
         const tid = String(t.id);
@@ -4043,13 +4085,15 @@ try {
         const toggleCount = repliesCount ? ` (${repliesCount})` : '';
         const isMobile = document.body.classList.contains('force-mobile');
         const { label: createdLabel, iso: createdIso } = formatDateParts(t.created_at || t.createdAt);
-        const initials = initialsFrom(author);
+        const displayAuthor = formatAuthorName(rawAuthorName, t.user_id);
+        const initials = initialsFrom(rawAuthorName);
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
         const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
         const repliesHtml = rs.map(r=>{
-          const replyAuthor = authorsMap.get(r.user_id) || r.author || 'Anonyme';
-          const replyInitials = initialsFrom(replyAuthor);
+          const rawReplyAuthor = authorsMap.get(r.user_id) || r.author || 'Anonyme';
+          const replyAuthor = formatAuthorName(rawReplyAuthor, r.user_id);
+          const replyInitials = initialsFrom(rawReplyAuthor);
           const { label: replyLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
           const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
           const replyTime = replyLabel ? `<time datetime="${replyIso}">${escapeHtml(replyLabel)}</time>` : '';
@@ -4080,7 +4124,7 @@ try {
             <div class="topic-heading">
               <div class="topic-meta">
                 <span class="topic-cat">${escapeHtml(cat)}</span>
-                <span class="topic-author">${escapeHtml(author)}</span>
+                <span class="topic-author">${escapeHtml(displayAuthor)}</span>
                 ${timeMeta}
               </div>
               <h3 class="topic-title">${escapeHtml(title)}</h3>
