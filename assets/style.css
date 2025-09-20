@@ -1194,8 +1194,7 @@ section[data-route="/community"] .topic-body{
   isolation:isolate;
   overflow:hidden;
   background:linear-gradient(160deg, rgba(12,17,27,.88), rgba(6,9,15,.72));
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.14);
 }
 section[data-route="/community"] .topic-body::before{
   content:"";
