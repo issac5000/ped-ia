@@ -264,12 +264,15 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
 }
 
 /**
- * Produit un commentaire très court et positif pour les journaux d’évolution.
+ * Produit un commentaire bref, objectif et empathique pour les journaux d’évolution.
  */
 async function aiComment(body){
   if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
   const content = String(body.content || '').slice(0, 2000);
-  const system = `Tu es Ped’IA, un assistant bienveillant pour parents. Rédige un commentaire clair, positif et bref (moins de 50 mots) sur la mise à jour fournie.`;
+  const system = `Tu es Ped’IA, un assistant parental bienveillant ET objectif. Analyse la mise à jour fournie et rédige un commentaire clair et bref (maximum 50 mots).
+- Souligne les progrès lorsqu’ils sont présents.
+- Si la mise à jour décrit une difficulté ou une régression, reconnais-la explicitement, garde un ton apaisant (sans dramatiser) et propose un conseil concret ou une piste de surveillance.
+- Montre de l’empathie sans compliments excessifs ni exclamations automatiques.`;
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
     body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
