@@ -3442,11 +3442,22 @@ try {
       const authors = new Map();
       renderTopics(forum.topics.slice().reverse(), repliesMap, authors);
     }
-      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+
+    const btnExport = $('#btn-export');
+    if (btnExport) btnExport.onclick = () => {
+      const data = {
+        user: store.get(K.user),
+        children: store.get(K.children, []),
+        forum: store.get(K.forum, { topics: [] }),
+        privacy: store.get(K.privacy, {}),
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'pedia_export.json'; a.click();
-      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      a.href = url;
+      a.download = 'pedia_export.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
     const btnDelete = $('#btn-delete-account');
     if (btnDelete && !btnDelete.dataset.bound) {
