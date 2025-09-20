@@ -3079,8 +3079,12 @@ try {
     if (form.dataset.busy === '1') return;
     form.dataset.busy = '1';
     const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Mise à jour en cours…';
+    }
     const childId = form.getAttribute('data-child-id');
+    let hadError = false;
     try {
       const base = settingsState.childrenMap.get(childId);
       if (!base) throw new Error('Profil enfant introuvable');
@@ -3150,9 +3154,13 @@ try {
     } catch (err) {
       console.warn('handleChildFormSubmit failed', err);
       alert('Impossible de mettre à jour le profil enfant.');
+      hadError = true;
     } finally {
       delete form.dataset.busy;
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = hadError ? 'Réessayer' : 'Mettre à jour';
+      }
     }
   }
 
