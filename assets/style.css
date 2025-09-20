@@ -1075,9 +1075,162 @@ input[type="checkbox"]{width:auto}
  .badge.done::before{content:""; display:inline-block; width:6px; height:12px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg)}
 
 /* Forum */
-.topic{border:1px solid var(--border); background:linear-gradient(180deg,#ffffff,#f7f9ff); border-radius:22px; padding:12px; box-shadow:var(--shadow); transition:transform .18s ease, box-shadow .25s ease, border-color .18s ease, background .25s ease}
-.topic:hover{transform:translateY(-2px); box-shadow:0 12px 26px rgba(30,50,100,.16); border-color:#d8e0f2; background:#ffffff}
-.reply{border-left:3px solid rgba(255,255,255,.15); margin-left:8px; padding-left:10px; opacity:.9}
+section[data-route="/community"] #forum-list{display:grid; gap:24px}
+section[data-route="/community"] .topic{
+  position:relative;
+  overflow:hidden;
+  border-radius:28px;
+  padding:22px 24px;
+  border:1px solid rgba(255,255,255,.16);
+  background:linear-gradient(135deg, rgba(255,225,200,.16), rgba(183,211,255,.14));
+  box-shadow:0 24px 48px rgba(0,0,0,.48);
+  transition:transform .24s ease, box-shadow .3s ease, border-color .3s ease, background .35s ease;
+}
+section[data-route="/community"] .topic::before{
+  content:"";
+  position:absolute;
+  inset:auto -40% 0 -40%;
+  height:240px;
+  background:radial-gradient(ellipse at top, rgba(255,255,255,.25) 0%, rgba(255,255,255,0) 70%);
+  opacity:.45;
+  transform:translateY(40%);
+  transition:opacity .35s ease, transform .35s ease;
+  pointer-events:none;
+}
+section[data-route="/community"] .topic[data-open="1"],
+section[data-route="/community"] .topic:hover{
+  transform:translateY(-4px);
+  box-shadow:0 32px 60px rgba(0,0,0,.58);
+  border-color:rgba(255,255,255,.26);
+}
+section[data-route="/community"] .topic[data-open="1"]::before,
+section[data-route="/community"] .topic:hover::before{
+  opacity:.75;
+  transform:translateY(10%);
+}
+section[data-route="/community"] .topic > *{position:relative; z-index:1}
+section[data-route="/community"] .topic-header{display:flex; align-items:center; gap:18px; flex-wrap:wrap}
+section[data-route="/community"] .topic-avatar{
+  flex:0 0 auto;
+  width:56px;
+  height:56px;
+  border-radius:18px;
+  display:grid;
+  place-items:center;
+  font-weight:800;
+  font-size:20px;
+  color:#131924;
+  background:linear-gradient(135deg, rgba(255,225,200,.75), rgba(183,211,255,.7));
+  box-shadow:0 16px 32px rgba(0,0,0,.45);
+}
+section[data-route="/community"] .topic-heading{display:grid; gap:8px; min-width:0; flex:1}
+section[data-route="/community"] .topic-meta{display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:13px; color:rgba(226,233,255,.8)}
+section[data-route="/community"] .topic-meta time{font-size:12px; letter-spacing:.02em; color:rgba(226,233,255,.72)}
+section[data-route="/community"] .topic-cat{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 12px;
+  border-radius:999px;
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  font-weight:700;
+  background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.26);
+  color:#ffffff;
+}
+section[data-route="/community"] .topic-author{font-weight:600; color:#ffffff}
+section[data-route="/community"] .topic-title{margin:0; font-size:clamp(22px, 3vw, 28px); font-weight:800; color:#ffffff; text-shadow:0 4px 18px rgba(0,0,0,.5)}
+section[data-route="/community"] .topic-actions{margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+section[data-route="/community"] .topic-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 14px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  background:rgba(255,255,255,.16);
+  border:1px solid rgba(255,255,255,.26);
+  color:#ffffff;
+}
+section[data-route="/community"] .topic-pill--empty{background:rgba(45,192,122,.12); border-color:rgba(45,192,122,.32); color:#8df0c2}
+section[data-route="/community"] .topic-actions .btn{padding:10px 14px; border-radius:14px}
+section[data-route="/community"] .topic-actions .topic-toggle{white-space:nowrap}
+section[data-route="/community"] .topic-body{
+  display:grid;
+  gap:18px;
+  padding:20px;
+  border-radius:22px;
+  background:rgba(7,11,19,.7);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+  backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+}
+section[data-route="/community"] .topic-content{font-size:15px; line-height:1.7; color:#f6f7ff; word-break:break-word}
+section[data-route="/community"] .topic-empty{
+  margin:0;
+  padding:14px 16px;
+  border-radius:18px;
+  text-align:center;
+  font-size:14px;
+  color:rgba(226,233,255,.78);
+  background:rgba(255,255,255,.06);
+  border:1px dashed rgba(255,255,255,.2);
+}
+section[data-route="/community"] .topic-replies{display:grid; gap:14px}
+section[data-route="/community"] .reply{
+  display:grid;
+  gap:10px;
+  padding:16px 18px;
+  border-radius:20px;
+  background:linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 18px 36px rgba(0,0,0,.45);
+}
+section[data-route="/community"] .reply-head{display:flex; align-items:center; gap:12px; justify-content:flex-start; flex-wrap:wrap}
+section[data-route="/community"] .reply-head .btn-message{margin-left:auto}
+section[data-route="/community"] .reply-avatar{
+  flex:0 0 auto;
+  width:42px;
+  height:42px;
+  border-radius:14px;
+  display:grid;
+  place-items:center;
+  font-weight:700;
+  font-size:16px;
+  color:#131924;
+  background:linear-gradient(135deg, rgba(255,225,200,.7), rgba(183,211,255,.6));
+  box-shadow:0 10px 20px rgba(0,0,0,.38);
+}
+section[data-route="/community"] .reply-meta{display:grid; gap:4px; min-width:0}
+section[data-route="/community"] .reply-author{font-weight:600; color:#ffffff}
+section[data-route="/community"] .reply-meta time{font-size:12px; color:rgba(226,233,255,.7)}
+section[data-route="/community"] .reply-body{font-size:14px; line-height:1.6; color:#f0f3ff; word-break:break-word}
+section[data-route="/community"] .btn-message{background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); color:#ffffff; box-shadow:none}
+section[data-route="/community"] .btn-message:hover{background:rgba(255,255,255,.18)}
+section[data-route="/community"] .btn-message--small{padding:6px 10px; font-size:13px; border-radius:12px}
+section[data-route="/community"] .topic-form-actions{display:flex; justify-content:flex-end}
+section[data-route="/community"] .topic-manage{display:flex; justify-content:flex-end}
+section[data-route="/community"] .topic .btn-danger{background:rgba(239,71,111,.15); border:1px solid rgba(239,71,111,.42); color:#ffb9c9}
+section[data-route="/community"] .topic .btn-danger:hover{background:rgba(239,71,111,.25); color:#ffd0da}
+section[data-route="/community"] .topic-body textarea{background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.24); color:#ffffff}
+section[data-route="/community"] .topic-body textarea:focus{box-shadow:0 0 0 2px rgba(138,182,255,.45); border-color:rgba(183,211,255,.6)}
+section[data-route="/community"] .topic-body label{color:#ffffff}
+section[data-route="/community"] #forum-cats{justify-content:center; gap:10px}
+section[data-route="/community"] #forum-cats .btn-secondary{background:rgba(255,255,255,.1); color:#ffffff; border:1px solid rgba(255,255,255,.18); padding:8px 14px; border-radius:14px; box-shadow:none}
+section[data-route="/community"] #forum-cats .btn-secondary.active{background:linear-gradient(92deg, var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 14px 28px rgba(78,124,216,.42)}
+@media(max-width:768px){
+  section[data-route="/community"] .topic{padding:20px 18px}
+  section[data-route="/community"] .topic-header{align-items:flex-start}
+  section[data-route="/community"] .topic-actions{width:100%; justify-content:flex-start}
+  section[data-route="/community"] .topic-avatar{width:48px; height:48px; font-size:18px}
+  section[data-route="/community"] .reply{padding:14px 16px}
+}
 
 /* Dialog */
 .dialog{

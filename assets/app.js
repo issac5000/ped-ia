@@ -3161,12 +3161,38 @@ try {
       empty.textContent = 'Aucun sujet pour le moment. Lancez la discussion !';
       list.appendChild(empty);
     };
-      const renderTopics = (topics, replies, authorsMap) => {
-        const activeId = getActiveProfileId();
-        if (!topics.length) return showEmpty();
-        if (rid !== renderCommunity._rid) return;
-        topics.slice().forEach(t => {
-        // Extraire la catégorie depuis un préfixe de titre [Sommeil] Titre
+
+
+    const renderTopics = (topics, replies, authorsMap) => {
+      const activeId = getActiveProfileId();
+      if (!topics.length) return showEmpty();
+      if (rid !== renderCommunity._rid) return;
+      const formatDateParts = (value) => {
+        if (!value) return { label: '', iso: '' };
+        const date = new Date(value);
+        const time = date.getTime();
+        if (!Number.isFinite(time)) return { label: '', iso: '' };
+        let label = '';
+        try {
+          label = date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+        } catch {
+          label = date.toLocaleString('fr-FR');
+        }
+        return { label, iso: date.toISOString() };
+      };
+      const initialsFrom = (name) => {
+        const words = (name || '').trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return '✦';
+        const letters = words.slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
+        return letters || '✦';
+      };
+      const normalizeContent = (text) => escapeHtml(text || '').replace(/\n/g, '<br>');
+      const timestampOf = (value) => {
+        const date = new Date(value || 0);
+        const time = date.getTime();
+        return Number.isFinite(time) ? time : 0;
+      };
+      topics.slice().forEach(t => {
         let title = t.title || '';
         let cat = 'Divers';
         const m = title.match(/^\[(.*?)\]\s*(.*)$/);
@@ -3174,119 +3200,180 @@ try {
         if (activeCat !== 'all' && cat !== activeCat) return;
         const el = document.createElement('div');
         el.className = 'topic';
-        const author = authorsMap.get(t.user_id) || 'Anonyme';
-        const rs = (replies.get(t.id) || []).sort((a,b)=>a.created_at-b.created_at);
+        const author = authorsMap.get(t.user_id) || t.author || 'Anonyme';
+        const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
         const openSet = (renderCommunity._open = renderCommunity._open || new Set());
         const tid = String(t.id);
         const isOpen = openSet.has(tid);
         const toggleLabel = isOpen ? 'Réduire la publication' : 'Afficher les commentaires';
-        const toggleCount = rs.length ? ` (${rs.length})` : '';
+        const repliesCount = rs.length;
+        const toggleCount = repliesCount ? ` (${repliesCount})` : '';
         const isMobile = document.body.classList.contains('force-mobile');
-          el.innerHTML = `
-            <div class="flex-between">
-              <h3 style="margin:0">${escapeHtml(title)}</h3>
-              <div class="hstack"><span class="chip">${escapeHtml(cat)}</span><span class="muted" title="Auteur">${escapeHtml(author)}</span><a href="messages.html?user=${t.user_id}" class="btn btn-secondary btn-message">💬 Message privé</a><button class="btn btn-secondary" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}">${toggleLabel}${toggleCount}</button></div>
-            </div>
-            <div class="topic-body" data-body="${tid}" style="${isOpen?'':'display:none'}">
-              <p style="margin-top:8px">${escapeHtml(t.content)}</p>
-              <div class="stack">
-                ${rs.map(r=>`<div class="reply"><div class="muted">${escapeHtml(authorsMap.get(r.user_id)||'Anonyme')} • ${new Date(r.created_at).toLocaleString()} <a href="messages.html?user=${r.user_id}" class="btn btn-secondary btn-message" style="margin-left:8px">${isMobile ? '💬' : '💬 Message privé'}</a></div><div>${escapeHtml(r.content)}</div></div>`).join('')}
+        const { label: createdLabel, iso: createdIso } = formatDateParts(t.created_at || t.createdAt);
+        const initials = initialsFrom(author);
+        const messageLabel = isMobile ? '💬' : '💬 Message privé';
+        const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
+        const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
+        const repliesHtml = rs.map(r=>{
+          const replyAuthor = authorsMap.get(r.user_id) || r.author || 'Anonyme';
+          const replyInitials = initialsFrom(replyAuthor);
+          const { label: replyLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
+          const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
+          const replyTime = replyLabel ? `<time datetime="${replyIso}">${escapeHtml(replyLabel)}</time>` : '';
+          return `
+            <article class="reply">
+              <div class="reply-head">
+                <div class="reply-avatar" aria-hidden="true">${escapeHtml(replyInitials)}</div>
+                <div class="reply-meta">
+                  <span class="reply-author">${escapeHtml(replyAuthor)}</span>
+                  ${replyTime}
+                </div>
+                ${replyMessageBtn}
               </div>
-              <form data-id="${tid}" class="form-reply form-grid" style="margin-top:8px">
-                <label>Réponse<textarea name="content" rows="2" required></textarea></label>
-                <button class="btn btn-secondary" type="submit">Répondre</button>
-              </form>
-              ${ (activeId && String(t.user_id) === String(activeId)) ? `<button class="btn btn-danger" data-del-topic="${tid}" style="margin-top:8px">Supprimer le sujet</button>`:''}
-            </div>
+              <div class="reply-body">${normalizeContent(r.content)}</div>
+            </article>
           `;
+        }).join('');
+        const repliesBlock = repliesCount ? `<div class="topic-replies">${repliesHtml}</div>` : '<p class="topic-empty">Aucune réponse pour le moment. Lancez la conversation !</p>';
+        const timeMeta = createdLabel ? `<time datetime="${createdIso}">${escapeHtml(createdLabel)}</time>` : '';
+        const pillText = repliesCount ? `${repliesCount} ${repliesCount>1?'réponses':'réponse'}` : 'Nouvelle discussion';
+        const pillClass = repliesCount ? 'topic-pill' : 'topic-pill topic-pill--empty';
+        const deleteBtn = (activeId && String(t.user_id) === String(activeId)) ? `<div class="topic-manage"><button class="btn btn-danger" data-del-topic="${tid}">Supprimer le sujet</button></div>` : '';
+        const bodyStyle = isOpen ? '' : ' style="display:none"';
+        el.setAttribute('data-open', isOpen ? '1' : '0');
+        el.innerHTML = `
+          <header class="topic-header">
+            <div class="topic-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
+            <div class="topic-heading">
+              <div class="topic-meta">
+                <span class="topic-cat">${escapeHtml(cat)}</span>
+                <span class="topic-author">${escapeHtml(author)}</span>
+                ${timeMeta}
+              </div>
+              <h3 class="topic-title">${escapeHtml(title)}</h3>
+            </div>
+            <div class="topic-actions">
+              <span class="${pillClass}">${escapeHtml(pillText)}</span>
+              ${topicMessageBtn}
+              <button class="btn btn-secondary topic-toggle" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}" data-label-open="Réduire la publication" data-label-closed="Afficher les commentaires" data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>
+            </div>
+          </header>
+          <div class="topic-body" data-body="${tid}"${bodyStyle}>
+            <div class="topic-content">${normalizeContent(t.content)}</div>
+            ${repliesBlock}
+            <form data-id="${tid}" class="form-reply form-grid">
+              <label>Réponse<textarea name="content" rows="2" required></textarea></label>
+              <div class="topic-form-actions">
+                <button class="btn btn-secondary" type="submit">Répondre</button>
+              </div>
+            </form>
+            ${deleteBtn}
+          </div>
+        `;
         list.appendChild(el);
       });
-      $$('.form-reply').forEach(f => {
-        if (f.dataset.bound) return;
-        f.dataset.bound = '1';
-        f.addEventListener('submit', async (e)=>{
-          e.preventDefault();
-          const form = e.currentTarget;
-          if (form.dataset.busy === '1') return;
-          form.dataset.busy = '1';
-          const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-          try {
-            const id = form.getAttribute('data-id');
-            const fd = new FormData(form);
-            const content = fd.get('content').toString().trim();
-            if (!content) return;
-            if (useRemote()) {
-              try {
-                if (isAnonProfile()) {
-                  await anonCommunityRequest('reply', { topicId: id, content });
-                  renderCommunity();
-                  return;
-                }
-                const uid = getActiveProfileId();
-                if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
-                await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
-                renderCommunity();
-                return;
-              } catch {}
-            }
-            // Repli local
-            const forum = store.get(K.forum);
-            const topic = forum.topics.find(x=>x.id===id);
-            const user = store.get(K.user);
-            const children = store.get(K.children, []);
-            const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-            const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
-            topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
-            store.set(K.forum, forum);
-            renderCommunity();
-          } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
-        });
-      });
-      // Actions déléguées : pliage/dépliage et suppression (avec garde d’occupation)
-      if (!list.dataset.delBound) {
-        list.addEventListener('click', async (e)=>{
-          // Ouvrir/fermer le sujet
-          const tgl = e.target.closest('[data-toggle-comments]');
-          if (tgl) {
-            e.preventDefault();
-            const id = tgl.getAttribute('data-toggle-comments');
-            const body = list.querySelector(`[data-body="${id}"]`);
-            const openSet = (renderCommunity._open = renderCommunity._open || new Set());
-            const isOpen = openSet.has(id);
-            if (body) {
-              if (isOpen) { body.style.display = 'none'; openSet.delete(id); tgl.setAttribute('aria-expanded','false'); tgl.textContent = tgl.textContent.replace('Réduire la publication', 'Afficher les commentaires'); }
-              else { body.style.display = ''; openSet.add(id); tgl.setAttribute('aria-expanded','true'); tgl.textContent = tgl.textContent.replace('Afficher les commentaires', 'Réduire la publication'); }
-            }
-            return;
-          }
-          // Supprimer le sujet
-          const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
-          if (btn.dataset.busy === '1') return; btn.dataset.busy='1'; btn.disabled = true;
-          const id = btn.getAttribute('data-del-topic');
-          if (!confirm('Supprimer ce sujet ?')) { btn.dataset.busy='0'; btn.disabled=false; return; }
+    };
+    $$('.form-reply').forEach(f => {
+      if (f.dataset.bound) return;
+      f.dataset.bound = '1';
+      f.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const form = e.currentTarget;
+        if (form.dataset.busy === '1') return;
+        form.dataset.busy = '1';
+        const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
+        try {
+          const id = form.getAttribute('data-id');
+          const fd = new FormData(form);
+          const content = fd.get('content').toString().trim();
+          if (!content) return;
           if (useRemote()) {
             try {
               if (isAnonProfile()) {
-                await anonCommunityRequest('delete-topic', { topicId: id });
+                await anonCommunityRequest('reply', { topicId: id, content });
                 renderCommunity();
                 return;
               }
               const uid = getActiveProfileId();
-              if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
-              await supabase.from('forum_topics').delete().eq('id', id);
+              if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
+              await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
               renderCommunity();
               return;
             } catch {}
           }
           // Repli local
           const forum = store.get(K.forum);
-          forum.topics = forum.topics.filter(t=>t.id!==id);
+          const topic = forum.topics.find(x=>x.id===id);
+          const user = store.get(K.user);
+          const children = store.get(K.children, []);
+          const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
+          const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
+          topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
           store.set(K.forum, forum);
           renderCommunity();
-        });
-        list.dataset.delBound = '1';
-      }
-    };
+        } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
+      });
+    });
+    // Actions déléguées : pliage/dépliage et suppression (avec garde d’occupation)
+    if (!list.dataset.delBound) {
+      list.addEventListener('click', async (e)=>{
+        // Ouvrir/fermer le sujet
+        const tgl = e.target.closest('[data-toggle-comments]');
+        if (tgl) {
+          e.preventDefault();
+          const id = tgl.getAttribute('data-toggle-comments');
+          const body = list.querySelector(`[data-body="${id}"]`);
+          const openSet = (renderCommunity._open = renderCommunity._open || new Set());
+          const isOpen = openSet.has(id);
+          const labelOpen = tgl.getAttribute('data-label-open') || 'Réduire la publication';
+          const labelClosed = tgl.getAttribute('data-label-closed') || 'Afficher les commentaires';
+          const countAttr = tgl.getAttribute('data-count') || '';
+          const suffix = countAttr && countAttr !== '0' ? ` (${countAttr})` : '';
+          const topic = tgl.closest('.topic');
+          if (body) {
+            if (isOpen) {
+              body.style.display = 'none';
+              openSet.delete(id);
+              tgl.setAttribute('aria-expanded', 'false');
+              tgl.textContent = labelClosed + suffix;
+              if (topic) topic.setAttribute('data-open', '0');
+            } else {
+              body.style.display = '';
+              openSet.add(id);
+              tgl.setAttribute('aria-expanded', 'true');
+              tgl.textContent = labelOpen + suffix;
+              if (topic) topic.setAttribute('data-open', '1');
+            }
+          }
+          return;
+        }
+        // Supprimer le sujet
+        const btn = e.target.closest('[data-del-topic]'); if (!btn) return;
+        if (btn.dataset.busy === '1') return; btn.dataset.busy='1'; btn.disabled = true;
+        const id = btn.getAttribute('data-del-topic');
+        if (!confirm('Supprimer ce sujet ?')) { btn.dataset.busy='0'; btn.disabled=false; return; }
+        if (useRemote()) {
+          try {
+            if (isAnonProfile()) {
+              await anonCommunityRequest('delete-topic', { topicId: id });
+              renderCommunity();
+              return;
+            }
+            const uid = getActiveProfileId();
+            if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
+            await supabase.from('forum_topics').delete().eq('id', id);
+            renderCommunity();
+            return;
+          } catch {}
+        }
+        // Repli local
+        const forum = store.get(K.forum);
+        forum.topics = forum.topics.filter(t=>t.id!==id);
+        store.set(K.forum, forum);
+        renderCommunity();
+      });
+      list.dataset.delBound = '1';
+    }
     if (useRemote()) {
       (async () => {
         try {
@@ -3355,585 +3442,6 @@ try {
       const authors = new Map();
       renderTopics(forum.topics.slice().reverse(), repliesMap, authors);
     }
-
-    // Boîte de dialogue de nouveau sujet
-    const dlg = $('#dialog-topic');
-    // Déplacer la boîte de dialogue dans le body pour éviter l’opacité du parent
-    if (dlg && dlg.parentElement && dlg.parentElement.tagName.toLowerCase() !== 'body') {
-      document.body.appendChild(dlg);
-    }
-    $('#btn-new-topic').onclick = () => { if (dlg) dlg.showModal(); };
-    const formTopic = $('#form-topic');
-    // Bouton Annuler : fermer la boîte de dialogue et réinitialiser le formulaire
-    const btnCancelTopic = $('#btn-cancel-topic');
-    if (btnCancelTopic && !btnCancelTopic.dataset.bound) {
-      btnCancelTopic.dataset.bound = '1';
-      btnCancelTopic.addEventListener('click', (e) => {
-        e.preventDefault();
-        try { formTopic?.reset(); } catch {}
-        dlg?.close();
-      });
-    }
-    if (formTopic && !formTopic.dataset.bound) {
-      formTopic.dataset.bound = '1';
-      formTopic.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        if (form.dataset.busy === '1') return;
-        form.dataset.busy = '1';
-        const submitBtn = form.querySelector('button[type="submit"], button[value="submit"]');
-        if (submitBtn) submitBtn.disabled = true;
-        try {
-          const fd = new FormData(form);
-          let title = fd.get('title').toString().trim();
-          const content = fd.get('content').toString().trim();
-          const category = fd.get('category')?.toString() || 'Divers';
-          if (!title || !content) return;
-          if (category && category !== 'Divers' && !/^\[.*\]/.test(title)) title = `[${category}] ${title}`;
-          if (useRemote()) {
-            try {
-              if (isAnonProfile()) {
-                await anonCommunityRequest('create-topic', { id: crypto.randomUUID(), title, content });
-                dlg.close();
-                renderCommunity();
-                return;
-              }
-              const uid = getActiveProfileId();
-              if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (new topic)'); throw new Error('Pas de user_id'); }
-              const payload = {
-                id: crypto.randomUUID(),
-                user_id: uid,
-                title,
-                content,
-                created_at: new Date().toISOString()
-              };
-              const { error } = await supabase
-                .from('forum_topics')
-                .upsert([payload], { onConflict: 'id' });
-              if (error) throw error;
-              dlg.close();
-              renderCommunity();
-              return;
-            } catch (err) { console.error('Erreur publication Supabase', err); }
-          }
-          // Local fallback
-          const forum = store.get(K.forum);
-          const user = store.get(K.user);
-          const children = store.get(K.children, []);
-          const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
-          const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
-          forum.topics.push({ id: genId(), title, content, author: whoAmI, createdAt: Date.now(), replies: [] });
-          store.set(K.forum, forum);
-          dlg.close();
-          renderCommunity();
-        } finally {
-          form.dataset.busy = '0';
-          if (submitBtn) submitBtn.disabled = false;
-        }
-      });
-    }
-  }
-
-  // (Comparateur retiré — les courbes sont dans le Dashboard)
-
-    // Paramètres
-  async function renderSettings() {
-    // Garde d’instance pour éviter les duplications lors des chargements asynchrones
-    const rid = (renderSettings._rid = (renderSettings._rid || 0) + 1);
-    const user = store.get(K.user);
-    const form = $('#form-settings');
-    form.role.value = user?.role || 'maman';
-    form.pseudo.value = user?.pseudo || '';
-    const refreshBtn = $('#btn-refresh-settings');
-    if (refreshBtn && !refreshBtn.dataset.bound) {
-      refreshBtn.dataset.bound = '1';
-      refreshBtn.addEventListener('click', () => location.reload());
-    }
-    // Chargement des préférences de confidentialité et du profil
-    (async () => {
-      if (useRemote()) {
-        try {
-          const uid = getActiveProfileId();
-          if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (fetch)'); throw new Error('Pas de user_id'); }
-          const [priv, prof] = await Promise.all([
-            supabase.from('privacy_settings').select('show_stats,allow_messages').eq('user_id', uid).maybeSingle(),
-            supabase.from('profiles').select('full_name').eq('id', uid).maybeSingle()
-          ]);
-          const p = priv.data || {};
-          form.showStats.checked = !!p.show_stats;
-          form.allowMessages.checked = !!p.allow_messages;
-          if (prof.data?.full_name) {
-            form.pseudo.value = prof.data.full_name;
-            // Garder le store local aligné pour que les autres pages voient le pseudo immédiatement
-            const current = store.get(K.user) || {};
-            if (current.pseudo !== prof.data.full_name) {
-              store.set(K.user, { ...current, pseudo: prof.data.full_name });
-            }
-          }
-        } catch {
-          form.showStats.checked = true; form.allowMessages.checked = true;
-        }
-      } else {
-        const privacy = store.get(K.privacy);
-        form.showStats.checked = !!privacy.showStats;
-        form.allowMessages.checked = !!privacy.allowMessages;
-        form.pseudo.value = user?.pseudo || '';
-      }
-    })();
-    form.onsubmit = async (e)=>{
-      e.preventDefault();
-      if (form.dataset.busy==='1') return; form.dataset.busy='1';
-      const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      try {
-        const fd = new FormData(form);
-        const role = fd.get('role').toString();
-        const pseudo = fd.get('pseudo').toString().trim();
-        const showStats = !!fd.get('showStats');
-        const allowMessages = !!fd.get('allowMessages');
-        if (useRemote()) {
-          try {
-            if (isAnonProfile()) {
-              const code = (activeProfile?.code_unique || '').toString().trim().toUpperCase();
-              if (!code) { console.warn('Code unique manquant pour la mise à jour anonyme'); throw new Error('Code unique manquant'); }
-              const response = await fetch('/api/profiles/update-anon', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code_unique: code, full_name: pseudo })
-              });
-              let payload = null;
-              try { payload = await response.json(); } catch { payload = null; }
-              if (!response.ok || !payload?.profile) {
-                const msg = payload?.error || 'Mise à jour du profil impossible pour le moment.';
-                const err = new Error(msg);
-                if (payload?.details) err.details = payload.details;
-                throw err;
-              }
-              const profile = payload.profile || {};
-              const updatedPseudo = typeof profile.full_name === 'string' ? profile.full_name : pseudo;
-              setActiveProfile({ ...profile, isAnonymous: true });
-              store.set(K.user, { ...user, role, pseudo: updatedPseudo });
-              store.set(K.privacy, { showStats, allowMessages });
-              form.pseudo.value = updatedPseudo || '';
-              alert('Paramètres enregistrés');
-              return;
-            }
-            const uid = getActiveProfileId();
-            if (!uid) { console.warn('Aucun user_id disponible pour privacy_settings/profiles (upsert)'); throw new Error('Pas de user_id'); }
-            await Promise.all([
-              supabase.from('privacy_settings').upsert([{ user_id: uid, show_stats: showStats, allow_messages: allowMessages }]),
-              supabase.from('profiles').upsert([{ id: uid, full_name: pseudo }])
-            ]);
-            store.set(K.user, { ...user, role, pseudo });
-            store.set(K.privacy, { showStats, allowMessages });
-            alert('Paramètres enregistrés');
-            return;
-          } catch (err) {
-            console.error('renderSettings remote save failed', err);
-          }
-        }
-        store.set(K.user, { ...user, role, pseudo });
-        store.set(K.privacy, { showStats, allowMessages });
-        alert('Paramètres enregistrés (local)');
-      } finally { form.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
-    };
-
-    const list = $('#children-list');
-    list.innerHTML = '';
-    let children = [];
-    if (useRemote()) {
-      try {
-        if (isAnonProfile()) {
-          const res = await anonChildRequest('list', {});
-          children = Array.isArray(res.children) ? res.children : [];
-        } else {
-          const uid = getActiveProfileId();
-          if (!uid) { console.warn('Aucun user_id disponible pour children (settings fetch)'); throw new Error('Pas de user_id'); }
-          const { data: rows } = await supabase
-            .from('children')
-            .select('*')
-            .eq('user_id', uid)
-            .order('created_at', { ascending: true });
-          children = rows || [];
-        }
-      } catch { children = []; }
-    } else {
-      children = store.get(K.children, []);
-    }
-    // Si un autre rendu a démarré, interrompre l’ajout pour éviter les doublons
-    if (rid !== renderSettings._rid) return;
-    children.forEach(c => {
-      const firstName = c.first_name || c.firstName;
-      const dob = c.dob;
-      const row = document.createElement('div');
-      row.className = 'hstack';
-      row.innerHTML = `
-        <span class="chip">${escapeHtml(firstName||'—')} (${dob?formatAge(dob):'—'})</span>
-        <button class="btn btn-secondary" data-edit="${c.id}">Mettre à jour</button>
-        <button class="btn btn-danger" data-del="${c.id}">Supprimer</button>
-      `;
-      list.appendChild(row);
-    });
-    if (!list.dataset.bound) {
-      list.addEventListener('click', async (e)=>{
-        const target = (e.target instanceof Element) ? e.target.closest('button[data-edit],button[data-del]') : null;
-        if (!target) return;
-        if (list.dataset.busy === '1') return; // éviter les actions concurrentes
-        list.dataset.busy = '1';
-        target.disabled = true;
-        const idE = target.getAttribute('data-edit');
-        const idD = target.getAttribute('data-del');
-        if (idE) {
-          const editBox = document.getElementById('child-edit');
-          editBox?.setAttribute('data-edit-id', idE);
-          renderSettings();
-          list.dataset.busy = '0';
-          return;
-        }
-        if (idD) {
-          if (!confirm('Supprimer ce profil enfant ?')) return;
-          if (useRemote()) {
-            try {
-              if (isAnonProfile()) {
-                await anonChildRequest('delete', { childId: idD });
-              } else {
-                const uid = getActiveProfileId();
-                if (!uid) { console.warn('Aucun user_id disponible pour children (delete)'); throw new Error('Pas de user_id'); }
-                await supabase.from('children').delete().eq('id', idD);
-              }
-              renderSettings();
-              return;
-            } catch {}
-          }
-          let children = store.get(K.children, []);
-          children = children.filter(c=>c.id!==idD);
-          store.set(K.children, children);
-          const u = { ...user, childIds: (user.childIds||[]).filter(x=>x!==idD) };
-          if (u.primaryChildId===idD) u.primaryChildId = u.childIds[0] ?? null;
-          store.set(K.user, u);
-          renderSettings();
-        }
-        list.dataset.busy = '0';
-      });
-      list.dataset.bound = '1';
-    }
-
-    // Rendu du formulaire d’édition enfant
-    const editBox = document.getElementById('child-edit');
-    let currentEditId = editBox?.getAttribute('data-edit-id') || null;
-    if (!currentEditId && children[0]) currentEditId = children[0].id;
-    let child = null;
-    if (useRemote()) {
-      const c = (children||[]).find(x=>x.id===currentEditId) || children[0];
-      if (c) {
-        child = {
-          id: c.id,
-          firstName: c.first_name,
-          sex: c.sex,
-          dob: c.dob,
-          photo: c.photo_url,
-          milestones: Array.isArray(c.milestones) ? c.milestones : [],
-          context: {
-            allergies: c.context_allergies,
-            history: c.context_history,
-            care: c.context_care,
-            languages: c.context_languages,
-            feedingType: c.feeding_type,
-            eatingStyle: c.eating_style,
-            sleep: {
-              falling: c.sleep_falling,
-              sleepsThrough: c.sleep_sleeps_through,
-              nightWakings: c.sleep_night_wakings,
-              wakeDuration: c.sleep_wake_duration,
-              bedtime: c.sleep_bedtime,
-            }
-          }
-        };
-      }
-    } else {
-      const localChildren = store.get(K.children, []);
-      const uid = (store.get(K.user)||{}).primaryChildId;
-      child = localChildren.find(c=>c.id===currentEditId) || localChildren.find(c=>c.id===uid) || localChildren[0];
-    }
-    if (child && !Array.isArray(child.milestones)) child.milestones = [];
-    if (editBox) {
-      if (!child) {
-        editBox.innerHTML = '<div class="muted">Sélectionnez un enfant pour modifier son profil.</div>';
-      } else {
-        editBox.innerHTML = `
-          <label>Enfant
-            <select id="child-select">
-              ${children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.first_name||c.firstName||'—')}</option>`).join('')}
-            </select>
-          </label>
-          <form id="form-child-edit" class="form-grid" autocomplete="on">
-            <input type="hidden" name="id" value="${child.id}" />
-            <label>Prénom<input type="text" name="firstName" value="${escapeHtml(child.firstName)}" required /></label>
-            <label>Sexe
-              <select name="sex" required>
-                <option value="fille" ${child.sex==='fille'?'selected':''}>Fille</option>
-                <option value="garçon" ${child.sex==='garçon'?'selected':''}>Garçon</option>
-              </select>
-            </label>
-            <label>Date de naissance<input type="date" name="dob" value="${child.dob}" required /></label>
-            <h4>Mesures actuelles (optionnel)</h4>
-            <div class="grid-2">
-              <label>Taille (cm)<input type="number" step="0.1" name="height" /></label>
-              <label>Poids (kg)<input type="number" step="0.01" name="weight" /></label>
-            </div>
-            <label>Dents (nb)<input type="number" step="1" name="teeth" /></label>
-            <h4>Contexte</h4>
-            <label>Allergies<input type="text" name="allergies" value="${escapeHtml(child.context.allergies||'')}" /></label>
-            <label>Antécédents<input type="text" name="history" value="${escapeHtml(child.context.history||'')}" /></label>
-            <label>Mode de garde<input type="text" name="care" value="${escapeHtml(child.context.care||'')}" /></label>
-            <label>Langues parlées<input type="text" name="languages" value="${escapeHtml(child.context.languages||'')}" /></label>
-            <h4>Habitudes alimentaires</h4>
-            <label>Type d’alimentation
-              <select name="feedingType">
-                ${['','allaitement_exclusif','mixte_allaitement_biberon','allaitement_diversification','biberon_diversification','lait_poudre_vache'].map(v=>`<option value="${v}" ${ (child.context.feedingType||'')===v?'selected':'' }>${({
-                  '':'—',
-                  'allaitement_exclusif':'Allaitement exclusif',
-                  'mixte_allaitement_biberon':'Mixte (allaitement + biberon)',
-                  'allaitement_diversification':'Diversification + allaitement',
-                  'biberon_diversification':'Biberon + diversification',
-                  'lait_poudre_vache':'Lait en poudre / lait de vache'
-                })[v]}</option>`).join('')}
-              </select>
-            </label>
-            <label>Appétit / façon de manger
-              <select name="eatingStyle">
-                ${['','mange_tres_bien','appetit_variable','selectif_difficile','petites_portions'].map(v=>`<option value="${v}" ${ (child.context.eatingStyle||'')===v?'selected':'' }>${({
-                  '':'—',
-                  'mange_tres_bien':'Mange très bien',
-                  'appetit_variable':'Appétit variable',
-                  'selectif_difficile':'Sélectif / difficile',
-                  'petites_portions':'Petites portions'
-                })[v]}</option>`).join('')}
-              </select>
-            </label>
-            <h4>Sommeil</h4>
-            <div class="grid-2">
-              <label>Endormissement
-                <select name="sleep_falling">
-                  ${['','facile','moyen','difficile'].map(v=>`<option value="${v}" ${ (child.context.sleep?.falling||'')===v?'selected':'' }>${({
-                    '':'—','facile':'Facile','moyen':'Moyen','difficile':'Difficile'
-                  })[v]}</option>`).join('')}
-                </select>
-              </label>
-              <label>Nuits complètes
-                <select name="sleep_through">
-                  ${['','oui','non'].map(v=>`<option value="${v}" ${ ((child.context.sleep?.sleepsThrough?'oui':'non')===v)?'selected':'' }>${({
-                    '':'—','oui':'Oui','non':'Non'
-                  })[v]}</option>`).join('')}
-                </select>
-              </label>
-            </div>
-            <div class="grid-2">
-              <label>Réveils nocturnes
-                <select name="sleep_wakings">
-                  ${['','0','1','2','3+'].map(v=>`<option value="${v}" ${ (child.context.sleep?.nightWakings||'')===v?'selected':'' }>${v||'—'}</option>`).join('')}
-                </select>
-              </label>
-              <label>Durée des éveils
-                <select name="sleep_wake_duration">
-                  ${['','<5min','5-15min','15-30min','30-60min','>60min'].map(v=>`<option value="${v}" ${ (child.context.sleep?.wakeDuration||'')===v?'selected':'' }>${v||'—'}</option>`).join('')}
-                </select>
-              </label>
-            </div>
-            <label>Heure du coucher (approx.)
-              <input type="time" name="sleep_bedtime" value="${child.context.sleep?.bedtime||''}" />
-            </label>
-            <button class="btn btn-secondary" type="button" id="btn-edit-milestones">Ouvrir les jalons</button>
-            <div id="edit-milestones" class="stack" hidden>
-              ${milestonesInputsHtml(child.milestones)}
-            </div>
-            <div class="hstack">
-              <button class="btn btn-primary" type="submit">Mettre à jour</button>
-              <button class="btn btn-secondary" type="button" id="btn-cancel-edit">Annuler</button>
-            </div>
-          </form>
-        `;
-        const select = document.getElementById('child-select');
-        if (select && !select.dataset.bound) {
-          select.addEventListener('change', () => {
-            editBox.setAttribute('data-edit-id', select.value);
-            renderSettings();
-          });
-          select.dataset.bound = '1';
-        }
-        const msBtn = document.getElementById('btn-edit-milestones');
-        const msBox = document.getElementById('edit-milestones');
-        if (msBtn && msBox && !msBtn.dataset.bound) {
-          msBtn.addEventListener('click', () => {
-            const willShow = msBox.hidden;
-            msBox.hidden = !willShow;
-            msBtn.textContent = willShow ? 'Fermer les jalons' : 'Ouvrir les jalons';
-          });
-          msBtn.dataset.bound = '1';
-        }
-        // Lier la soumission du formulaire
-        const f = document.getElementById('form-child-edit');
-        if (f && !f.dataset.bound) f.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          if (f.dataset.busy === '1') return;
-          f.dataset.busy = '1';
-          const submitBtn = f.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-          try {
-          const fd = new FormData(f);
-          const id = fd.get('id').toString();
-          const photoUrl = child?.photo || null;
-          const firstName = fd.get('firstName').toString().trim();
-          const sex = fd.get('sex').toString();
-          const newDob = fd.get('dob').toString();
-          const ageMNow = ageInMonths(newDob);
-          const msInputs = Array.from(f.querySelectorAll('#edit-milestones input[name="milestones[]"]'));
-          const milestones = msInputs
-            .sort((a,b)=> (Number(a.dataset.index||0) - Number(b.dataset.index||0)))
-            .map(inp => !!inp.checked);
-          // Préparer les instantanés pour l’historique des mises à jour
-          const prevSnap = makeUpdateSnapshot(child);
-          const payload = {
-            first_name: firstName,
-            sex,
-            dob: newDob,
-            photo_url: photoUrl,
-            milestones,
-            context_allergies: fd.get('allergies').toString(),
-            context_history: fd.get('history').toString(),
-            context_care: fd.get('care').toString(),
-            context_languages: fd.get('languages').toString(),
-            feeding_type: fd.get('feedingType')?.toString() || '',
-            eating_style: fd.get('eatingStyle')?.toString() || '',
-            sleep_falling: fd.get('sleep_falling')?.toString() || '',
-            sleep_sleeps_through: fd.get('sleep_through')?.toString() === 'oui',
-            sleep_night_wakings: fd.get('sleep_wakings')?.toString() || '',
-            sleep_wake_duration: fd.get('sleep_wake_duration')?.toString() || '',
-            sleep_bedtime: fd.get('sleep_bedtime')?.toString() || '',
-          };
-          const nextSnap = makeUpdateSnapshot({
-            id,
-            firstName,
-            dob: newDob,
-            milestones,
-            context: {
-              allergies: payload.context_allergies,
-              history: payload.context_history,
-              care: payload.context_care,
-              languages: payload.context_languages,
-              feedingType: payload.feeding_type,
-              eatingStyle: payload.eating_style,
-              sleep: {
-                falling: payload.sleep_falling,
-                sleepsThrough: payload.sleep_sleeps_through,
-                nightWakings: payload.sleep_night_wakings,
-                wakeDuration: payload.sleep_wake_duration,
-                bedtime: payload.sleep_bedtime,
-              }
-            }
-          });
-          const heightVal = parseFloat(fd.get('height'));
-          const weightVal = parseFloat(fd.get('weight'));
-          const teethVal = parseInt(fd.get('teeth'));
-          if (useRemote()) {
-            try {
-              const measurementInputs = [];
-              if (Number.isFinite(heightVal)) measurementInputs.push({ month: ageMNow, height: heightVal });
-              if (Number.isFinite(weightVal)) measurementInputs.push({ month: ageMNow, weight: weightVal });
-              const measurementRecords = buildMeasurementPayloads(measurementInputs);
-              const teethRecords = Number.isFinite(teethVal) ? buildTeethPayloads([{ month: ageMNow, count: teethVal }]) : [];
-              if (isAnonProfile()) {
-                await anonChildRequest('update', {
-                  childId: id,
-                  child: payload,
-                  growthMeasurements: measurementRecords,
-                  growthTeeth: teethRecords
-                });
-                const summary = summarizeUpdate(prevSnap, nextSnap);
-                await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
-                alert('Profil enfant mis à jour.');
-                renderSettings();
-                return;
-              }
-              const uid = getActiveProfileId();
-              if (!uid) { console.warn('Aucun user_id disponible pour children (update)'); throw new Error('Pas de user_id'); }
-              await supabase.from('children').update(payload).eq('id', id);
-              const promises = [];
-              if (measurementRecords.length) {
-                const msPayloads = measurementRecords.map(m => ({ ...m, child_id: id }));
-                promises.push(
-                  supabase
-                    .from('growth_measurements')
-                    .upsert(msPayloads, { onConflict: 'child_id,month' })
-                );
-              }
-              if (Number.isFinite(teethVal)) {
-                const payloadTeeth = { child_id: id, month: ageMNow, count: teethVal };
-                promises.push(
-                  supabase.from('growth_teeth').insert([payloadTeeth])
-                );
-              }
-              if (promises.length) {
-                const results = await Promise.all(promises);
-              }
-              const summary = summarizeUpdate(prevSnap, nextSnap);
-              await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
-              alert('Profil enfant mis à jour.');
-              renderSettings();
-              return;
-            } catch (err) {
-              alert('Erreur Supabase — modifications enregistrées localement');
-            }
-          }
-          // Repli local
-          const childrenAll = store.get(K.children, []);
-          const c = childrenAll.find(x=>x.id===id);
-          if (!c) return;
-          c.firstName = firstName; c.sex = sex; c.dob = newDob; c.photo = photoUrl;
-          c.context = {
-            allergies: payload.context_allergies,
-            history: payload.context_history,
-            care: payload.context_care,
-            languages: payload.context_languages,
-            feedingType: payload.feeding_type,
-            eatingStyle: payload.eating_style,
-            sleep: {
-              falling: payload.sleep_falling,
-              sleepsThrough: payload.sleep_sleeps_through,
-              nightWakings: payload.sleep_night_wakings,
-              wakeDuration: payload.sleep_wake_duration,
-              bedtime: payload.sleep_bedtime,
-            },
-          };
-          c.milestones = milestones;
-          // Mesures optionnelles supplémentaires
-          if (Number.isFinite(heightVal)) c.growth.measurements.push({ month: ageMNow, height: heightVal });
-          if (Number.isFinite(weightVal)) c.growth.measurements.push({ month: ageMNow, weight: weightVal });
-          if (Number.isFinite(teethVal)) c.growth.teeth.push({ month: ageMNow, count: teethVal });
-          store.set(K.children, childrenAll);
-          const summary = summarizeUpdate(prevSnap, nextSnap);
-          await logChildUpdate(id, 'profile', { summary, prev: prevSnap, next: nextSnap });
-          alert('Profil enfant mis à jour.');
-          renderSettings();
-        } finally {
-          f.dataset.busy = '0';
-          if (submitBtn) submitBtn.disabled = false;
-        }
-        }); f && (f.dataset.bound='1');
-
-        document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
-          editBox.removeAttribute('data-edit-id');
-          renderSettings();
-        });
-      }
-    }
-
-    const btnExport = $('#btn-export');
-    if (btnExport) btnExport.onclick = () => {
-      const data = {
-        user: store.get(K.user),
-        children: store.get(K.children, []),
-        forum: store.get(K.forum, {topics:[]}),
-        privacy: store.get(K.privacy, {}),
-      };
       const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
