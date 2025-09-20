@@ -2,7 +2,9 @@
 const KEY_MAP = {
   fullName: 'full_name',
   avatarUrl: 'avatar_url',
-  avatarURL: 'avatar_url'
+  avatarURL: 'avatar_url',
+  role: 'parent_role',
+  parentRole: 'parent_role'
 };
 
 const DISALLOWED_FIELDS = new Set(['id', 'user_id', 'code_unique', 'created_at', 'updated_at']);
@@ -29,10 +31,34 @@ function normalizeAvatarUrl(value) {
   return value.trim().slice(0, 2048);
 }
 
+const ALLOWED_PARENT_ROLES = new Map([
+  ['maman', 'maman'],
+  ['mere', 'maman'],
+  ['mère', 'maman'],
+  ['papa', 'papa'],
+  ['pere', 'papa'],
+  ['père', 'papa'],
+  ['parent', 'parent'],
+  ['tuteur', 'tuteur'],
+  ['famille', 'famille'],
+  ['autre', 'autre'],
+]);
+
+function normalizeParentRole(value) {
+  if (value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const lower = trimmed.toLowerCase();
+  if (ALLOWED_PARENT_ROLES.has(lower)) return ALLOWED_PARENT_ROLES.get(lower);
+  return lower.slice(0, 30);
+}
+
 // Applique le normaliseur spécifique selon le champ ciblé
 function normalizeField(key, value) {
   if (key === 'full_name') return normalizeFullName(value);
   if (key === 'avatar_url') return normalizeAvatarUrl(value);
+  if (key === 'parent_role') return normalizeParentRole(value);
   return value;
 }
 

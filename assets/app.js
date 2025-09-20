@@ -2830,7 +2830,10 @@ try {
           <label>Heure du coucher<input type="time" name="sleep_bedtime" value="${escapeHtml(sleep.bedtime || '')}" /></label>
         </div>
         <h3>Jalons de développement</h3>
-        <div id="edit-milestones">${milestonesHtml}</div>
+        <div class="milestone-toggle">
+          <button type="button" class="btn btn-secondary" id="toggle-milestones" data-expanded="0" aria-expanded="false">Afficher les jalons</button>
+        </div>
+        <div id="edit-milestones" hidden>${milestonesHtml}</div>
         <div class="hstack" style="justify-content:flex-end;"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
       </form>
     `;
@@ -2838,6 +2841,28 @@ try {
     if (form && !form.dataset.bound) {
       form.addEventListener('submit', handleChildFormSubmit);
       form.dataset.bound = '1';
+    }
+    if (form) {
+      const milestonesBlock = form.querySelector('#edit-milestones');
+      const toggleBtn = form.querySelector('#toggle-milestones');
+      if (milestonesBlock && toggleBtn && !toggleBtn.dataset.bound) {
+        milestonesBlock.hidden = true;
+        toggleBtn.addEventListener('click', () => {
+          const expanded = toggleBtn.dataset.expanded === '1';
+          if (expanded) {
+            milestonesBlock.hidden = true;
+            toggleBtn.dataset.expanded = '0';
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            toggleBtn.textContent = 'Afficher les jalons';
+          } else {
+            milestonesBlock.hidden = false;
+            toggleBtn.dataset.expanded = '1';
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            toggleBtn.textContent = 'Masquer les jalons';
+          }
+        });
+        toggleBtn.dataset.bound = '1';
+      }
     }
   }
 
@@ -2868,7 +2893,7 @@ try {
             await fetch('/api/profiles/update-anon', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code, fullName: pseudo }),
+              body: JSON.stringify({ code, fullName: pseudo, role }),
             });
           }
         } else {

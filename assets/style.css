@@ -1014,7 +1014,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 }
 .timeline-comment{
   font-size:13px;
-  color:rgba(0,0,0,.72);
+  color:#ffffff;
 }
 .timeline-comment strong{
   font-weight:600;
@@ -1025,6 +1025,13 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   margin-top:4px;
 }
 .timeline-actions .btn{
+  min-width:190px;
+}
+.milestone-toggle{
+  display:flex;
+  justify-content:flex-end;
+}
+.milestone-toggle .btn{
   min-width:190px;
 }
 .stack{display:grid; gap:12px}
