@@ -123,6 +123,14 @@ import { DEV_QUESTIONS } from './questions-dev.js';
   let __activePath = null;
   // Observateur d’animations de révélation (initialisé plus tard dans setupScrollAnimations)
   let revealObserver = null;
+  const settingsState = {
+    user: {},
+    privacy: { showStats: true, allowMessages: true },
+    children: [],
+    childrenMap: new Map(),
+    selectedChildId: null,
+    snapshots: new Map(),
+  };
 
   const getActiveProfileId = () => activeProfile?.id || null;
   const isProfileLoggedIn = () => !!getActiveProfileId();
@@ -2542,6 +2550,545 @@ try {
   }
 
   // Dashboard
+  async function renderSettings() {
+    const rid = (renderSettings._rid = (renderSettings._rid || 0) + 1);
+    const form = $('#form-settings');
+    const list = $('#children-list');
+    const childEdit = $('#child-edit');
+    const refreshBtn = $('#btn-refresh-settings');
+    if (!form || !list || !childEdit) return;
+
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+      refreshBtn.dataset.bound = '1';
+      refreshBtn.addEventListener('click', () => renderSettings());
+    }
+
+    childEdit.innerHTML = '';
+    list.innerHTML = '<p class="muted">Chargement…</p>';
+
+    let user = store.get(K.user) || {};
+    if (!user.role) user.role = 'maman';
+    let privacy = store.get(K.privacy, { showStats: true, allowMessages: true }) || { showStats: true, allowMessages: true };
+    let children = store.get(K.children, []);
+    let primaryId = user.primaryChildId || null;
+
+    if (useRemote()) {
+      try {
+        if (isAnonProfile()) {
+          const res = await anonChildRequest('list', {});
+          const rows = Array.isArray(res.children) ? res.children : [];
+          children = rows
+            .map((row) => {
+              const mapped = mapRowToChild(row);
+              if (!mapped) return null;
+              mapped.isPrimary = !!row.is_primary;
+              return mapped;
+            })
+            .filter(Boolean);
+          const primaryRow = rows.find((r) => r && r.is_primary);
+          if (primaryRow) primaryId = primaryRow.id;
+        } else {
+          const uid = getActiveProfileId();
+          if (uid) {
+            const { data: profileRow } = await supabase
+              .from('profiles')
+              .select('id,full_name,parent_role')
+              .eq('id', uid)
+              .maybeSingle();
+            if (profileRow) {
+              const pseudo = profileRow.full_name || '';
+              user = {
+                ...user,
+                pseudo,
+                role: profileRow.parent_role || user.role || 'maman',
+              };
+              if (profileRow.id) {
+                setActiveProfile({ ...activeProfile, id: profileRow.id, full_name: pseudo });
+              }
+            }
+            const { data: childRows } = await supabase
+              .from('children')
+              .select('*')
+              .eq('user_id', uid)
+              .order('created_at', { ascending: true });
+            if (Array.isArray(childRows)) {
+              children = childRows
+                .map((row) => {
+                  const mapped = mapRowToChild(row);
+                  if (!mapped) return null;
+                  mapped.isPrimary = !!row.is_primary;
+                  return mapped;
+                })
+                .filter(Boolean);
+              const primaryRow = childRows.find((row) => row && row.is_primary);
+              if (primaryRow) primaryId = primaryRow.id;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('renderSettings remote fetch failed', err);
+      }
+    }
+
+    if (rid !== renderSettings._rid) return;
+
+    if (!primaryId && children.length) primaryId = children[0].id;
+    user = { ...user, primaryChildId: primaryId || null };
+    store.set(K.user, user);
+    store.set(K.privacy, privacy);
+    store.set(K.children, children);
+
+    settingsState.user = user;
+    settingsState.privacy = privacy;
+    settingsState.children = children;
+    settingsState.childrenMap = new Map(children.map((child) => [String(child.id), child]));
+    settingsState.snapshots = new Map();
+    const selectedId = settingsState.selectedChildId && settingsState.childrenMap.has(String(settingsState.selectedChildId))
+      ? settingsState.selectedChildId
+      : (primaryId || (children[0]?.id ?? null));
+    settingsState.selectedChildId = selectedId ? String(selectedId) : null;
+
+    const pseudoInput = form.elements.namedItem('pseudo');
+    if (pseudoInput) pseudoInput.value = user.pseudo || '';
+    const roleSelect = form.elements.namedItem('role');
+    if (roleSelect) roleSelect.value = user.role || 'maman';
+    const showStatsInput = form.elements.namedItem('showStats');
+    if (showStatsInput) showStatsInput.checked = !!privacy.showStats;
+    const allowMessagesInput = form.elements.namedItem('allowMessages');
+    if (allowMessagesInput) allowMessagesInput.checked = !!privacy.allowMessages;
+
+    if (!form.dataset.bound) {
+      form.addEventListener('submit', handleSettingsSubmit);
+      form.dataset.bound = '1';
+    }
+
+    renderSettingsChildrenList(children, primaryId);
+
+    if (!list.dataset.bound) {
+      list.addEventListener('click', handleSettingsListClick);
+      list.dataset.bound = '1';
+    }
+
+    await renderChildEditor(settingsState.selectedChildId, rid);
+  }
+
+  function renderSettingsChildrenList(children, primaryId) {
+    const list = $('#children-list');
+    if (!list) return;
+    if (!children.length) {
+      list.innerHTML = '<p class="muted">Aucun profil enfant enregistré.</p>';
+      return;
+    }
+    const primaryStr = primaryId != null ? String(primaryId) : null;
+    const selectedStr = settingsState.selectedChildId ? String(settingsState.selectedChildId) : null;
+    const html = children.map((child) => {
+      const id = String(child.id);
+      const initials = (child.firstName || '?').slice(0, 2).toUpperCase();
+      const isPrimary = primaryStr && primaryStr === id;
+      const isSelected = selectedStr && selectedStr === id;
+      const ageLabel = child.dob ? formatAge(child.dob) : 'Âge inconnu';
+      const sexLabel = child.sex ? ` • ${escapeHtml(child.sex)}` : '';
+      const chips = [
+        child.context?.allergies ? `Allergies: ${escapeHtml(child.context.allergies)}` : '',
+        child.context?.languages ? `Langues: ${escapeHtml(child.context.languages)}` : '',
+      ].filter(Boolean).join(' • ');
+      const chipsHtml = chips ? `<div class="muted">${chips}</div>` : '';
+      const primaryBadge = isPrimary ? '<span class="badge">Principal</span>' : '';
+      const actions = [
+        isPrimary ? '' : `<button type="button" class="btn btn-secondary" data-action="set-primary" data-id="${id}">Définir principal</button>`,
+        `<button type="button" class="btn btn-secondary" data-action="edit" data-id="${id}">Modifier</button>`,
+        `<button type="button" class="btn btn-danger" data-action="delete" data-id="${id}">Supprimer</button>`,
+      ].filter(Boolean).join('');
+      return `
+        <article class="child-item${isSelected ? ' active' : ''}" data-child-id="${id}">
+          <div class="hstack" style="justify-content:space-between;align-items:center;gap:12px;">
+            <div class="hstack" style="gap:12px;align-items:center;">
+              <div class="avatar" aria-hidden="true" style="width:42px;height:42px;border-radius:12px;background:var(--blue-strong);color:#fff;display:grid;place-items:center;font-weight:600;">${escapeHtml(initials)}</div>
+              <div class="stack" style="gap:2px;">
+                <strong>${escapeHtml(child.firstName || '—')}</strong>
+                <span class="muted">${escapeHtml(ageLabel)}${sexLabel}</span>
+                ${chipsHtml}
+              </div>
+            </div>
+            ${primaryBadge}
+          </div>
+          <div class="hstack" style="flex-wrap:wrap;gap:8px;margin-top:10px;">${actions}</div>
+        </article>
+      `;
+    }).join('');
+    list.innerHTML = html;
+  }
+
+  async function renderChildEditor(childId, ridRef) {
+    const container = $('#child-edit');
+    if (!container) return;
+    if (!childId) {
+      container.innerHTML = '<p class="muted">Sélectionnez un enfant à modifier.</p>';
+      return;
+    }
+    const idStr = String(childId);
+    let child = settingsState.childrenMap.get(idStr);
+    if (!child) {
+      container.innerHTML = '<p class="muted">Profil enfant introuvable.</p>';
+      return;
+    }
+    if (useRemote()) {
+      try {
+        if (isAnonProfile()) {
+          const detail = await anonChildRequest('get', { childId: idStr });
+          if (detail?.child) {
+            child = mapRowToChild(detail.child) || child;
+          }
+        } else {
+          const { data: row } = await supabase.from('children').select('*').eq('id', idStr).maybeSingle();
+          if (row) child = mapRowToChild(row) || child;
+        }
+      } catch (err) {
+        console.warn('Chargement du profil enfant impossible', err);
+      }
+    }
+    if (ridRef && ridRef !== renderSettings._rid) return;
+
+    settingsState.childrenMap.set(idStr, child);
+    settingsState.snapshots.set(idStr, makeUpdateSnapshot(child));
+
+    const milestonesHtml = milestonesInputsHtml(child.milestones);
+    const sleep = child.context?.sleep || {};
+    const sleepThroughVal = typeof sleep.sleepsThrough === 'boolean'
+      ? (sleep.sleepsThrough ? 'oui' : 'non')
+      : '';
+    container.innerHTML = `
+      <form id="form-edit-child" class="form-grid" data-child-id="${idStr}">
+        <div class="hstack" style="flex-wrap:wrap;gap:12px;">
+          <label>Prénom<input type="text" name="firstName" value="${escapeHtml(child.firstName || '')}" required /></label>
+          <label>Sexe
+            <select name="sex">
+              <option value="fille" ${child.sex==='fille'?'selected':''}>Fille</option>
+              <option value="garçon" ${child.sex==='garçon'?'selected':''}>Garçon</option>
+            </select>
+          </label>
+          <label>Date de naissance<input type="date" name="dob" value="${escapeHtml(child.dob || '')}" required /></label>
+        </div>
+        <label>Allergies<input type="text" name="allergies" value="${escapeHtml(child.context?.allergies || '')}" /></label>
+        <label>Antécédents<input type="text" name="history" value="${escapeHtml(child.context?.history || '')}" /></label>
+        <label>Mode de garde<input type="text" name="care" value="${escapeHtml(child.context?.care || '')}" /></label>
+        <label>Langues parlées<input type="text" name="languages" value="${escapeHtml(child.context?.languages || '')}" /></label>
+        <label>Type d’alimentation
+          <select name="feedingType">
+            <option value="" ${!child.context?.feedingType?'selected':''}>—</option>
+            <option value="allaitement_exclusif" ${child.context?.feedingType==='allaitement_exclusif'?'selected':''}>Allaitement exclusif</option>
+            <option value="mixte_allaitement_biberon" ${child.context?.feedingType==='mixte_allaitement_biberon'?'selected':''}>Mixte (allaitement + biberon)</option>
+            <option value="allaitement_diversification" ${child.context?.feedingType==='allaitement_diversification'?'selected':''}>Diversification + allaitement</option>
+            <option value="biberon_diversification" ${child.context?.feedingType==='biberon_diversification'?'selected':''}>Biberon + diversification</option>
+            <option value="lait_poudre_vache" ${child.context?.feedingType==='lait_poudre_vache'?'selected':''}>Lait en poudre / lait de vache</option>
+          </select>
+        </label>
+        <label>Appétit / façon de manger
+          <select name="eatingStyle">
+            <option value="" ${!child.context?.eatingStyle?'selected':''}>—</option>
+            <option value="mange_tres_bien" ${child.context?.eatingStyle==='mange_tres_bien'?'selected':''}>Mange très bien</option>
+            <option value="appetit_variable" ${child.context?.eatingStyle==='appetit_variable'?'selected':''}>Appétit variable</option>
+            <option value="selectif_difficile" ${child.context?.eatingStyle==='selectif_difficile'?'selected':''}>Sélectif / difficile</option>
+            <option value="petites_portions" ${child.context?.eatingStyle==='petites_portions'?'selected':''}>Petites portions</option>
+          </select>
+        </label>
+        <div class="hstack" style="flex-wrap:wrap;gap:12px;">
+          <label>Endormissement
+            <select name="sleep_falling">
+              <option value="" ${!sleep.falling?'selected':''}>—</option>
+              <option value="facile" ${sleep.falling==='facile'?'selected':''}>Facile</option>
+              <option value="moyen" ${sleep.falling==='moyen'?'selected':''}>Moyen</option>
+              <option value="difficile" ${sleep.falling==='difficile'?'selected':''}>Difficile</option>
+            </select>
+          </label>
+          <label>Nuits complètes
+            <select name="sleep_through">
+              <option value="" ${sleepThroughVal===''?'selected':''}>—</option>
+              <option value="oui" ${sleepThroughVal==='oui'?'selected':''}>Oui</option>
+              <option value="non" ${sleepThroughVal==='non'?'selected':''}>Non</option>
+            </select>
+          </label>
+          <label>Réveils nocturnes
+            <select name="sleep_wakings">
+              <option value="" ${!sleep.nightWakings?'selected':''}>—</option>
+              <option value="0" ${sleep.nightWakings==='0'?'selected':''}>0</option>
+              <option value="1" ${sleep.nightWakings==='1'?'selected':''}>1</option>
+              <option value="2" ${sleep.nightWakings==='2'?'selected':''}>2</option>
+              <option value="3+" ${sleep.nightWakings==='3+'?'selected':''}>3+</option>
+            </select>
+          </label>
+          <label>Durée des éveils nocturnes
+            <select name="sleep_wake_duration">
+              <option value="" ${!sleep.wakeDuration?'selected':''}>—</option>
+              <option value="<5min" ${sleep.wakeDuration==='<5min'?'selected':''}>Moins de 5 min</option>
+              <option value="5-15min" ${sleep.wakeDuration==='5-15min'?'selected':''}>5–15 min</option>
+              <option value="15-30min" ${sleep.wakeDuration==='15-30min'?'selected':''}>15–30 min</option>
+              <option value="30-60min" ${sleep.wakeDuration==='30-60min'?'selected':''}>30–60 min</option>
+              <option value=">60min" ${sleep.wakeDuration==='>60min'?'selected':''}>Plus de 60 min</option>
+            </select>
+          </label>
+          <label>Heure du coucher<input type="time" name="sleep_bedtime" value="${escapeHtml(sleep.bedtime || '')}" /></label>
+        </div>
+        <h3>Jalons de développement</h3>
+        <div id="edit-milestones">${milestonesHtml}</div>
+        <div class="hstack" style="justify-content:flex-end;"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
+      </form>
+    `;
+    const form = container.querySelector('#form-edit-child');
+    if (form && !form.dataset.bound) {
+      form.addEventListener('submit', handleChildFormSubmit);
+      form.dataset.bound = '1';
+    }
+  }
+
+  async function handleSettingsSubmit(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    if (form.dataset.busy === '1') return;
+    form.dataset.busy = '1';
+    const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      const fd = new FormData(form);
+      const pseudo = (fd.get('pseudo') || '').toString().trim();
+      const role = (fd.get('role') || 'maman').toString();
+      const showStats = !!fd.get('showStats');
+      const allowMessages = !!fd.get('allowMessages');
+      const nextPrivacy = { showStats, allowMessages };
+      const nextUser = { ...settingsState.user, pseudo, role };
+      store.set(K.user, nextUser);
+      store.set(K.privacy, nextPrivacy);
+      settingsState.user = nextUser;
+      settingsState.privacy = nextPrivacy;
+
+      if (useRemote()) {
+        if (isAnonProfile()) {
+          const code = activeProfile?.code_unique;
+          if (code) {
+            await fetch('/api/profiles/update-anon', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code, fullName: pseudo }),
+            });
+          }
+        } else {
+          const uid = getActiveProfileId();
+          if (uid) {
+            try {
+              await supabase
+                .from('profiles')
+                .update({ full_name: pseudo, parent_role: role })
+                .eq('id', uid);
+            } catch (err) {
+              console.warn('Profil: mise à jour du rôle impossible, tentative sans le champ', err);
+              await supabase
+                .from('profiles')
+                .update({ full_name: pseudo })
+                .eq('id', uid);
+            }
+          }
+        }
+        setActiveProfile({ ...activeProfile, full_name: pseudo });
+      } else {
+        setActiveProfile({ ...activeProfile, full_name: pseudo });
+      }
+
+      alert('Profil parent mis à jour.');
+    } catch (err) {
+      console.warn('handleSettingsSubmit failed', err);
+      alert('Impossible de mettre à jour le profil parent.');
+    } finally {
+      delete form.dataset.busy;
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  }
+
+  function handleSettingsListClick(e) {
+    const actionBtn = e.target.closest('[data-action]');
+    if (!actionBtn) return;
+    const action = actionBtn.getAttribute('data-action');
+    const id = actionBtn.getAttribute('data-id');
+    if (!id) return;
+    if (action === 'set-primary') {
+      setPrimaryChildAction(id);
+    } else if (action === 'edit') {
+      settingsState.selectedChildId = String(id);
+      renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
+      renderChildEditor(settingsState.selectedChildId, renderSettings._rid);
+    } else if (action === 'delete') {
+      deleteChildAction(id);
+    }
+  }
+
+  async function setPrimaryChildAction(childId) {
+    try {
+      await setPrimaryChild(childId);
+      settingsState.user = { ...settingsState.user, primaryChildId: childId };
+      store.set(K.user, settingsState.user);
+      renderSettings();
+    } catch (err) {
+      console.warn('setPrimaryChildAction failed', err);
+      alert('Impossible de définir cet enfant comme principal.');
+    }
+  }
+
+  async function deleteChildAction(childId) {
+    if (!childId) return;
+    if (!confirm('Supprimer ce profil enfant ?')) return;
+    try {
+      if (useRemote()) {
+        if (isAnonProfile()) {
+          await anonChildRequest('delete', { childId });
+        } else {
+          await supabase.from('children').delete().eq('id', childId);
+        }
+      } else {
+        const localChildren = store.get(K.children, []).filter((child) => String(child.id) !== String(childId));
+        store.set(K.children, localChildren);
+      }
+      alert('Profil enfant supprimé.');
+    } catch (err) {
+      console.warn('deleteChildAction failed', err);
+      alert('Impossible de supprimer le profil enfant.');
+    }
+    renderSettings();
+  }
+
+  async function handleChildFormSubmit(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    if (form.dataset.busy === '1') return;
+    form.dataset.busy = '1';
+    const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    const childId = form.getAttribute('data-child-id');
+    try {
+      const base = settingsState.childrenMap.get(childId);
+      if (!base) throw new Error('Profil enfant introuvable');
+      const prevSnapshot = settingsState.snapshots.get(childId) || makeUpdateSnapshot(base);
+      const updated = buildChildUpdateFromForm(base, form);
+      const nextSnapshot = makeUpdateSnapshot(updated);
+      const summary = summarizeUpdate(prevSnapshot, nextSnapshot);
+      if (!summary) {
+        alert('Aucun changement détecté.');
+        return;
+      }
+
+      if (useRemote()) {
+        if (isAnonProfile()) {
+          const payload = {
+            firstName: updated.firstName,
+            sex: updated.sex,
+            dob: updated.dob,
+            contextAllergies: updated.context.allergies,
+            contextHistory: updated.context.history,
+            contextCare: updated.context.care,
+            contextLanguages: updated.context.languages,
+            feedingType: updated.context.feedingType,
+            eatingStyle: updated.context.eatingStyle,
+            sleepFalling: updated.context.sleep.falling,
+            sleepSleepsThrough: updated.context.sleep.sleepsThrough,
+            sleepNightWakings: updated.context.sleep.nightWakings,
+            sleepWakeDuration: updated.context.sleep.wakeDuration,
+            sleepBedtime: updated.context.sleep.bedtime,
+            milestones: updated.milestones,
+          };
+          await anonChildRequest('update', { childId, child: payload });
+        } else {
+          const payload = {
+            first_name: updated.firstName,
+            sex: updated.sex,
+            dob: updated.dob,
+            context_allergies: updated.context.allergies,
+            context_history: updated.context.history,
+            context_care: updated.context.care,
+            context_languages: updated.context.languages,
+            feeding_type: updated.context.feedingType,
+            eating_style: updated.context.eatingStyle,
+            sleep_falling: updated.context.sleep.falling,
+            sleep_sleeps_through: typeof updated.context.sleep.sleepsThrough === 'boolean' ? updated.context.sleep.sleepsThrough : null,
+            sleep_night_wakings: updated.context.sleep.nightWakings,
+            sleep_wake_duration: updated.context.sleep.wakeDuration,
+            sleep_bedtime: updated.context.sleep.bedtime,
+            milestones: updated.milestones,
+          };
+          await supabase.from('children').update(payload).eq('id', childId);
+        }
+      } else {
+        const localChildren = store.get(K.children, []).map((child) => {
+          if (String(child.id) === String(childId)) return updated;
+          return child;
+        });
+        store.set(K.children, localChildren);
+      }
+
+      settingsState.childrenMap.set(childId, updated);
+      settingsState.children = settingsState.children.map((child) => (String(child.id) === String(childId) ? updated : child));
+      settingsState.snapshots.set(childId, nextSnapshot);
+      await logChildUpdate(childId, 'profil', { prev: prevSnapshot, next: nextSnapshot, summary });
+      alert('Profil enfant mis à jour.');
+      renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
+    } catch (err) {
+      console.warn('handleChildFormSubmit failed', err);
+      alert('Impossible de mettre à jour le profil enfant.');
+    } finally {
+      delete form.dataset.busy;
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  }
+
+  function buildChildUpdateFromForm(base, form) {
+    const fd = new FormData(form);
+    const clone = JSON.parse(JSON.stringify(base));
+    clone.firstName = (fd.get('firstName') || '').toString().trim();
+    clone.sex = (fd.get('sex') || '').toString();
+    clone.dob = (fd.get('dob') || '').toString();
+    const mergedContext = mergeChildContext(clone.context || {}, {
+      allergies: (fd.get('allergies') || '').toString().trim(),
+      history: (fd.get('history') || '').toString().trim(),
+      care: (fd.get('care') || '').toString().trim(),
+      languages: (fd.get('languages') || '').toString().trim(),
+      feedingType: (fd.get('feedingType') || '').toString(),
+      eatingStyle: (fd.get('eatingStyle') || '').toString(),
+      sleep: {
+        falling: (fd.get('sleep_falling') || '').toString(),
+        sleepsThrough: (fd.get('sleep_through') || '').toString(),
+        nightWakings: (fd.get('sleep_wakings') || '').toString(),
+        wakeDuration: (fd.get('sleep_wake_duration') || '').toString(),
+        bedtime: (fd.get('sleep_bedtime') || '').toString(),
+      },
+    });
+    const sleepThroughRaw = mergedContext.sleep.sleepsThrough;
+    mergedContext.sleep.sleepsThrough = sleepThroughRaw === 'oui' ? true : (sleepThroughRaw === 'non' ? false : null);
+    clone.context = mergedContext;
+    const msInputs = Array.from(form.querySelectorAll('#edit-milestones input[name="milestones[]"]'))
+      .sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0))
+      .map((input) => input.checked);
+    if (msInputs.length) clone.milestones = msInputs;
+    return clone;
+  }
+
+  function mergeChildContext(base, updates) {
+    const src = base || {};
+    const sleepBase = src.sleep || {};
+    const updSleep = updates.sleep || {};
+    return {
+      allergies: updates.allergies ?? src.allergies ?? '',
+      history: updates.history ?? src.history ?? '',
+      care: updates.care ?? src.care ?? '',
+      languages: updates.languages ?? src.languages ?? '',
+      feedingType: updates.feedingType ?? src.feedingType ?? '',
+      eatingStyle: updates.eatingStyle ?? src.eatingStyle ?? '',
+      sleep: {
+        falling: updSleep.falling ?? sleepBase.falling ?? '',
+        sleepsThrough: updSleep.sleepsThrough ?? sleepBase.sleepsThrough ?? null,
+        nightWakings: updSleep.nightWakings ?? sleepBase.nightWakings ?? '',
+        wakeDuration: updSleep.wakeDuration ?? sleepBase.wakeDuration ?? '',
+        bedtime: updSleep.bedtime ?? sleepBase.bedtime ?? '',
+      },
+    };
+  }
+
   async function renderDashboard() {
     const rid = (renderDashboard._rid = (renderDashboard._rid || 0) + 1);
     let child = null; let all = [];
