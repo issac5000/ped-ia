@@ -4800,8 +4800,10 @@ const TIMELINE_MILESTONES = [
       const center = activePoint.offsetLeft + (activePoint.offsetWidth / 2);
       tooltip.style.left = `${center}px`;
       tooltip.style.setProperty('--timeline-tooltip-shift', '0px');
+      tooltip.style.setProperty('--timeline-tooltip-shift-y', '0px');
       const tooltipRect = tooltip.getBoundingClientRect();
       const scrollerRect = scroller.getBoundingClientRect();
+      const containerRect = root.getBoundingClientRect();
       let shift = 0;
       const edgePad = 36;
       if (tooltipRect.left < scrollerRect.left + edgePad) {
@@ -4810,6 +4812,12 @@ const TIMELINE_MILESTONES = [
         shift = (scrollerRect.right - edgePad) - tooltipRect.right;
       }
       tooltip.style.setProperty('--timeline-tooltip-shift', `${shift}px`);
+      let shiftY = 0;
+      const topPad = 16;
+      if (tooltipRect.top < containerRect.top + topPad) {
+        shiftY = (containerRect.top + topPad) - tooltipRect.top;
+        tooltip.style.setProperty('--timeline-tooltip-shift-y', `${shiftY}px`);
+      }
     };
 
     const showTooltip = (btn) => {

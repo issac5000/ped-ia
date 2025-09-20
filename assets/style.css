@@ -1069,7 +1069,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   box-shadow:0 16px 34px rgba(0,0,0,.5);
 }
 .timeline-1000__nav:focus-visible{ outline:2px solid var(--orange-strong); outline-offset:2px; }
-.timeline-1000__nav[disabled]{ opacity:.4; pointer-events:none; }
+.timeline-1000__nav[disabled]{ opacity:.35; pointer-events:none; }
 .timeline-1000__nav--prev{ left:6px; }
 .timeline-1000__nav--next{ right:6px; }
 .timeline-1000__nav-icon{ pointer-events:none; }
@@ -1202,7 +1202,7 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 .timeline-1000__tooltip{
   position:absolute;
   top:120px;
-  transform:translate(calc(-50% + var(--timeline-tooltip-shift,0px)), 32px);
+  transform:translate(calc(-50% + var(--timeline-tooltip-shift,0px)), calc(-100% - 28px + var(--timeline-tooltip-shift-y,0px)));
   background:rgba(7,10,16,.95);
   border:1px solid rgba(255,255,255,.16);
   border-radius:18px;
