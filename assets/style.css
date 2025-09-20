@@ -2184,7 +2184,7 @@ body.force-mobile .nav-toggle{
 .faq-item,
 .pillar, .pillar:hover,
 .hero-stats .stat{
-  background: transparent !important;
+  background: rgba(24,28,38,.92) !important;
 }
 
 /* Make all textual content white and ensure readability on dark */
