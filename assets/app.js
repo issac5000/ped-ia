@@ -4,6 +4,31 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 // Synap'Kids SPA — Prototype 100 % front avec localStorage + authentification Supabase (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { loadSupabaseEnv } from './supabase-env-loader.js';
+
+const TIMELINE_STAGES = [
+  { label: 'Naissance', day: 0, subtitle: '0 j' },
+  { label: '3 mois', day: 90, subtitle: '90 j' },
+  { label: '6 mois', day: 180, subtitle: '180 j' },
+  { label: '1 an', day: 365, subtitle: '365 j' },
+  { label: '18 mois', day: 540, subtitle: '540 j' },
+  { label: '2 ans', day: 730, subtitle: '730 j' },
+  { label: '1000 jours', day: 1000, subtitle: '1000 j' }
+];
+
+const TIMELINE_MILESTONES = [
+  { key: '0_12_smile_social', label: 'Premiers sourires', day: 45, range: '1 et 3 mois' },
+  { key: '0_12_hold_head', label: 'Tient sa tête', day: 90, range: '2 et 4 mois' },
+  { key: '0_12_roll_both', label: 'Se retourne seul', day: 150, range: '4 et 6 mois' },
+  { key: '0_12_sit_unaided', label: 'Assis sans aide', day: 210, range: '6 et 8 mois' },
+  { key: '0_12_babble', label: 'Babille activement', day: 240, range: '6 et 9 mois' },
+  { key: '12_24_walk_alone', label: 'Marche seul', day: 420, range: '12 et 15 mois' },
+  { key: '12_24_words_10_20', label: 'Dit 10 à 20 mots', day: 510, range: '16 et 20 mois' },
+  { key: '12_24_two_word_combo', label: 'Associe 2 mots', day: 540, range: '18 et 24 mois' },
+  { key: '12_24_simple_symbolic_play', label: 'Jeu symbolique', day: 580, range: '18 et 26 mois' },
+  { key: '24_36_jump_two_feet', label: 'Saute à pieds joints', day: 720, range: '24 et 30 mois' },
+  { key: '24_36_phrase_3_4', label: 'Phrases de 3-4 mots', day: 750, range: '26 et 32 mois' },
+  { key: '24_36_start_toilet_training', label: 'Apprentissage propreté', day: 840, range: '28 et 36 mois' }
+];
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 (async () => {
   document.body.classList.remove('no-js');
@@ -3384,6 +3409,8 @@ import { loadSupabaseEnv } from './supabase-env-loader.js';
     const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
     const lastTeeth = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
     const lastSleepHours = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
+    const ageDays = ageInDays(child.dob);
+    const timelineSection = build1000DaysTimeline(child, ageDays);
     if (rid !== renderDashboard._rid) return;
     dom.innerHTML = `
       <div class="grid-2">
@@ -3462,7 +3489,11 @@ import { loadSupabaseEnv } from './supabase-env-loader.js';
         </div>
       </div>
 
+      ${timelineSection}
+
     `;
+
+    setupTimelineScroller(dom);
 
     // Section « Profil santé » retirée à la demande
 
@@ -4576,6 +4607,18 @@ import { loadSupabaseEnv } from './supabase-env-loader.js';
 
   // Fonctions utilitaires
   function genId() { return Math.random().toString(36).slice(2, 10); }
+  function clamp(value, min, max) {
+    if (!Number.isFinite(value)) return min;
+    return Math.min(max, Math.max(min, value));
+  }
+  function ageInDays(dob) {
+    if (!dob) return 0;
+    const birth = new Date(dob);
+    if (Number.isNaN(birth.getTime())) return 0;
+    const now = new Date();
+    const diff = now.getTime() - birth.getTime();
+    return Math.max(0, Math.floor(diff / 86400000));
+  }
   function ageInMonths(dob) {
     const d = new Date(dob);
     const now = new Date();
@@ -4615,6 +4658,102 @@ import { loadSupabaseEnv } from './supabase-env-loader.js';
     return parts.join(' • ') || '—';
   }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+  function build1000DaysTimeline(child, ageDays) {
+    const safeName = escapeHtml(child?.firstName || 'votre enfant');
+    const header = `
+      <section class="card stack timeline-1000" id="timeline-1000-days">
+        <div class="card-header timeline-1000__header">
+          <h3>Frise des 1000 jours</h3>
+          <p class="page-subtitle">Visualisez les grands jalons de la naissance jusqu’à 1000 jours.</p>
+        </div>`;
+    if (!child || !child.dob) {
+      return `
+        ${header}
+        <p class="muted">Ajoutez la date de naissance de ${safeName} pour activer la frise personnalisée.</p>
+      </section>`;
+    }
+    const milestonesArray = Array.isArray(child.milestones) ? child.milestones : [];
+    const milestoneStatus = new Map();
+    DEV_QUESTIONS.forEach((q, idx) => {
+      if (q?.key) milestoneStatus.set(q.key, !!milestonesArray[idx]);
+    });
+    const rawAgeDays = Number.isFinite(ageDays) ? ageDays : ageInDays(child.dob);
+    const clampedDays = clamp(rawAgeDays, 0, 1000);
+    const progressPercent = clamp((clampedDays / 1000) * 100, 0, 100);
+    const daysDisplay = rawAgeDays > 1000 ? '1000+ jours' : `${Math.round(Math.max(0, rawAgeDays))} jours`;
+    const currentAlign = progressPercent <= 8 ? ' is-start' : (progressPercent >= 92 ? ' is-end' : '');
+
+    const stageHtml = TIMELINE_STAGES.map((stage, idx) => {
+      const nextStage = TIMELINE_STAGES[idx + 1];
+      const stagePercent = clamp((stage.day / 1000) * 100, 0, 100);
+      const alignClass = idx === 0 ? ' is-start' : (idx === TIMELINE_STAGES.length - 1 ? ' is-end' : '');
+      const upperBound = nextStage ? nextStage.day : 1000;
+      const relevantMilestones = TIMELINE_MILESTONES.filter(m => m.day >= stage.day && m.day < upperBound + (idx === TIMELINE_STAGES.length - 1 ? 1 : 0));
+      const milestonesHtml = relevantMilestones.map(m => {
+        const isDone = milestoneStatus.get(m.key) === true;
+        const state = isDone ? 'is-done' : (rawAgeDays >= m.day ? 'is-pending' : 'is-upcoming');
+        const approxMonths = m.day ? Math.round(m.day / 30) : 0;
+        const metaParts = [];
+        if (m.day) metaParts.push(`${m.day} j`);
+        if (approxMonths) metaParts.push(`≈ ${approxMonths} mois`);
+        const meta = metaParts.length ? `<span class="timeline-1000__milestone-meta">${metaParts.join(' • ')}</span>` : '';
+        const range = m.range ? `<span class="timeline-1000__milestone-range">🤖 La plupart des enfants atteignent ce jalon entre ${escapeHtml(m.range)}.</span>` : '';
+        return `
+          <div class="timeline-1000__milestone ${state}">
+            <span class="timeline-1000__milestone-dot" aria-hidden="true"></span>
+            <div class="timeline-1000__milestone-text">
+              <span class="timeline-1000__milestone-title">${escapeHtml(m.label)}</span>
+              ${meta}
+              ${range}
+            </div>
+          </div>
+        `;
+      }).join('');
+      const subtitle = stage.subtitle ? `<span>${escapeHtml(stage.subtitle)}</span>` : '';
+      return `
+        <div class="timeline-1000__stage${alignClass}" style="left:${stagePercent}%">
+          <span class="timeline-1000__tick" aria-hidden="true"></span>
+          <div class="timeline-1000__stage-label"><strong>${escapeHtml(stage.label)}</strong>${subtitle}</div>
+          <div class="timeline-1000__milestones">${milestonesHtml}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      ${header}
+        <div class="timeline-1000__scroll" role="region" aria-label="Frise des 1000 jours">
+          <div class="timeline-1000__track">
+            <span class="timeline-1000__line" aria-hidden="true"></span>
+            <span class="timeline-1000__progress" style="width:${progressPercent}%" aria-hidden="true"></span>
+            ${stageHtml}
+            <div class="timeline-1000__current${currentAlign}" style="left:${progressPercent}%">
+              <span class="timeline-1000__current-dot" aria-hidden="true"></span>
+              <span class="timeline-1000__current-label">${safeName} • ${daysDisplay}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function setupTimelineScroller(root) {
+    if (!root) return;
+    const scroller = root.querySelector('.timeline-1000__scroll');
+    const current = scroller?.querySelector('.timeline-1000__current');
+    if (!scroller || !current) return;
+    requestAnimationFrame(() => {
+      const target = current.offsetLeft + current.offsetWidth / 2;
+      const desired = target - scroller.clientWidth / 2;
+      const maxScroll = Math.max(0, current.parentElement.scrollWidth - scroller.clientWidth);
+      const nextLeft = clamp(desired, 0, maxScroll);
+      try {
+        scroller.scrollTo({ left: nextLeft, behavior: 'smooth' });
+      } catch {
+        scroller.scrollLeft = nextLeft;
+      }
+    });
+  }
 
   function milestonesInputsHtml(values = []) {
     const groups = [
