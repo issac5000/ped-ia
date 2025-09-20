@@ -55,23 +55,85 @@ export default async function handler(req, res) {
     // Construit la liste de filtres PostgREST in() : ("id1","id2")
     const escaped = ids.map(id => String(id).replace(/"/g, '""'));
     const list = `(${escaped.map(id=>`"${id}"`).join(',')})`;
-    const q = `${supaUrl}/rest/v1/profiles?select=id,full_name&id=in.${encodeURIComponent(list)}`;
-    const pRes = await fetch(q, {
-      headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${serviceKey}`
+    const fetchProfiles = async (select) => {
+      const url = `${supaUrl}/rest/v1/profiles?select=${encodeURIComponent(select)}&id=in.${encodeURIComponent(list)}`;
+      const resProfiles = await fetch(url, {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`
+        }
+      });
+      const text = await resProfiles.text().catch(() => '');
+      if (!resProfiles.ok) {
+        const err = new Error(text || 'Fetch profiles failed');
+        err.status = resProfiles.status;
+        err.details = text;
+        throw err;
       }
-    });
-    if (!pRes.ok) {
-      const t = await pRes.text().catch(()=> '');
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.end(JSON.stringify({ error: 'Fetch profiles failed', details: t }));
+      try {
+        return text ? JSON.parse(text) : [];
+      } catch (e) {
+        throw new Error('Invalid JSON response from Supabase');
+      }
+    };
+
+    let profiles = [];
+    let hasShowColumn = true;
+    try {
+      profiles = await fetchProfiles('id,full_name,show_children_count');
+    } catch (err) {
+      hasShowColumn = false;
+      profiles = await fetchProfiles('id,full_name');
     }
-    const arr = await pRes.json();
+
+    const idList = Array.isArray(profiles) ? profiles.map((row) => row?.id).filter((id) => id != null) : [];
+    const idsForCounts = idList.map((id) => String(id));
+    const childCounts = new Map();
+    if (idsForCounts.length) {
+      const childrenUrl = `${supaUrl}/rest/v1/children?select=user_id&user_id=in.${encodeURIComponent(list)}`;
+      const cRes = await fetch(childrenUrl, {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`
+        }
+      });
+      const cText = await cRes.text().catch(() => '');
+      if (!cRes.ok) {
+        const err = new Error(cText || 'Fetch children failed');
+        err.status = cRes.status;
+        err.details = cText;
+        throw err;
+      }
+      let childRows = [];
+      try {
+        childRows = cText ? JSON.parse(cText) : [];
+      } catch {
+        childRows = [];
+      }
+      if (Array.isArray(childRows)) {
+        childRows.forEach((row) => {
+          const key = row?.user_id != null ? String(row.user_id) : '';
+          if (!key) return;
+          childCounts.set(key, (childCounts.get(key) || 0) + 1);
+        });
+      }
+    }
+
+    const arr = Array.isArray(profiles) ? profiles : [];
+    const enriched = arr.map((row) => {
+      const id = row?.id != null ? String(row.id) : null;
+      const count = id ? childCounts.get(id) ?? 0 : 0;
+      const showFlagRaw = row?.show_children_count;
+      const showChildren = hasShowColumn ? !!showFlagRaw : false;
+      return {
+        ...row,
+        child_count: count,
+        show_children_count: showChildren,
+      };
+    });
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.end(JSON.stringify({ profiles: arr }));
+    return res.end(JSON.stringify({ profiles: enriched }));
   } catch (e) {
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
