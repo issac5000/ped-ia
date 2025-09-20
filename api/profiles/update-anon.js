@@ -7,7 +7,7 @@ const KEY_MAP = {
   parentRole: 'parent_role'
 };
 
-const DISALLOWED_FIELDS = new Set(['id', 'user_id', 'code_unique', 'created_at', 'updated_at']);
+const DISALLOWED_FIELDS = new Set(['id', 'user_id', 'code_unique', 'code', 'created_at', 'updated_at']);
 
 // Convertit une clé camelCase en snake_case compatible avec la base
 function camelToSnake(key) {
