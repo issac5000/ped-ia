@@ -1086,7 +1086,7 @@ section[data-route="/community"] .topic{
   border-radius:28px;
   padding:22px 24px;
   border:1px solid rgba(255,255,255,.12);
-  background:linear-gradient(145deg, rgba(13,18,30,.82), rgba(6,9,15,.66));
+  background:rgba(0,0,0,.72);
   box-shadow:0 28px 60px rgba(0,0,0,.55);
   transition:transform .24s ease, box-shadow .3s ease, border-color .3s ease, background .35s ease;
 }
@@ -1095,7 +1095,7 @@ section[data-route="/community"] .topic::before{
   position:absolute;
   inset:auto -40% 0 -40%;
   height:240px;
-  background:radial-gradient(ellipse at top, rgba(255,255,255,.18) 0%, rgba(255,255,255,0) 70%);
+  background:rgba(0,0,0,.25);
   opacity:.4;
   transform:translateY(68%);
   transition:opacity .35s ease, transform .35s ease;
@@ -1107,10 +1107,7 @@ section[data-route="/community"] .topic::after{
   position:absolute;
   inset:-18%;
   border-radius:inherit;
-  background:
-    radial-gradient(circle at 18% 16%, rgba(255,255,255,.16), transparent 58%),
-    radial-gradient(circle at 82% -6%, rgba(255,255,255,.1), transparent 60%),
-    linear-gradient(150deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  background:rgba(0,0,0,.18);
   opacity:.55;
   pointer-events:none;
   z-index:0;
@@ -1121,7 +1118,7 @@ section[data-route="/community"] .topic:hover{
   transform:translateY(-4px);
   box-shadow:0 36px 72px rgba(0,0,0,.62);
   border-color:rgba(255,255,255,.22);
-  background:linear-gradient(145deg, rgba(18,24,38,.88), rgba(8,11,19,.74));
+  background:rgba(0,0,0,.78);
 }
 section[data-route="/community"] .topic[data-open="1"]::before,
 section[data-route="/community"] .topic:hover::before{
@@ -1193,7 +1190,7 @@ section[data-route="/community"] .topic-body{
   position:relative;
   isolation:isolate;
   overflow:hidden;
-  background:linear-gradient(160deg, rgba(12,17,27,.88), rgba(6,9,15,.72));
+  background:rgba(0,0,0,.65);
   border:1px solid rgba(255,255,255,.14);
 }
 section[data-route="/community"] .topic-body::before{
@@ -1201,10 +1198,7 @@ section[data-route="/community"] .topic-body::before{
   position:absolute;
   inset:-24%;
   border-radius:inherit;
-  background:
-    radial-gradient(circle at 18% 8%, rgba(255,255,255,.18), transparent 58%),
-    radial-gradient(circle at 82% 0%, rgba(255,255,255,.12), transparent 60%),
-    linear-gradient(150deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  background:rgba(0,0,0,.22);
   opacity:.85;
   pointer-events:none;
   z-index:0;
@@ -1230,7 +1224,7 @@ section[data-route="/community"] .reply{
   gap:10px;
   padding:16px 18px;
   border-radius:20px;
-  background:linear-gradient(160deg, rgba(0,0,0,.58), rgba(8,12,22,.42));
+  background:rgba(0,0,0,.55);
   border:1px solid rgba(255,255,255,.12);
   box-shadow:0 18px 36px rgba(0,0,0,.45);
 }
