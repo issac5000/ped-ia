@@ -5095,32 +5095,19 @@ const TIMELINE_MILESTONES = [
             <div class="timeline-1000__tooltip" role="dialog" aria-live="polite" hidden></div>
           </div>
         </div>
-        <div class="timeline-1000__nav-bar">
+        <div class="timeline-1000__nav-bar" role="navigation" aria-label="Contrôle de défilement de la frise">
           <button type="button" class="timeline-1000__nav timeline-1000__nav--prev" aria-label="Défiler vers la gauche">
-            <span class="timeline-1000__nav-icon timeline-1000__nav-icon--prev" aria-hidden="true">
-              <svg viewBox="0 0 64 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
-                <path d="M6 12c9-8 22-11 35-7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
-                <path d="M6 12c9 8 22 11 35 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
-                <path d="M35 4l15 8-15 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                <circle cx="55" cy="12" r="2.2" fill="currentColor" opacity=".85"/>
-                <path d="M55 12l3.2-3.2m-3.2 3.2 3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+            <span class="timeline-1000__nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
+                <path d="M14.5 6.5 9 12l5.5 5.5M19.5 12H9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </span>
-            <span class="timeline-1000__nav-label">Glisser à gauche</span>
           </button>
-          <div class="timeline-1000__nav-hint">
-            <span class="timeline-1000__nav-hint-track" aria-hidden="true"></span>
-            <span class="timeline-1000__nav-hint-text">Faites défiler pour explorer les 1000 jours</span>
-          </div>
+          <span class="timeline-1000__nav-hint-text">Faites défiler pour explorer les 1000 jours</span>
           <button type="button" class="timeline-1000__nav timeline-1000__nav--next" aria-label="Défiler vers la droite">
-            <span class="timeline-1000__nav-label">Glisser à droite</span>
-            <span class="timeline-1000__nav-icon timeline-1000__nav-icon--next" aria-hidden="true">
-              <svg viewBox="0 0 64 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
-                <path d="M6 12c9-8 22-11 35-7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
-                <path d="M6 12c9 8 22 11 35 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
-                <path d="M35 4l15 8-15 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                <circle cx="55" cy="12" r="2.2" fill="currentColor" opacity=".85"/>
-                <path d="M55 12l3.2-3.2m-3.2 3.2 3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+            <span class="timeline-1000__nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
+                <path d="M9.5 6.5 15 12l-5.5 5.5M4.5 12H15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </span>
           </button>
