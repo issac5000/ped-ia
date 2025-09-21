@@ -3415,7 +3415,7 @@ const TIMELINE_MILESTONES = [
   function notifyChildProfileUpdated(){
     showNotification({
       title: 'Profil enfant mis à jour',
-      text: 'Rendez-vous dans le Dashboard à la section « historique de l’évolution » pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
+      text: 'Rendez-vous dans le Carnet de santé à la section « historique de l’évolution » pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
       actionHref: '#/dashboard?focus=history',
       actionLabel: 'Voir',
       durationMs: 10000
