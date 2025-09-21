@@ -220,27 +220,28 @@ const TIMELINE_MILESTONES = [
     return json || {};
   }
 
-  async function anonMessagesRequest(action, payload = {}) {
-    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
-    if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, ...payload };
-    const response = await fetch('/api/anon/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const text = await response.text().catch(() => '');
-    let json = null;
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
+  async function anonMessagesRequest(code_unique) {
+    const ok = await ensureSupabaseClient();
+    if (!ok || !supabase) return [];
+    const code = (code_unique || '').toString().trim().toUpperCase();
+    if (!code) return [];
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('receiver_code', code)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erreur lors de la récupération des messages anonymes:', error);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error('Erreur lors de la récupération des messages anonymes:', err);
+      return [];
     }
-    if (!response.ok) {
-      const err = new Error(json?.error || 'Service indisponible');
-      if (json?.details) err.details = json.details;
-      throw err;
-    }
-    return json || {};
   }
 
   async function anonCommunityRequest(action, payload = {}) {
@@ -746,20 +747,20 @@ const TIMELINE_MILESTONES = [
 
   async function fetchAnonMissedNotifications(){
     if (!isAnonProfile()) return;
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) return;
     const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
-    const sinceMsg = getNotifLastSince('msg') || sinceDefault;
     const sinceRep = getNotifLastSince('reply') || sinceDefault;
     try {
-      const res = await anonMessagesRequest('recent-activity', { since: sinceMsg });
-      const messages = Array.isArray(res?.messages) ? res.messages : [];
-      const senders = res?.senders || {};
+      const res = await anonMessagesRequest(code);
+      const messages = Array.isArray(res) ? res : [];
       for (const m of messages) {
         if (!m || m.id == null) continue;
-        const senderRaw = m.sender_id ?? m.senderId;
+        const senderRaw = m.sender_id ?? m.senderId ?? m.sender_code ?? m.senderCode;
         if (senderRaw == null) continue;
         const fromId = String(senderRaw);
         const notifId = `msg:${m.id}`;
-        const fromName = senders[fromId] || 'Un parent';
+        const fromName = m.sender_name ?? m.senderName ?? m.sender_full_name ?? m.senderFullName ?? 'Un parent';
         const wasNew = addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
         if (wasNew) {
           showNotification({

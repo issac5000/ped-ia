@@ -454,23 +454,46 @@ function unseen(){ return loadNotifs().filter(x=>!x.seen); }
 function updateBadgeFromStore(){ updateBadges(); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
+async function anonMessagesRequest(code_unique) {
+  const ok = await ensureSupabase();
+  if (!ok || !supabase) return [];
+  const code = (code_unique || '').toString().trim().toUpperCase();
+  if (!code) return [];
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('receiver_code', code)
+      .eq('is_read', false)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Erreur lors de la récupération des messages anonymes:', error);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error('Erreur lors de la récupération des messages anonymes:', err);
+    return [];
+  }
+}
+
 const ANON_NOTIF_INTERVAL_MS = 15000;
 
 async function fetchAnonMissedNotifications(){
   if (!isAnon || !anonProfile?.code) return;
+  const code = (anonProfile.code || '').toString().trim().toUpperCase();
+  if (!code) return;
   const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
-  const sinceMsg = getNotifLastSince('msg') || sinceDefault;
   const sinceRep = getNotifLastSince('reply') || sinceDefault;
   try {
-    const res = await anonMessagesRequest('recent-activity', { since: sinceMsg });
-    const messages = Array.isArray(res?.messages) ? res.messages : [];
-    const senders = res?.senders || {};
-    for (const m of messages) {
+    const messages = await anonMessagesRequest(code);
+    const list = Array.isArray(messages) ? messages : [];
+    for (const m of list) {
       if (!m || m.id == null) continue;
-      const senderRaw = m.sender_id ?? m.senderId;
+      const senderRaw = m.sender_id ?? m.senderId ?? m.sender_code ?? m.senderCode;
       if (senderRaw == null) continue;
       const fromId = idStr(senderRaw);
-      const fromName = senders[fromId] || 'Un parent';
+      const fromName = m.sender_name ?? m.senderName ?? m.sender_full_name ?? m.senderFullName ?? 'Un parent';
       const notifId = `msg:${m.id}`;
       const wasNew = addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
       if (wasNew) {
@@ -507,7 +530,7 @@ function stopAnonNotifPolling(){ if (anonNotifTimer) { clearInterval(anonNotifTi
 async function anonNotifTick(){ try { await fetchAnonMissedNotifications(); } catch (e) { console.warn('anon notification tick failed', e); } }
 function startAnonNotifPolling(){ stopAnonNotifPolling(); anonNotifTick(); anonNotifTimer = setInterval(anonNotifTick, ANON_NOTIF_INTERVAL_MS); }
 
-async function anonMessagesRequest(action, payload = {}) {
+async function anonMessagesActionRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
   const body = { action, code: anonProfile.code, ...payload };
   const response = await fetch('/api/anon/messages', {
@@ -766,7 +789,7 @@ async function init(){
         const initialName = (anonProfile.fullName || '').trim();
         if (initialName) myInitial = initialName[0].toUpperCase();
         try {
-          const resSelf = await anonMessagesRequest('profile-self', {});
+          const resSelf = await anonMessagesActionRequest('profile-self', {});
           if (resSelf.profile?.full_name) {
             anonProfile.fullName = resSelf.profile.full_name;
             const first = (resSelf.profile.full_name || '').trim()[0];
@@ -880,7 +903,7 @@ async function loadConversations(){
   list.innerHTML = '<li>Chargement…</li>';
   if (isAnon) {
     try {
-      const res = await anonMessagesRequest('list-conversations', {});
+      const res = await anonMessagesActionRequest('list-conversations', {});
       const convs = Array.isArray(res.conversations) ? res.conversations : [];
       const profileList = Array.isArray(res.profiles) ? res.profiles : [];
       if (res.self?.full_name) {
@@ -1001,7 +1024,7 @@ async function ensureConversation(otherId){
   if (isAnon) {
     let profile = { id, full_name: 'Parent' };
     try {
-      const res = await anonMessagesRequest('profile', { otherId: id });
+      const res = await anonMessagesActionRequest('profile', { otherId: id });
       if (res.profile) profile = { id: idStr(res.profile.id), full_name: res.profile.full_name || 'Parent' };
     } catch (e) {}
     parents.push(profile);
@@ -1040,7 +1063,7 @@ async function deleteConversation(otherId){
   if(!confirm('Supprimer cette conversation ?')) return;
   try {
     if (isAnon) {
-      await anonMessagesRequest('delete-conversation', { otherId: id });
+      await anonMessagesActionRequest('delete-conversation', { otherId: id });
     } else {
       const r = await fetch('/api/messages/delete-conversation', {
         method: 'POST',
@@ -1098,7 +1121,7 @@ async function fetchConversation(otherId){
   const id = idStr(otherId);
   if (isAnon) {
     try {
-      const res = await anonMessagesRequest('get-conversation', { otherId: id });
+      const res = await anonMessagesActionRequest('get-conversation', { otherId: id });
       const messages = Array.isArray(res.messages) ? res.messages.map(m => ({
         ...m,
         sender_id: idStr(m.sender_id),
@@ -1152,7 +1175,7 @@ $('#message-form').addEventListener('submit', async e=>{
   textarea.value='';
   if (isAnon) {
     try {
-      const res = await anonMessagesRequest('send', { otherId: idStr(activeParent.id), content });
+      const res = await anonMessagesActionRequest('send', { otherId: idStr(activeParent.id), content });
       const data = res.message || {
         sender_id: anonProfile?.id,
         receiver_id: idStr(activeParent.id),
