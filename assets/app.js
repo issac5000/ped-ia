@@ -279,7 +279,7 @@ const TIMELINE_MILESTONES = [
             const [profileRes, childrenRes] = await Promise.all([
               supabase
                 .from('profiles')
-                .select('id,full_name,parent_role,allow_messages,show_children_count')
+                .select('id,full_name,avatar_url,parent_role,code_unique,show_children_count')
                 .eq('id', uid)
                 .maybeSingle(),
               supabase
@@ -298,17 +298,26 @@ const TIMELINE_MILESTONES = [
               };
               working.privacy = {
                 ...working.privacy,
-                allowMessages:
-                  profileRow.allow_messages != null
-                    ? !!profileRow.allow_messages
-                    : working.privacy.allowMessages,
                 showStats:
                   profileRow.show_children_count != null
                     ? !!profileRow.show_children_count
                     : working.privacy.showStats,
               };
               if (profileRow.id) {
-                setActiveProfile({ ...activeProfile, id: profileRow.id, full_name: pseudo });
+                const nextProfile = { ...(activeProfile || {}), id: profileRow.id, full_name: pseudo };
+                if (Object.prototype.hasOwnProperty.call(profileRow, 'code_unique')) {
+                  nextProfile.code_unique = profileRow.code_unique;
+                }
+                if (Object.prototype.hasOwnProperty.call(profileRow, 'avatar_url')) {
+                  nextProfile.avatar_url = profileRow.avatar_url;
+                }
+                if (Object.prototype.hasOwnProperty.call(profileRow, 'parent_role')) {
+                  nextProfile.parent_role = profileRow.parent_role;
+                }
+                if (Object.prototype.hasOwnProperty.call(profileRow, 'show_children_count')) {
+                  nextProfile.show_children_count = profileRow.show_children_count;
+                }
+                setActiveProfile(nextProfile);
               }
             }
             if (!childrenRes.error && Array.isArray(childrenRes.data)) {
@@ -1875,12 +1884,28 @@ const TIMELINE_MILESTONES = [
 
   function setActiveProfile(profile) {
     if (profile && profile.id) {
+      const previous = activeProfile || {};
+      const hasFullName = Object.prototype.hasOwnProperty.call(profile, 'full_name');
+      const hasCode = Object.prototype.hasOwnProperty.call(profile, 'code_unique');
+      const hasUserId = Object.prototype.hasOwnProperty.call(profile, 'user_id');
+      const hasAnon = Object.prototype.hasOwnProperty.call(profile, 'isAnonymous');
+      const hasAvatar = Object.prototype.hasOwnProperty.call(profile, 'avatar_url');
+      const hasRole = Object.prototype.hasOwnProperty.call(profile, 'parent_role');
+      const hasShowChildren = Object.prototype.hasOwnProperty.call(profile, 'show_children_count');
+
       activeProfile = {
         id: profile.id,
-        full_name: profile.full_name || '',
-        code_unique: profile.code_unique ? String(profile.code_unique).trim().toUpperCase() : null,
-        user_id: profile.user_id ?? null,
-        isAnonymous: profile.isAnonymous ?? false,
+        full_name: hasFullName ? (profile.full_name || '') : (previous.full_name || ''),
+        code_unique: hasCode
+          ? (profile.code_unique ? String(profile.code_unique).trim().toUpperCase() : null)
+          : previous.code_unique ?? null,
+        user_id: hasUserId ? (profile.user_id ?? null) : previous.user_id ?? null,
+        isAnonymous: hasAnon ? !!profile.isAnonymous : !!(previous.isAnonymous),
+        avatar_url: hasAvatar ? profile.avatar_url ?? null : previous.avatar_url ?? null,
+        parent_role: hasRole ? profile.parent_role ?? null : previous.parent_role ?? null,
+        show_children_count: hasShowChildren
+          ? profile.show_children_count ?? null
+          : previous.show_children_count ?? null,
       };
     } else {
       activeProfile = null;
@@ -1964,7 +1989,7 @@ const TIMELINE_MILESTONES = [
       if (!uid) return;
       const { data: prof, error } = await supabase
         .from('profiles')
-        .select('id, full_name, code_unique')
+        .select('id, full_name, code_unique, avatar_url, parent_role, show_children_count')
         .eq('id', uid)
         .maybeSingle();
       if (error) throw error;
@@ -3268,7 +3293,6 @@ const TIMELINE_MILESTONES = [
                 fullName: pseudo,
                 role,
                 showChildrenCount: showStats,
-                allowMessages,
               }),
             });
           }
@@ -3282,7 +3306,6 @@ const TIMELINE_MILESTONES = [
                   full_name: pseudo,
                   parent_role: role,
                   show_children_count: showStats,
-                  allow_messages: allowMessages,
                 })
                 .eq('id', uid);
             } catch (err) {
@@ -3293,7 +3316,6 @@ const TIMELINE_MILESTONES = [
                   .update({
                     full_name: pseudo,
                     show_children_count: showStats,
-                    allow_messages: allowMessages,
                   })
                   .eq('id', uid);
               } catch (errFallback) {
@@ -3310,9 +3332,19 @@ const TIMELINE_MILESTONES = [
             }
           }
         }
-        setActiveProfile({ ...activeProfile, full_name: pseudo });
+        setActiveProfile({
+          ...activeProfile,
+          full_name: pseudo,
+          parent_role: role,
+          show_children_count: showStats,
+        });
       } else {
-        setActiveProfile({ ...activeProfile, full_name: pseudo });
+        setActiveProfile({
+          ...activeProfile,
+          full_name: pseudo,
+          parent_role: role,
+          show_children_count: showStats,
+        });
       }
 
       invalidateSettingsRemoteCache();
