@@ -5095,22 +5095,11 @@ const TIMELINE_MILESTONES = [
             <div class="timeline-1000__tooltip" role="dialog" aria-live="polite" hidden></div>
           </div>
         </div>
-        <div class="timeline-1000__nav-bar" role="navigation" aria-label="Contrôle de défilement de la frise">
-          <button type="button" class="timeline-1000__nav timeline-1000__nav--prev" aria-label="Défiler vers la gauche">
-            <span class="timeline-1000__nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
-                <path d="M14.5 6.5 9 12l5.5 5.5M19.5 12H9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
-          </button>
+        <div class="timeline-1000__nav-bar" role="note" aria-label="Astuce de défilement de la frise">
+          <span class="timeline-1000__nav-hint" aria-hidden="true">
+            <span class="timeline-1000__nav-hint-icon">⇆</span>
+          </span>
           <span class="timeline-1000__nav-hint-text">Faites défiler pour explorer les 1000 jours</span>
-          <button type="button" class="timeline-1000__nav timeline-1000__nav--next" aria-label="Défiler vers la droite">
-            <span class="timeline-1000__nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
-                <path d="M9.5 6.5 15 12l-5.5 5.5M4.5 12H15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
-          </button>
         </div>
       </section>
     `;
@@ -5140,26 +5129,29 @@ const TIMELINE_MILESTONES = [
 
     const navPrev = root.querySelector('.timeline-1000__nav--prev');
     const navNext = root.querySelector('.timeline-1000__nav--next');
+    let updateNavState = null;
 
-    const updateNavState = () => {
-      const maxScroll = track.scrollWidth - scroller.clientWidth;
-      if (navPrev) navPrev.disabled = scroller.scrollLeft <= 8;
-      if (navNext) navNext.disabled = scroller.scrollLeft >= maxScroll - 8;
-    };
+    if (navPrev || navNext) {
+      const scrollByDelta = (delta) => {
+        const target = scroller.scrollLeft + delta;
+        const maxScroll = track.scrollWidth - scroller.clientWidth;
+        const next = clamp(target, 0, Math.max(0, maxScroll));
+        scroller.scrollTo({ left: next, behavior: 'smooth' });
+      };
 
-    const scrollByDelta = (delta) => {
-      const target = scroller.scrollLeft + delta;
-      const maxScroll = track.scrollWidth - scroller.clientWidth;
-      const next = clamp(target, 0, Math.max(0, maxScroll));
-      scroller.scrollTo({ left: next, behavior: 'smooth' });
-    };
+      const step = () => Math.max(200, Math.round(scroller.clientWidth * 0.6));
 
-    const step = () => Math.max(200, Math.round(scroller.clientWidth * 0.6));
+      navPrev?.addEventListener('click', () => scrollByDelta(-step()));
+      navNext?.addEventListener('click', () => scrollByDelta(step()));
 
-    navPrev?.addEventListener('click', () => scrollByDelta(-step()));
-    navNext?.addEventListener('click', () => scrollByDelta(step()));
+      updateNavState = () => {
+        const maxScroll = track.scrollWidth - scroller.clientWidth;
+        if (navPrev) navPrev.disabled = scroller.scrollLeft <= 8;
+        if (navNext) navNext.disabled = scroller.scrollLeft >= maxScroll - 8;
+      };
 
-    updateNavState();
+      updateNavState();
+    }
 
     let activePoint = null;
     let hideTimer = null;
@@ -5245,7 +5237,7 @@ const TIMELINE_MILESTONES = [
     tooltip.addEventListener('mouseleave', scheduleHide);
 
     scroller.addEventListener('scroll', () => {
-      updateNavState();
+      if (typeof updateNavState === 'function') updateNavState();
       if (!tooltip.hidden) positionTooltip();
     }, { passive: true });
 
