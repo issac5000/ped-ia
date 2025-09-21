@@ -4091,6 +4091,10 @@ const TIMELINE_MILESTONES = [
 
       if (rid !== renderDashboard._rid) return;
       dom.appendChild(hist);
+      const timelineNode = dom.querySelector('#timeline-1000-days');
+      if (timelineNode) {
+        dom.appendChild(timelineNode);
+      }
       maybeFocusDashboardSection();
     } catch {}
 
@@ -6021,45 +6025,23 @@ const TIMELINE_MILESTONES = [
   // Animations révélées au scroll
   function setupScrollAnimations(){
     try { revealObserver?.disconnect(); } catch {}
+    revealObserver = null;
     const root = document.querySelector('.route.active') || document;
-    const baseTargets = [
+    const targets = [
       ...$$('.card', root),
       ...$$('.feature', root),
       ...$$('.step', root),
       ...$$('.testimonial', root),
       ...$$('.faq-item', root),
       ...$$('.pillar', root),
-      ...$$('.chart-card', root)
-    ];
-    const sectionTargets = [
+      ...$$('.chart-card', root),
       ...$$('section', root),
       ...$$('.section', root)
-    ].filter((el) => el !== root && !el.classList.contains('route'));
-    const targets = Array.from(new Set([...baseTargets, ...sectionTargets]));
-    targets.forEach((el, i) => {
-      const isSection = el.matches('section') || el.classList.contains('section');
-      const isSlideRight = el.classList.contains('feature') || el.classList.contains('step');
-      if (!el.classList.contains('reveal')) {
-        el.classList.add('reveal');
-        if (isSlideRight) el.classList.add('fade-right');
-        else if (isSection) el.classList.add('fade-in');
-      }
-      const delay = isSection ? '0' : String(Math.min(4, (i % 5)));
-      if (!el.hasAttribute('data-delay') || isSection) el.setAttribute('data-delay', delay);
-    });
-    revealObserver = new IntersectionObserver((entries) => {
-      for (const e of entries){
-        if (e.isIntersecting) e.target.classList.add('in-view');
-        else e.target.classList.remove('in-view');
-      }
-    }, { threshold: 0.01, rootMargin: '0px 0px -10% 0px' });
-    targets.forEach(t => revealObserver.observe(t));
-    // s’assurer que les éléments au-dessus de la ligne de flottaison apparaissent immédiatement
-    targets.forEach(t => {
-      const r = t.getBoundingClientRect();
-      const vh = window.innerHeight || document.documentElement.clientHeight;
-      const vw = window.innerWidth || document.documentElement.clientWidth;
-      if (r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0) t.classList.add('in-view');
+    ];
+    const uniqueTargets = Array.from(new Set(targets));
+    uniqueTargets.forEach((el) => {
+      el.classList.remove('reveal', 'fade-right', 'fade-in', 'in-view');
+      el.removeAttribute('data-delay');
     });
   }
 })();
