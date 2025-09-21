@@ -220,6 +220,29 @@ const TIMELINE_MILESTONES = [
     return json || {};
   }
 
+  async function anonMessagesRequest(action, payload = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) throw new Error('Code unique manquant');
+    const body = { action, code, ...payload };
+    const response = await fetch('/api/anon/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text().catch(() => '');
+    let json = null;
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!response.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
+      throw err;
+    }
+    return json || {};
+  }
+
   async function anonCommunityRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
