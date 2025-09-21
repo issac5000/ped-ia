@@ -5099,7 +5099,6 @@ const TIMELINE_MILESTONES = [
           <span class="timeline-1000__nav-hint" aria-hidden="true">
             <span class="timeline-1000__nav-hint-icon">⇆</span>
           </span>
-          <span class="timeline-1000__nav-hint-text">Faites défiler pour explorer les 1000 jours</span>
         </div>
       </section>
     `;
