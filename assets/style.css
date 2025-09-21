@@ -421,6 +421,11 @@ section[data-route="/settings"] #edit-milestones .qitem input[type="checkbox"]:f
   outline-offset:3px;
 }
 
+section[data-route="/onboarding"] #dev-questions .qitem label{
+  color:#ffffff;
+  text-shadow:0 1px 10px rgba(0,0,0,.6);
+}
+
 /* keep settings layout stacked (one column) even on wide screens */
 section[data-route="/settings"] .grid-2{ grid-template-columns:1fr !important }
 
