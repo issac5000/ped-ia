@@ -2528,6 +2528,34 @@ const TIMELINE_MILESTONES = [
       async function saveChildProfile(child) {
         const uid = getActiveProfileId();
         if (!uid) throw new Error('Profil utilisateur introuvable');
+        const storedChildren = Array.isArray(settingsState.children) && settingsState.children.length
+          ? settingsState.children
+          : (store.get(K.children, []) || []);
+        const hasPrimaryLocally = storedChildren.some((entry) => {
+          if (!entry) return false;
+          if (typeof entry.isPrimary === 'boolean') return entry.isPrimary;
+          if (typeof entry.is_primary === 'boolean') return entry.is_primary;
+          return false;
+        });
+        let shouldBePrimary = !hasPrimaryLocally;
+        if (!isAnonProfile()) {
+          try {
+            const { data: primaryRow, error: primaryError } = await supabase
+              .from('children')
+              .select('id')
+              .eq('user_id', uid)
+              .eq('is_primary', true)
+              .limit(1)
+              .maybeSingle();
+            if (primaryRow) {
+              shouldBePrimary = false;
+            } else if (primaryError && primaryError.code !== 'PGRST116') {
+              throw primaryError;
+            }
+          } catch (primaryCheckError) {
+            console.warn('Impossible de vérifier l’enfant principal', primaryCheckError);
+          }
+        }
         const payload = {
           user_id: uid,
           first_name: child.firstName,
@@ -2546,7 +2574,7 @@ const TIMELINE_MILESTONES = [
           sleep_wake_duration: child.context.sleep.wakeDuration,
           sleep_bedtime: child.context.sleep.bedtime,
           milestones: child.milestones,
-          is_primary: true
+          is_primary: shouldBePrimary
         };
         const measurementRecords = buildMeasurementPayloads(child.growth.measurements);
         const teethRecords = buildTeethPayloads(child.growth.teeth);
