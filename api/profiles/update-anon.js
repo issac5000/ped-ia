@@ -10,6 +10,12 @@ const KEY_MAP = {
 };
 
 const DISALLOWED_FIELDS = new Set(['id', 'user_id', 'code_unique', 'code', 'created_at', 'updated_at']);
+const ALLOWED_UPDATE_FIELDS = new Set([
+  'full_name',
+  'avatar_url',
+  'parent_role',
+  'show_children_count',
+]);
 
 // Convertit une clé camelCase en snake_case compatible avec la base
 function camelToSnake(key) {
@@ -93,6 +99,7 @@ function buildUpdatePayload(payload) {
   for (const [rawKey, value] of Object.entries(payload || {})) {
     const key = camelToSnake(rawKey);
     if (key === 'code_unique' || DISALLOWED_FIELDS.has(key)) continue;
+    if (!ALLOWED_UPDATE_FIELDS.has(key)) continue;
     const normalizedValue = normalizeField(key, value);
     if (normalizedValue === undefined) continue;
     update[key] = normalizedValue;
