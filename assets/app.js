@@ -5083,10 +5083,18 @@ const TIMELINE_MILESTONES = [
     return `
       ${header}
         <button type="button" class="timeline-1000__nav timeline-1000__nav--prev" aria-label="Défiler vers la gauche">
-          <span class="timeline-1000__nav-icon">‹</span>
+          <span class="timeline-1000__nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M14.53 5.47a.75.75 0 0 1 0 1.06L10.06 11l4.47 4.47a.75.75 0 0 1-1.06 1.06l-5-5a.75.75 0 0 1 0-1.06l5-5a.75.75 0 0 1 1.06 0z" fill="currentColor"/>
+            </svg>
+          </span>
         </button>
         <button type="button" class="timeline-1000__nav timeline-1000__nav--next" aria-label="Défiler vers la droite">
-          <span class="timeline-1000__nav-icon">›</span>
+          <span class="timeline-1000__nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M9.47 5.47a.75.75 0 0 0 0 1.06L13.94 11l-4.47 4.47a.75.75 0 1 0 1.06 1.06l5-5a.75.75 0 0 0 0-1.06l-5-5a.75.75 0 0 0-1.06 0z" fill="currentColor"/>
+            </svg>
+          </span>
         </button>
         <div class="timeline-1000__scroll" role="region" aria-label="Frise des 1000 jours">
           <div class="timeline-1000__track">
