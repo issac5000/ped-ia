@@ -3911,8 +3911,11 @@ const TIMELINE_MILESTONES = [
           details = escapeHtml(u.update_content || '');
         }
         const typeBadge = u.update_type ? `<span class="timeline-tag">${escapeHtml(u.update_type)}</span>` : '';
-        const comment = u.ai_comment
-          ? `<div class="timeline-comment"><strong><em>${escapeHtml(u.ai_comment)}</em></strong></div>`
+        const commentText = typeof u.ai_commentaire === 'string' && u.ai_commentaire
+          ? u.ai_commentaire
+          : (typeof u.ai_comment === 'string' ? u.ai_comment : '');
+        const comment = commentText
+          ? `<div class="timeline-comment"><strong><em>${escapeHtml(commentText)}</em></strong></div>`
           : '';
         return `
           <article class="timeline-item" role="listitem">
@@ -5321,31 +5324,6 @@ const TIMELINE_MILESTONES = [
     return clone;
   }
 
-  function buildAiCommentInput(updateType, contentObj) {
-    const safe = contentObj && typeof contentObj === 'object' ? contentObj : {};
-    const lines = [];
-    const summary = typeof safe.summary === 'string' ? safe.summary.trim() : '';
-    const parentNote = typeof safe.userComment === 'string' ? safe.userComment.trim() : '';
-    if (updateType) lines.push(`Type de mise à jour: ${updateType}`);
-    if (summary) lines.push(`Résumé des modifications: ${summary}`);
-    if (parentNote) lines.push(`Commentaire du parent: ${parentNote}`);
-    const extras = {};
-    Object.keys(safe).forEach((key) => {
-      if (!['summary', 'userComment', 'prev', 'next'].includes(key)) {
-        extras[key] = safe[key];
-      }
-    });
-    if (Object.keys(extras).length) {
-      lines.push(`Données complémentaires: ${JSON.stringify(extras).slice(0, 600)}`);
-    }
-    if (safe.prev || safe.next) {
-      const diff = JSON.stringify({ avant: safe.prev ?? null, apres: safe.next ?? null });
-      lines.push(`État avant/après (JSON): ${diff.slice(0, 600)}`);
-    }
-    const text = lines.join('\n').trim();
-    return text.slice(0, 1900);
-  }
-
   function makeUpdateSnapshot(childLike) {
     if (!childLike) return {};
     const measures = normalizeMeasures(Array.isArray(childLike?.growth?.measurements) ? childLike.growth.measurements : []);
@@ -5384,45 +5362,77 @@ const TIMELINE_MILESTONES = [
     };
   }
 
-  async function generateAiComment(content) {
-    try {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'comment', content })
-      });
-      if (!res.ok) return '';
-      const j = await res.json();
-      return j.text || '';
-    } catch {
-      return '';
-    }
-  }
-
   async function logChildUpdate(childId, updateType, updateContent) {
     if (!childId || !useRemote()) return;
     try {
       const normalizedContent = normalizeUpdateContentForLog(updateContent);
       const content = JSON.stringify(normalizedContent);
-      const aiInput = buildAiCommentInput(updateType, normalizedContent);
-      const comment = aiInput ? await generateAiComment(aiInput) : '';
       if (isAnonProfile()) {
         await anonChildRequest('log-update', {
           childId,
           updateType,
-          updateContent: content,
-          aiComment: comment || null
+          updateContent: content
         });
         return;
       }
+      const historySummaries = await fetchChildUpdateSummaries(childId);
+      const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(updateType, normalizedContent, historySummaries);
       const payload = { child_id: childId, update_type: updateType, update_content: content };
-      if (comment) payload.ai_comment = comment;
+      if (aiSummary) payload.ai_summary = aiSummary;
+      if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
       const { error } = await supabase
         .from('child_updates')
         .insert([payload]);
       if (error) throw error;
     } catch (e) {
       console.warn('Supabase child_updates insert failed', e);
+    }
+  }
+
+  async function fetchChildUpdateSummaries(childId) {
+    if (!childId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('child_updates')
+        .select('ai_summary')
+        .eq('child_id', childId)
+        .not('ai_summary', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      return rows
+        .map((row) => (typeof row?.ai_summary === 'string' ? row.ai_summary.trim() : ''))
+        .filter(Boolean);
+    } catch (err) {
+      console.warn('Supabase child_updates summary fetch failed', err);
+      return [];
+    }
+  }
+
+  async function generateAiSummaryAndComment(updateType, contentObj, historySummaries) {
+    try {
+      const payload = {
+        type: 'child-update',
+        updateType,
+        update: contentObj,
+        parentComment: typeof contentObj?.userComment === 'string' ? contentObj.userComment : '',
+        historySummaries: Array.isArray(historySummaries) ? historySummaries.slice(0, 10) : [],
+      };
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) return { summary: '', comment: '' };
+      const j = await res.json();
+      return {
+        summary: typeof j.summary === 'string' ? j.summary.trim().slice(0, 500) : '',
+        comment: typeof j.comment === 'string' ? j.comment.trim().slice(0, 2000) : '',
+      };
+    } catch (err) {
+      console.warn('generateAiSummaryAndComment failed', err);
+      return { summary: '', comment: '' };
     }
   }
 
