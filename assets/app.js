@@ -189,6 +189,257 @@ const TIMELINE_MILESTONES = [
     snapshots: new Map(),
   };
 
+  const SETTINGS_REMOTE_CACHE_TTL = 15000;
+  let settingsRemoteCache = null;
+  let settingsRemoteCacheAt = 0;
+  let settingsRemoteInFlight = null;
+  let settingsRemoteCacheToken = 0;
+
+  function invalidateSettingsRemoteCache() {
+    settingsRemoteCache = null;
+    settingsRemoteCacheAt = 0;
+    settingsRemoteInFlight = null;
+    settingsRemoteCacheToken += 1;
+  }
+
+  function cloneChildForSettings(child) {
+    if (!child) return null;
+    const context = child.context || {};
+    const sleep = context.sleep || {};
+    return {
+      ...child,
+      context: {
+        ...context,
+        sleep: {
+          ...sleep,
+        },
+      },
+      milestones: Array.isArray(child.milestones) ? child.milestones.slice() : [],
+      growth: {
+        measurements: Array.isArray(child.growth?.measurements)
+          ? child.growth.measurements.map((m) => ({ ...m }))
+          : [],
+        sleep: Array.isArray(child.growth?.sleep)
+          ? child.growth.sleep.map((s) => ({ ...s }))
+          : [],
+        teeth: Array.isArray(child.growth?.teeth)
+          ? child.growth.teeth.map((t) => ({ ...t }))
+          : [],
+      },
+    };
+  }
+
+  function cloneSettingsSnapshot(snapshot = {}) {
+    return {
+      user: { ...(snapshot.user || {}) },
+      privacy: { ...(snapshot.privacy || {}) },
+      children: Array.isArray(snapshot.children)
+        ? snapshot.children.map((child) => cloneChildForSettings(child)).filter(Boolean)
+        : [],
+      primaryId: snapshot.primaryId ?? null,
+    };
+  }
+
+  async function loadRemoteSettingsSnapshot(baseSnapshot) {
+    const remoteReady = useRemote();
+    if (!remoteReady) return cloneSettingsSnapshot(baseSnapshot);
+    const now = Date.now();
+    if (settingsRemoteCache && now - settingsRemoteCacheAt < SETTINGS_REMOTE_CACHE_TTL) {
+      return cloneSettingsSnapshot(settingsRemoteCache);
+    }
+    if (settingsRemoteInFlight) {
+      try {
+        const cached = await settingsRemoteInFlight;
+        return cloneSettingsSnapshot(cached);
+      } catch (err) {
+        settingsRemoteInFlight = null;
+        throw err;
+      }
+    }
+    const token = settingsRemoteCacheToken;
+    const fetchPromise = (async () => {
+      const working = cloneSettingsSnapshot(baseSnapshot);
+      try {
+        if (isAnonProfile()) {
+          const res = await anonChildRequest('list', {});
+          const rows = Array.isArray(res.children) ? res.children : [];
+          working.children = rows
+            .map((row) => {
+              const mapped = mapRowToChild(row);
+              if (!mapped) return null;
+              mapped.isPrimary = !!row.is_primary;
+              return mapped;
+            })
+            .filter(Boolean);
+          const primaryRow = rows.find((row) => row && row.is_primary);
+          if (primaryRow?.id != null) working.primaryId = primaryRow.id;
+        } else {
+          const uid = getActiveProfileId();
+          if (uid) {
+            const [profileRes, childrenRes] = await Promise.all([
+              supabase
+                .from('profiles')
+                .select('id,full_name,parent_role,allow_messages,show_children_count')
+                .eq('id', uid)
+                .maybeSingle(),
+              supabase
+                .from('children')
+                .select('*')
+                .eq('user_id', uid)
+                .order('created_at', { ascending: true }),
+            ]);
+            if (!profileRes.error && profileRes.data) {
+              const profileRow = profileRes.data;
+              const pseudo = profileRow.full_name || working.user.pseudo || '';
+              working.user = {
+                ...working.user,
+                pseudo,
+                role: profileRow.parent_role || working.user.role || 'maman',
+              };
+              working.privacy = {
+                ...working.privacy,
+                allowMessages:
+                  profileRow.allow_messages != null
+                    ? !!profileRow.allow_messages
+                    : working.privacy.allowMessages,
+                showStats:
+                  profileRow.show_children_count != null
+                    ? !!profileRow.show_children_count
+                    : working.privacy.showStats,
+              };
+              if (profileRow.id) {
+                setActiveProfile({ ...activeProfile, id: profileRow.id, full_name: pseudo });
+              }
+            }
+            if (!childrenRes.error && Array.isArray(childrenRes.data)) {
+              const childRows = childrenRes.data;
+              working.children = childRows
+                .map((row) => {
+                  const mapped = mapRowToChild(row);
+                  if (!mapped) return null;
+                  mapped.isPrimary = !!row.is_primary;
+                  return mapped;
+                })
+                .filter(Boolean);
+              const primaryRow = childRows.find((row) => row && row.is_primary);
+              if (primaryRow?.id != null) working.primaryId = primaryRow.id;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('loadRemoteSettingsSnapshot failed', err);
+      }
+      return working;
+    })();
+    settingsRemoteInFlight = fetchPromise;
+    try {
+      const resolved = await fetchPromise;
+      if (settingsRemoteCacheToken === token) {
+        settingsRemoteCache = cloneSettingsSnapshot(resolved);
+        settingsRemoteCacheAt = Date.now();
+      }
+      return cloneSettingsSnapshot(resolved);
+    } finally {
+      if (settingsRemoteInFlight === fetchPromise) {
+        settingsRemoteInFlight = null;
+      }
+    }
+  }
+
+  async function applySettingsSnapshot(snapshot, options = {}) {
+    const {
+      rid,
+      skipRemoteChild = false,
+      updateStore = true,
+    } = options;
+    const form = $('#form-settings');
+    const list = $('#children-list');
+    if (!form || !list) return;
+
+    const normalizedUser = {
+      role: 'maman',
+      ...(snapshot.user || {}),
+    };
+    if (!normalizedUser.role) normalizedUser.role = 'maman';
+    const normalizedPrivacy = {
+      showStats:
+        snapshot.privacy?.showStats != null
+          ? !!snapshot.privacy.showStats
+          : true,
+      allowMessages:
+        snapshot.privacy?.allowMessages != null
+          ? !!snapshot.privacy.allowMessages
+          : true,
+    };
+    const children = Array.isArray(snapshot.children)
+      ? snapshot.children.map((child) => cloneChildForSettings(child)).filter(Boolean)
+      : [];
+
+    const childIdSet = new Set(children.map((child) => String(child.id)));
+    let primaryId = snapshot.primaryId != null ? snapshot.primaryId : normalizedUser.primaryChildId ?? null;
+    if (primaryId != null && !childIdSet.has(String(primaryId))) {
+      primaryId = null;
+    }
+    if (primaryId == null && children.length) {
+      primaryId = children[0].id;
+    }
+
+    const previousSelectedStr = settingsState.selectedChildId != null
+      ? String(settingsState.selectedChildId)
+      : null;
+    const fallbackSelected = primaryId != null
+      ? String(primaryId)
+      : (children[0]?.id != null ? String(children[0].id) : null);
+    const selectedId = previousSelectedStr && childIdSet.has(previousSelectedStr)
+      ? previousSelectedStr
+      : fallbackSelected;
+
+    const userForStore = { ...normalizedUser, primaryChildId: primaryId ?? null };
+
+    if (updateStore) {
+      store.set(K.user, userForStore);
+      store.set(K.privacy, normalizedPrivacy);
+      store.set(K.children, children);
+    }
+
+    settingsState.user = userForStore;
+    settingsState.privacy = normalizedPrivacy;
+    settingsState.children = children;
+    settingsState.childrenMap = new Map(children.map((child) => [String(child.id), child]));
+    settingsState.snapshots = new Map();
+    settingsState.selectedChildId = selectedId || null;
+
+    const pseudoInput = form.elements.namedItem('pseudo');
+    if (pseudoInput) pseudoInput.value = userForStore.pseudo || '';
+    const roleSelect = form.elements.namedItem('role');
+    if (roleSelect) roleSelect.value = userForStore.role || 'maman';
+
+    const showStatsInput = form.elements.namedItem('showStats');
+    if (showStatsInput) {
+      showStatsInput.checked = !!normalizedPrivacy.showStats;
+      if (!showStatsInput.dataset.boundShowChildren) {
+        showStatsInput.addEventListener('change', handleShowChildrenCountToggle);
+        showStatsInput.dataset.boundShowChildren = '1';
+      }
+    }
+    const allowMessagesInput = form.elements.namedItem('allowMessages');
+    if (allowMessagesInput) allowMessagesInput.checked = !!normalizedPrivacy.allowMessages;
+
+    if (!form.dataset.bound) {
+      form.addEventListener('submit', handleSettingsSubmit);
+      form.dataset.bound = '1';
+    }
+
+    renderSettingsChildrenList(children, primaryId);
+
+    if (!list.dataset.bound) {
+      list.addEventListener('click', handleSettingsListClick);
+      list.dataset.bound = '1';
+    }
+
+    await renderChildEditor(settingsState.selectedChildId, rid, { skipRemote: skipRemoteChild });
+  }
+
   const getActiveProfileId = () => activeProfile?.id || null;
   const isProfileLoggedIn = () => !!getActiveProfileId();
   // ✅ Fix: useRemote défini dès le départ
@@ -2696,6 +2947,7 @@ const TIMELINE_MILESTONES = [
           if (Number.isFinite(t)) child.growth.teeth.push({ month: ageMAtCreation, count: t });
           if (!useRemote()) throw new Error('Backend indisponible');
           await saveChildProfile(child);
+          invalidateSettingsRemoteCache();
           alert('Profil enfant créé.');
           if (btn) { btn.disabled = false; btn.textContent = 'Créer le profil'; }
           form.dataset.busy = '0';
@@ -2720,151 +2972,50 @@ const TIMELINE_MILESTONES = [
 
     if (refreshBtn && !refreshBtn.dataset.bound) {
       refreshBtn.dataset.bound = '1';
-      refreshBtn.addEventListener('click', () => renderSettings());
+      refreshBtn.addEventListener('click', () => {
+        invalidateSettingsRemoteCache();
+        renderSettings();
+      });
     }
 
-    childEdit.innerHTML = '';
     list.innerHTML = '<p class="muted">Chargement…</p>';
+    childEdit.innerHTML = '<p class="muted">Chargement…</p>';
 
-    let user = store.get(K.user) || {};
-    if (!user.role) user.role = 'maman';
-    let privacy = store.get(K.privacy, { showStats: true, allowMessages: true }) || { showStats: true, allowMessages: true };
-    let children = store.get(K.children, []);
-    let primaryId = user.primaryChildId || null;
+    const storedUser = store.get(K.user) || {};
+    const storedPrivacyRaw = store.get(K.privacy, { showStats: true, allowMessages: true }) || {};
+    const storedChildren = store.get(K.children, []);
+    const baseSnapshot = {
+      user: { role: 'maman', ...storedUser },
+      privacy: {
+        showStats: storedPrivacyRaw.showStats != null ? !!storedPrivacyRaw.showStats : true,
+        allowMessages: storedPrivacyRaw.allowMessages != null ? !!storedPrivacyRaw.allowMessages : true,
+      },
+      children: Array.isArray(storedChildren) ? storedChildren : [],
+      primaryId: storedUser.primaryChildId || null,
+    };
+    if (!baseSnapshot.user.role) baseSnapshot.user.role = 'maman';
 
-    if (useRemote()) {
-      try {
-        if (isAnonProfile()) {
-          const res = await anonChildRequest('list', {});
-          const rows = Array.isArray(res.children) ? res.children : [];
-          children = rows
-            .map((row) => {
-              const mapped = mapRowToChild(row);
-              if (!mapped) return null;
-              mapped.isPrimary = !!row.is_primary;
-              return mapped;
-            })
-            .filter(Boolean);
-          const primaryRow = rows.find((r) => r && r.is_primary);
-          if (primaryRow) primaryId = primaryRow.id;
-        } else {
-          const uid = getActiveProfileId();
-          if (uid) {
-            try {
-              const { data: showPref, error: showPrefError } = await supabase
-                .from('profiles')
-                .select('show_children_count')
-                .eq('id', uid)
-                .single();
-              if (!showPrefError && showPref && 'show_children_count' in showPref) {
-                privacy = {
-                  ...privacy,
-                  showStats: showPref.show_children_count != null
-                    ? !!showPref.show_children_count
-                    : privacy.showStats,
-                };
-              }
-            } catch (err) {
-              console.warn('Impossible de récupérer show_children_count', err);
-            }
-            const { data: profileRow } = await supabase
-              .from('profiles')
-              .select('id,full_name,parent_role,allow_messages')
-              .eq('id', uid)
-              .maybeSingle();
-            if (profileRow) {
-              const pseudo = profileRow.full_name || '';
-              user = {
-                ...user,
-                pseudo,
-                role: profileRow.parent_role || user.role || 'maman',
-              };
-              privacy = {
-                ...privacy,
-                allowMessages: profileRow.allow_messages != null ? !!profileRow.allow_messages : privacy.allowMessages,
-              };
-              if (profileRow.id) {
-                setActiveProfile({ ...activeProfile, id: profileRow.id, full_name: pseudo });
-              }
-            }
-            const { data: childRows } = await supabase
-              .from('children')
-              .select('*')
-              .eq('user_id', uid)
-              .order('created_at', { ascending: true });
-            if (Array.isArray(childRows)) {
-              children = childRows
-                .map((row) => {
-                  const mapped = mapRowToChild(row);
-                  if (!mapped) return null;
-                  mapped.isPrimary = !!row.is_primary;
-                  return mapped;
-                })
-                .filter(Boolean);
-              const primaryRow = childRows.find((row) => row && row.is_primary);
-              if (primaryRow) primaryId = primaryRow.id;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('renderSettings remote fetch failed', err);
-      }
+    const remoteEnabled = useRemote();
+
+    await applySettingsSnapshot(baseSnapshot, {
+      rid,
+      skipRemoteChild: remoteEnabled,
+      updateStore: !remoteEnabled,
+    });
+
+    if (!remoteEnabled) return;
+
+    try {
+      const remoteSnapshot = await loadRemoteSettingsSnapshot(baseSnapshot);
+      if (rid !== renderSettings._rid) return;
+      await applySettingsSnapshot(remoteSnapshot, {
+        rid,
+        skipRemoteChild: false,
+        updateStore: true,
+      });
+    } catch (err) {
+      console.warn('renderSettings remote fetch failed', err);
     }
-
-    if (rid !== renderSettings._rid) return;
-
-    const childIdSet = new Set(children.map((child) => String(child.id)));
-    const primaryIdStr = primaryId != null ? String(primaryId) : null;
-    if (!primaryIdStr || !childIdSet.has(primaryIdStr)) {
-      primaryId = children.length ? children[0].id : null;
-    }
-    user = { ...user, primaryChildId: primaryId ?? null };
-    store.set(K.user, user);
-    store.set(K.privacy, privacy);
-    store.set(K.children, children);
-
-    settingsState.user = user;
-    settingsState.privacy = privacy;
-    settingsState.children = children;
-    settingsState.childrenMap = new Map(children.map((child) => [String(child.id), child]));
-    settingsState.snapshots = new Map();
-    const previousSelectedStr = settingsState.selectedChildId ? String(settingsState.selectedChildId) : null;
-    const fallbackSelected = primaryId != null
-      ? String(primaryId)
-      : (children[0]?.id != null ? String(children[0].id) : null);
-    const selectedId = previousSelectedStr && childIdSet.has(previousSelectedStr)
-      ? previousSelectedStr
-      : fallbackSelected;
-    settingsState.selectedChildId = selectedId || null;
-
-    const pseudoInput = form.elements.namedItem('pseudo');
-    if (pseudoInput) pseudoInput.value = user.pseudo || '';
-    const roleSelect = form.elements.namedItem('role');
-    if (roleSelect) roleSelect.value = user.role || 'maman';
-    const showStatsInput = form.elements.namedItem('showStats');
-    if (showStatsInput) {
-      showStatsInput.checked = !!privacy.showStats;
-      if (!showStatsInput.dataset.boundShowChildren) {
-        showStatsInput.addEventListener('change', handleShowChildrenCountToggle);
-        showStatsInput.dataset.boundShowChildren = '1';
-      }
-    }
-    const allowMessagesInput = form.elements.namedItem('allowMessages');
-    if (allowMessagesInput) allowMessagesInput.checked = !!privacy.allowMessages;
-
-    if (!form.dataset.bound) {
-      form.addEventListener('submit', handleSettingsSubmit);
-      form.dataset.bound = '1';
-    }
-
-    renderSettingsChildrenList(children, primaryId);
-
-    if (!list.dataset.bound) {
-      list.addEventListener('click', handleSettingsListClick);
-      list.dataset.bound = '1';
-    }
-
-    await renderChildEditor(settingsState.selectedChildId, rid);
   }
 
   function renderSettingsChildrenList(children, primaryId) {
@@ -2914,7 +3065,7 @@ const TIMELINE_MILESTONES = [
     list.innerHTML = html;
   }
 
-  async function renderChildEditor(childId, ridRef) {
+  async function renderChildEditor(childId, ridRef, options = {}) {
     const container = $('#child-edit');
     if (!container) return;
     if (!childId) {
@@ -2922,12 +3073,10 @@ const TIMELINE_MILESTONES = [
       return;
     }
     const idStr = String(childId);
+    const { skipRemote = false } = options || {};
     let child = settingsState.childrenMap.get(idStr);
-    if (!child) {
-      container.innerHTML = '<p class="muted">Profil enfant introuvable.</p>';
-      return;
-    }
-    if (useRemote()) {
+    const shouldFetchRemote = useRemote() && (!skipRemote || !child);
+    if (shouldFetchRemote) {
       try {
         if (isAnonProfile()) {
           const detail = await anonChildRequest('get', { childId: idStr });
@@ -2941,6 +3090,10 @@ const TIMELINE_MILESTONES = [
       } catch (err) {
         console.warn('Chargement du profil enfant impossible', err);
       }
+    }
+    if (!child) {
+      container.innerHTML = '<p class="muted">Profil enfant introuvable.</p>';
+      return;
     }
     if (ridRef && ridRef !== renderSettings._rid) return;
 
@@ -3158,6 +3311,8 @@ const TIMELINE_MILESTONES = [
         setActiveProfile({ ...activeProfile, full_name: pseudo });
       }
 
+      invalidateSettingsRemoteCache();
+
       alert('Profil parent mis à jour.');
     } catch (err) {
       console.warn('handleSettingsSubmit failed', err);
@@ -3190,6 +3345,7 @@ const TIMELINE_MILESTONES = [
       await setPrimaryChild(childId);
       settingsState.user = { ...settingsState.user, primaryChildId: childId };
       store.set(K.user, settingsState.user);
+      invalidateSettingsRemoteCache();
       renderSettings();
     } catch (err) {
       console.warn('setPrimaryChildAction failed', err);
@@ -3216,6 +3372,7 @@ const TIMELINE_MILESTONES = [
       console.warn('deleteChildAction failed', err);
       alert('Impossible de supprimer le profil enfant.');
     }
+    invalidateSettingsRemoteCache();
     renderSettings();
   }
 
@@ -3358,6 +3515,7 @@ const TIMELINE_MILESTONES = [
       settingsState.children = settingsState.children.map((child) => (String(child.id) === String(childId) ? updated : child));
       settingsState.snapshots.set(childId, nextSnapshot);
       await logChildUpdate(childId, 'profil', { prev: prevSnapshot, next: nextSnapshot, summary });
+      invalidateSettingsRemoteCache();
       notifyChildProfileUpdated();
       renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
     } catch (err) {
@@ -3418,6 +3576,7 @@ const TIMELINE_MILESTONES = [
           }
         }
       }
+      invalidateSettingsRemoteCache();
       showNotification({
         title: 'Préférence sauvegardée',
         text: checked
@@ -5290,10 +5449,12 @@ const TIMELINE_MILESTONES = [
           await supabase.from('children').update({ is_primary: true }).eq('id', id);
         }
       } catch {}
+      invalidateSettingsRemoteCache();
       return;
     }
     const user = store.get(K.user) || {};
     store.set(K.user, { ...user, primaryChildId: id });
+    invalidateSettingsRemoteCache();
   }
 
   function renderChildSwitcher(container, items, selectedId, onChange) {
