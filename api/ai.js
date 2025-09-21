@@ -123,6 +123,86 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(200).send(JSON.stringify({ text }));
       }
+      case 'child-update': {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        const updateType = String(body.updateType || '').slice(0, 64);
+        const updateForPrompt = sanitizeUpdatePayload(body.update);
+        const parentComment = typeof body.parentComment === 'string' ? body.parentComment.trim().slice(0, 600) : '';
+        const historySummaries = Array.isArray(body.historySummaries)
+          ? body.historySummaries
+              .map((entry) => (entry != null ? String(entry).trim().slice(0, 400) : ''))
+              .filter(Boolean)
+              .slice(0, 10)
+          : [];
+        const updateText = JSON.stringify({ type: updateType || 'update', data: updateForPrompt }).slice(0, 4000);
+        const summaryMessages = [
+          { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent)." },
+          { role: 'user', content: [
+            updateType ? `Type de mise à jour: ${updateType}` : '',
+            `Mise à jour (JSON): ${updateText || 'Aucune'}`,
+            `Commentaire du parent: ${parentComment || 'Aucun'}`
+          ].filter(Boolean).join('\n\n') }
+        ];
+        let summary = '';
+        try {
+          const summaryRes = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.2, messages: summaryMessages })
+          });
+          if (summaryRes.ok) {
+            const summaryJson = await summaryRes.json();
+            summary = summaryJson.choices?.[0]?.message?.content?.trim() || '';
+          } else {
+            const errText = await summaryRes.text();
+            console.warn('[api/ai] child-update summary error', summaryRes.status, errText);
+          }
+        } catch (err) {
+          console.warn('[api/ai] child-update summary exception', err);
+        }
+
+        const historyText = historySummaries.length
+          ? historySummaries.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')
+          : 'Aucun historique disponible';
+        const commentMessages = [
+          { role: 'system', content: "Tu es Ped’IA, assistant parental bienveillant. Rédige un commentaire personnalisé (80 mots max) basé uniquement sur la nouvelle mise à jour, le commentaire parent et les résumés factuels fournis. Ne réutilise jamais d’anciens commentaires IA." },
+          { role: 'user', content: [
+            updateType ? `Type de mise à jour: ${updateType}` : '',
+            `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
+            summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
+            `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
+            `Commentaire du parent: ${parentComment || 'Aucun'}`
+          ].filter(Boolean).join('\n\n') }
+        ];
+        let comment = '';
+        try {
+          const commentRes = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.35, messages: commentMessages })
+          });
+          if (commentRes.ok) {
+            const commentJson = await commentRes.json();
+            comment = commentJson.choices?.[0]?.message?.content?.trim() || '';
+          } else {
+            const errText = await commentRes.text();
+            console.warn('[api/ai] child-update comment error', commentRes.status, errText);
+          }
+        } catch (err) {
+          console.warn('[api/ai] child-update comment exception', err);
+        }
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(200).send(JSON.stringify({ summary, comment }));
+      }
       case 'recipes': {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
@@ -167,6 +247,21 @@ function safeChildSummary(child) {
     jalons: child.milestones,
     mesures: child.growth,
   };
+}
+
+function sanitizeUpdatePayload(value, depth = 0) {
+  if (depth > 3) return '[...]';
+  if (typeof value === 'string') return value.slice(0, 400);
+  if (Array.isArray(value)) {
+    return value.slice(0, 10).map((entry) => sanitizeUpdatePayload(entry, depth + 1));
+  }
+  if (!value || typeof value !== 'object') return value ?? {};
+  const out = {};
+  const entries = Object.entries(value).slice(0, 20);
+  for (const [key, val] of entries) {
+    out[key] = sanitizeUpdatePayload(val, depth + 1);
+  }
+  return out;
 }
 
 // Lit l’intégralité du corps de la requête tout en limitant la taille
