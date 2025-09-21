@@ -85,23 +85,34 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(200).send(JSON.stringify({ text }));
       }
-      case 'comment': {
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
-        const content = String(body.content || '').slice(0, 2000);
-        const system = 'Tu es Ped\u2019IA, un assistant bienveillant pour parents. R\u00e9dige un commentaire clair, positif et bref (moins de 50 mots) sur la mise \u00e0 jour fournie.';
-        const r = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            temperature: 0.4,
-            messages: [
-              { role: 'system', content: system },
-              { role: 'user', content }
-            ]
-          })
-        });
+     case 'comment': {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+  const content = String(body.content || '').slice(0, 2000);
+  const system = `Tu es Ped’IA, un assistant bienveillant pour parents. 
+  Ta mission est de rédiger un commentaire bref et clair (max 80 mots) sur la mise à jour donnée. 
+
+  - Sois objectif et factuel.  
+  - Si le changement est positif, félicite et encourage.  
+  - Si le changement est négatif ou préoccupant, relève la difficulté avec empathie et propose un conseil pratique adapté, tout en terminant sur une note rassurante.  
+  - Évite les tournures vagues ou trop générales.  
+  - Le ton doit être chaleureux, encourageant et accessible à tous les parents.`;
+
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 
+      'Authorization': `Bearer ${apiKey}`, 
+      'Content-Type': 'application/json' 
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0.4,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content }
+      ]
+    })
+  });
         if (!r.ok) {
           const t = await r.text();
           return res.status(502).json({ error: 'OpenAI error', details: t });
@@ -118,7 +129,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         const child = safeChildSummary(body.child);
         const prefs = String(body.prefs || '').slice(0, 400);
 
-        const system = `Tu es Ped’IA, assistant nutrition 0–7 ans.
+        const system = `Tu es Ped’IA, assistant nutrition 0–3 ans.
 Donne des idées de menus et recettes adaptées à l’âge, en excluant les allergènes indiqués.
 Prends en compte le type d’alimentation (allaitement/biberon/diversification), le style d’appétit, et les préférences fournies.
 Structure la réponse avec: Idées de repas, Portions suggérées, Conseils pratiques, Liste de courses.`;
