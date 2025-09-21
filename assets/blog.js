@@ -3,7 +3,12 @@ import { ensureReactGlobals } from './react-shim.js';
 
 document.body.classList.remove('no-js');
 try {
-  await ensureReactGlobals();
+  const maybePromise = ensureReactGlobals();
+  if (maybePromise && typeof maybePromise.then === 'function') {
+    maybePromise.catch(err => {
+      console.warn('Optional React globals failed to load', err);
+    });
+  }
 } catch (err) {
   console.warn('Optional React globals failed to load', err);
 }
