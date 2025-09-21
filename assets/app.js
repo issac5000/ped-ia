@@ -2890,6 +2890,19 @@ const TIMELINE_MILESTONES = [
     settingsState.childrenMap.set(idStr, child);
     settingsState.snapshots.set(idStr, makeUpdateSnapshot(child));
 
+    const measures = normalizeMeasures(Array.isArray(child.growth?.measurements) ? child.growth.measurements : []);
+    const latestHeight = [...measures].reverse().find((m) => Number.isFinite(m.height))?.height;
+    const latestWeight = [...measures].reverse().find((m) => Number.isFinite(m.weight))?.weight;
+    const lastTeethEntry = Array.isArray(child.growth?.teeth)
+      ? [...child.growth.teeth].sort((a, b) => (Number(a?.month ?? 0) - Number(b?.month ?? 0))).slice(-1)[0]
+      : null;
+    const latestTeeth = lastTeethEntry != null
+      ? Number(lastTeethEntry.count ?? lastTeethEntry.value ?? lastTeethEntry.teeth)
+      : NaN;
+    const heightInputValue = Number.isFinite(latestHeight) ? String(latestHeight) : '';
+    const weightInputValue = Number.isFinite(latestWeight) ? String(latestWeight) : '';
+    const teethInputValue = Number.isFinite(latestTeeth) ? String(Math.max(0, Math.round(latestTeeth))) : '';
+
     const milestonesHtml = milestonesInputsHtml(child.milestones);
     const sleep = child.context?.sleep || {};
     const sleepThroughVal = typeof sleep.sleepsThrough === 'boolean'
@@ -2906,6 +2919,11 @@ const TIMELINE_MILESTONES = [
             </select>
           </label>
           <label>Date de naissance<input type="date" name="dob" value="${escapeHtml(child.dob || '')}" required /></label>
+        </div>
+        <div class="hstack" style="flex-wrap:wrap;gap:12px;">
+          <label>Taille (cm)<input type="number" step="0.1" min="0" name="height_cm" value="${escapeHtml(heightInputValue)}" inputmode="decimal" /></label>
+          <label>Poids (kg)<input type="number" step="0.1" min="0" name="weight_kg" value="${escapeHtml(weightInputValue)}" inputmode="decimal" /></label>
+          <label>Nombre de dents<input type="number" step="1" min="0" name="teeth_count" value="${escapeHtml(teethInputValue)}" inputmode="numeric" /></label>
         </div>
         <label>Allergies<input type="text" name="allergies" value="${escapeHtml(child.context?.allergies || '')}" /></label>
         <label>Antécédents<input type="text" name="history" value="${escapeHtml(child.context?.history || '')}" /></label>
@@ -3170,12 +3188,32 @@ const TIMELINE_MILESTONES = [
       const base = settingsState.childrenMap.get(childId);
       if (!base) throw new Error('Profil enfant introuvable');
       const prevSnapshot = settingsState.snapshots.get(childId) || makeUpdateSnapshot(base);
-      const updated = buildChildUpdateFromForm(base, form);
+      const { child: updated, growthInputs } = buildChildUpdateFromForm(base, form);
       const nextSnapshot = makeUpdateSnapshot(updated);
       const summary = summarizeUpdate(prevSnapshot, nextSnapshot);
       if (!summary) {
         alert('Aucun changement détecté.');
         return;
+      }
+
+      const prevGrowth = prevSnapshot.growth || {};
+      const nextGrowthState = nextSnapshot.growth || {};
+      const growthChanged = (prevGrowth.heightCm ?? null) !== (nextGrowthState.heightCm ?? null)
+        || (prevGrowth.weightKg ?? null) !== (nextGrowthState.weightKg ?? null)
+        || (prevGrowth.teethCount ?? null) !== (nextGrowthState.teethCount ?? null);
+      const growthData = growthInputs || {};
+      let measurementRecords = [];
+      let teethRecords = [];
+      if (growthChanged && Number.isInteger(growthData.month)) {
+        const measurementPayload = {};
+        if (Number.isFinite(growthData.height)) measurementPayload.height = growthData.height;
+        if (Number.isFinite(growthData.weight)) measurementPayload.weight = growthData.weight;
+        if (Object.keys(measurementPayload).length) {
+          measurementRecords = buildMeasurementPayloads([{ month: growthData.month, ...measurementPayload }]);
+        }
+        if (Number.isFinite(growthData.teeth)) {
+          teethRecords = buildTeethPayloads([{ month: growthData.month, count: growthData.teeth }]);
+        }
       }
 
       if (useRemote()) {
@@ -3197,7 +3235,10 @@ const TIMELINE_MILESTONES = [
             sleepBedtime: updated.context.sleep.bedtime,
             milestones: updated.milestones,
           };
-          await anonChildRequest('update', { childId, child: payload });
+          const requestBody = { childId, child: payload };
+          if (measurementRecords.length) requestBody.growthMeasurements = measurementRecords;
+          if (teethRecords.length) requestBody.growthTeeth = teethRecords;
+          await anonChildRequest('update', requestBody);
         } else {
           const payload = {
             first_name: updated.firstName,
@@ -3217,6 +3258,36 @@ const TIMELINE_MILESTONES = [
             milestones: updated.milestones,
           };
           await supabase.from('children').update(payload).eq('id', childId);
+          if (measurementRecords.length || teethRecords.length) {
+            const remoteUpdates = [];
+            if (measurementRecords.length) {
+              const upsertMeasurements = measurementRecords.map((rec) => {
+                const payload = { child_id: childId, month: rec.month };
+                if (Object.prototype.hasOwnProperty.call(rec, 'height_cm')) payload.height_cm = rec.height_cm;
+                if (Object.prototype.hasOwnProperty.call(rec, 'weight_kg')) payload.weight_kg = rec.weight_kg;
+                return payload;
+              });
+              remoteUpdates.push(
+                supabase.from('growth_measurements').upsert(upsertMeasurements, { onConflict: 'child_id,month' })
+              );
+            }
+            if (teethRecords.length) {
+              const upsertTeeth = teethRecords.map((rec) => ({
+                child_id: childId,
+                month: rec.month,
+                count: rec.count,
+              }));
+              remoteUpdates.push((async () => {
+                try {
+                  await supabase.from('growth_teeth').upsert(upsertTeeth, { onConflict: 'child_id,month' });
+                } catch (errTeeth) {
+                  console.warn('growth_teeth upsert failed, fallback to insert', errTeeth);
+                  await supabase.from('growth_teeth').insert(upsertTeeth);
+                }
+              })());
+            }
+            if (remoteUpdates.length) await Promise.all(remoteUpdates);
+          }
         }
       } else {
         const localChildren = store.get(K.children, []).map((child) => {
@@ -3330,11 +3401,82 @@ const TIMELINE_MILESTONES = [
     const sleepThroughRaw = mergedContext.sleep.sleepsThrough;
     mergedContext.sleep.sleepsThrough = sleepThroughRaw === 'oui' ? true : (sleepThroughRaw === 'non' ? false : null);
     clone.context = mergedContext;
+
+    const heightRaw = (fd.get('height_cm') || '').toString().replace(',', '.').trim();
+    const weightRaw = (fd.get('weight_kg') || '').toString().replace(',', '.').trim();
+    const teethRaw = (fd.get('teeth_count') || '').toString().trim();
+    const heightVal = heightRaw ? Number.parseFloat(heightRaw) : NaN;
+    const weightVal = weightRaw ? Number.parseFloat(weightRaw) : NaN;
+    const teethVal = teethRaw ? Number.parseInt(teethRaw, 10) : NaN;
+    const ageMonths = ageInMonths(clone.dob);
+    const month = Number.isInteger(ageMonths) ? ageMonths : null;
+    const hasHeight = Number.isFinite(heightVal);
+    const hasWeight = Number.isFinite(weightVal);
+    const hasTeeth = Number.isFinite(teethVal);
+
+    clone.growth = clone.growth && typeof clone.growth === 'object' ? clone.growth : {};
+    if (!Array.isArray(clone.growth.measurements)) clone.growth.measurements = [];
+    if (!Array.isArray(clone.growth.sleep)) clone.growth.sleep = [];
+    if (!Array.isArray(clone.growth.teeth)) clone.growth.teeth = [];
+
+    if (month != null) {
+      if (hasHeight || hasWeight) {
+        const existingEntries = clone.growth.measurements.filter((entry) => Number(entry?.month ?? entry?.m) === month);
+        let existingHeight = NaN;
+        let existingWeight = NaN;
+        for (const entry of existingEntries) {
+          if (!Number.isFinite(existingHeight)) {
+            const h = Number(entry?.height ?? entry?.height_cm);
+            if (Number.isFinite(h)) existingHeight = h;
+          }
+          if (!Number.isFinite(existingWeight)) {
+            const w = Number(entry?.weight ?? entry?.weight_kg);
+            if (Number.isFinite(w)) existingWeight = w;
+          }
+          if (Number.isFinite(existingHeight) && Number.isFinite(existingWeight)) break;
+        }
+        clone.growth.measurements = clone.growth.measurements.filter((entry) => {
+          const entryMonth = Number(entry?.month ?? entry?.m);
+          return !Number.isInteger(entryMonth) || entryMonth !== month;
+        });
+        const measurementEntry = { month };
+        const finalHeight = hasHeight ? heightVal : (Number.isFinite(existingHeight) ? existingHeight : null);
+        const finalWeight = hasWeight ? weightVal : (Number.isFinite(existingWeight) ? existingWeight : null);
+        if (Number.isFinite(finalHeight)) measurementEntry.height = finalHeight;
+        if (Number.isFinite(finalWeight)) measurementEntry.weight = finalWeight;
+        if (Number.isFinite(measurementEntry.height) && Number.isFinite(measurementEntry.weight) && measurementEntry.height > 0) {
+          measurementEntry.bmi = measurementEntry.weight / Math.pow(measurementEntry.height / 100, 2);
+        }
+        if (Number.isFinite(measurementEntry.height) || Number.isFinite(measurementEntry.weight)) {
+          measurementEntry.measured_at = new Date().toISOString();
+          clone.growth.measurements.push(measurementEntry);
+        }
+        clone.growth.measurements.sort((a, b) => Number(a?.month ?? a?.m ?? 0) - Number(b?.month ?? b?.m ?? 0));
+      }
+      if (hasTeeth) {
+        const count = Math.max(0, Math.round(teethVal));
+        clone.growth.teeth = clone.growth.teeth.filter((entry) => {
+          const entryMonth = Number(entry?.month ?? entry?.m);
+          return !Number.isInteger(entryMonth) || entryMonth !== month;
+        });
+        clone.growth.teeth.push({ month, count });
+        clone.growth.teeth.sort((a, b) => Number(a?.month ?? a?.m ?? 0) - Number(b?.month ?? b?.m ?? 0));
+      }
+    }
+
     const msInputs = Array.from(form.querySelectorAll('#edit-milestones input[name="milestones[]"]'))
       .sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0))
       .map((input) => input.checked);
     if (msInputs.length) clone.milestones = msInputs;
-    return clone;
+
+    const growthInputs = {
+      month: hasHeight || hasWeight || hasTeeth ? month : null,
+      height: hasHeight ? heightVal : null,
+      weight: hasWeight ? weightVal : null,
+      teeth: hasTeeth ? Math.max(0, Math.round(teethVal)) : null,
+    };
+
+    return { child: clone, growthInputs };
   }
 
   function mergeChildContext(base, updates) {
@@ -4904,6 +5046,15 @@ const TIMELINE_MILESTONES = [
   // --- Update history helpers ---
   function makeUpdateSnapshot(childLike) {
     if (!childLike) return {};
+    const measures = normalizeMeasures(Array.isArray(childLike?.growth?.measurements) ? childLike.growth.measurements : []);
+    const latestHeight = [...measures].reverse().find((m) => Number.isFinite(m.height))?.height;
+    const latestWeight = [...measures].reverse().find((m) => Number.isFinite(m.weight))?.weight;
+    const lastTeethEntry = Array.isArray(childLike?.growth?.teeth)
+      ? [...childLike.growth.teeth].sort((a, b) => Number(a?.month ?? 0) - Number(b?.month ?? 0)).slice(-1)[0]
+      : null;
+    const latestTeeth = lastTeethEntry != null
+      ? Number(lastTeethEntry.count ?? lastTeethEntry.value ?? lastTeethEntry.teeth)
+      : NaN;
     return {
       firstName: childLike.firstName || '',
       dob: childLike.dob || '',
@@ -4922,6 +5073,11 @@ const TIMELINE_MILESTONES = [
           wakeDuration: childLike.context?.sleep?.wakeDuration || '',
           bedtime: childLike.context?.sleep?.bedtime || ''
         }
+      },
+      growth: {
+        heightCm: Number.isFinite(latestHeight) ? Number(latestHeight) : null,
+        weightKg: Number.isFinite(latestWeight) ? Number(latestWeight) : null,
+        teethCount: Number.isFinite(latestTeeth) ? Math.max(0, Math.round(latestTeeth)) : null,
       }
     };
   }
@@ -4997,6 +5153,18 @@ const TIMELINE_MILESTONES = [
       if ((prev.context?.languages||'') !== (next.context?.languages||'')) parts.push(`Langues: ${escapeHtml(prev.context?.languages||'—')} → ${escapeHtml(next.context?.languages||'—')}`);
       if ((prev.context?.feedingType||'') !== (next.context?.feedingType||'')) parts.push(`Alimentation: ${labelFeedingType(prev.context?.feedingType||'')} → ${labelFeedingType(next.context?.feedingType||'')}`);
       if ((prev.context?.eatingStyle||'') !== (next.context?.eatingStyle||'')) parts.push(`Appétit: ${labelEatingStyle(prev.context?.eatingStyle||'')} → ${labelEatingStyle(next.context?.eatingStyle||'')}`);
+      const prevGrowth = prev.growth || {};
+      const nextGrowth = next.growth || {};
+      const prevHeight = Number.isFinite(prevGrowth.heightCm) ? Number(prevGrowth.heightCm) : null;
+      const nextHeight = Number.isFinite(nextGrowth.heightCm) ? Number(nextGrowth.heightCm) : null;
+      const prevWeight = Number.isFinite(prevGrowth.weightKg) ? Number(prevGrowth.weightKg) : null;
+      const nextWeight = Number.isFinite(nextGrowth.weightKg) ? Number(nextGrowth.weightKg) : null;
+      const prevTeeth = Number.isFinite(prevGrowth.teethCount) ? Math.max(0, Math.round(prevGrowth.teethCount)) : null;
+      const nextTeeth = Number.isFinite(nextGrowth.teethCount) ? Math.max(0, Math.round(nextGrowth.teethCount)) : null;
+      const formatMeasure = (value, unit) => (value != null ? `${escapeHtml(String(value))}${unit ? ` ${unit}` : ''}` : '—');
+      if (prevHeight !== nextHeight) parts.push(`Taille: ${formatMeasure(prevHeight, 'cm')} → ${formatMeasure(nextHeight, 'cm')}`);
+      if (prevWeight !== nextWeight) parts.push(`Poids: ${formatMeasure(prevWeight, 'kg')} → ${formatMeasure(nextWeight, 'kg')}`);
+      if (prevTeeth !== nextTeeth) parts.push(`Dents: ${formatMeasure(prevTeeth, 'dents')} → ${formatMeasure(nextTeeth, 'dents')}`);
       const pS = prev.context?.sleep || {}; const nS = next.context?.sleep || {};
       const sleepChanges = [];
       if ((pS.falling||'') !== (nS.falling||'')) sleepChanges.push(`endormissement ${pS.falling||'—'} → ${nS.falling||'—'}`);
