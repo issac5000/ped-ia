@@ -1,3 +1,5 @@
+import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
+
 // Fonction serverless unique : /api/ai (regroupe story, advice, comment, recipes)
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -203,6 +205,124 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(200).send(JSON.stringify({ summary, comment }));
       }
+      case 'child-full-report': {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+
+        const childIdCandidates = [
+          typeof body.childId === 'string' ? body.childId.trim() : '',
+          typeof body.child_id === 'string' ? body.child_id.trim() : '',
+          typeof req?.query?.childId === 'string' ? req.query.childId.trim() : '',
+          typeof req?.query?.child_id === 'string' ? req.query.child_id.trim() : '',
+        ];
+        const childId = childIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        if (!childId) {
+          return res.status(400).json({ error: 'childId required' });
+        }
+
+        let updateRows = [];
+        try {
+          const { supaUrl, serviceKey } = getServiceConfig();
+          const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+          const data = await supabaseRequest(
+            `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary&child_id=eq.${encodeURIComponent(childId)}&order=created_at.asc`,
+            { headers }
+          );
+          updateRows = Array.isArray(data) ? data : [];
+        } catch (err) {
+          const status = err instanceof HttpError && err.status ? err.status : (typeof err?.status === 'number' ? err.status : 500);
+          const detailString = (() => {
+            if (err instanceof HttpError) {
+              if (typeof err.details === 'string') return err.details;
+              if (err.details) {
+                try { return JSON.stringify(err.details); } catch { return String(err.details); }
+              }
+            }
+            if (typeof err?.message === 'string') return err.message;
+            return '';
+          })();
+          return res.status(status >= 400 && status < 600 ? status : 500).json({
+            error: 'Unable to fetch child updates',
+            details: detailString,
+          });
+        }
+
+        const formatted = [];
+        for (const row of updateRows) {
+          const aiSummary = typeof row?.ai_summary === 'string' ? row.ai_summary.trim().slice(0, 600) : '';
+          const updateObj = parseUpdateContentForPrompt(row?.update_content);
+          const parentSummary = typeof updateObj?.summary === 'string' ? updateObj.summary.trim().slice(0, 600) : '';
+          const userComment = typeof updateObj?.userComment === 'string' ? updateObj.userComment.trim().slice(0, 600) : '';
+          const snapshotSource = updateObj && typeof updateObj === 'object'
+            ? (updateObj.next && typeof updateObj.next === 'object' ? updateObj.next : updateObj)
+            : {};
+          const sanitizedSnapshot = sanitizeUpdatePayload(snapshotSource);
+          const detailText = formatUpdateDataForPrompt(sanitizedSnapshot).slice(0, 1200);
+          if (aiSummary || parentSummary || userComment || detailText) {
+            formatted.push({
+              type: typeof row?.update_type === 'string' ? row.update_type.trim().slice(0, 64) : '',
+              date: typeof row?.created_at === 'string' ? row.created_at : '',
+              aiSummary,
+              parentSummary,
+              userComment,
+              detailText,
+            });
+          }
+        }
+
+        if (!formatted.length) {
+          return res.status(404).json({ error: 'Pas assez de données pour générer un bilan complet.' });
+        }
+
+        const updatesText = formatted.map((item, idx) => {
+          const lines = [];
+          const headerParts = [`Mise à jour ${idx + 1}`];
+          const dateText = formatDateForPrompt(item.date);
+          if (dateText) headerParts.push(`date: ${dateText}`);
+          if (item.type) headerParts.push(`type: ${item.type}`);
+          lines.push(headerParts.join(' – '));
+          if (item.aiSummary) lines.push(`Résumé IA: ${item.aiSummary}`);
+          if (item.parentSummary && item.parentSummary !== item.aiSummary) {
+            lines.push(`Résumé parent: ${item.parentSummary}`);
+          }
+          if (item.detailText) lines.push(`Données: ${item.detailText}`);
+          if (item.userComment) lines.push(`Commentaire parent: ${item.userComment}`);
+          return lines.join('\n');
+        }).join('\n\n');
+
+        const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « Pas de données disponibles ». Sois synthétique, factuel et accessible.`;
+        const userPrompt = `Nombre de mises à jour: ${formatted.length}.\n\nDonnées réelles des mises à jour (ordre chronologique, de la plus ancienne à la plus récente):\n\n${updatesText}`;
+
+        const r = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            temperature: 0.3,
+            max_tokens: 900,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: userPrompt }
+            ]
+          })
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          return res.status(502).json({ error: 'OpenAI error', details: t });
+        }
+        const j = await r.json();
+        const report = j.choices?.[0]?.message?.content?.trim() || '';
+        if (!report) {
+          return res.status(502).json({ error: 'Rapport indisponible' });
+        }
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(200).send(JSON.stringify({ report }));
+      }
       case 'recipes': {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
@@ -262,6 +382,65 @@ function sanitizeUpdatePayload(value, depth = 0) {
     out[key] = sanitizeUpdatePayload(val, depth + 1);
   }
   return out;
+}
+
+const PROMPT_SKIP_KEYS = new Set(['userComment', 'summary', 'ai_summary']);
+
+function parseUpdateContentForPrompt(raw) {
+  if (raw == null) return {};
+  if (typeof raw === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(raw));
+    } catch {
+      return { ...raw };
+    }
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {}
+    return { summary: trimmed };
+  }
+  return {};
+}
+
+function formatUpdateDataForPrompt(value, depth = 0) {
+  if (depth > 3 || value == null) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.slice(0, 400);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const items = value
+      .slice(0, 6)
+      .map((entry) => formatUpdateDataForPrompt(entry, depth + 1))
+      .filter(Boolean);
+    return items.join(' | ');
+  }
+  if (typeof value === 'object') {
+    const parts = [];
+    const entries = Object.entries(value).slice(0, 15);
+    for (const [key, val] of entries) {
+      if (PROMPT_SKIP_KEYS.has(key)) continue;
+      const text = formatUpdateDataForPrompt(val, depth + 1);
+      if (text) parts.push(`${key}: ${text}`);
+    }
+    return parts.join(' ; ');
+  }
+  return '';
+}
+
+function formatDateForPrompt(value) {
+  if (typeof value !== 'string' || !value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().split('T')[0];
 }
 
 // Lit l’intégralité du corps de la requête tout en limitant la taille

@@ -3975,9 +3975,15 @@ const TIMELINE_MILESTONES = [
           ? `<div class="timeline" role="list">${timelineHtml}</div>`
           : `<div class="empty-state muted">Aucune mise à jour enregistrée pour l’instant.</div>`
       );
-      if (updates.length > 2) {
-        const timeline = hist.querySelector('.timeline');
-        const items = timeline ? Array.from(timeline.children) : [];
+
+      const timelineEl = hist.querySelector('.timeline');
+      const actions = document.createElement('div');
+      actions.className = 'timeline-actions';
+      actions.style.flexWrap = 'wrap';
+      actions.style.gap = '8px';
+
+      if (timelineEl && updates.length > 2) {
+        const items = Array.from(timelineEl.children);
         items.forEach((el, idx) => {
           if (idx >= 2) el.style.display = 'none';
         });
@@ -4001,11 +4007,88 @@ const TIMELINE_MILESTONES = [
             btn.setAttribute('aria-expanded', 'false');
           }
         });
-        const actions = document.createElement('div');
-        actions.className = 'timeline-actions';
         actions.appendChild(btn);
-        hist.appendChild(actions);
       }
+
+      const reportBtn = document.createElement('button');
+      reportBtn.type = 'button';
+      reportBtn.className = 'btn btn-primary';
+      reportBtn.textContent = 'Bilan complet';
+      reportBtn.dataset.loading = '0';
+      actions.appendChild(reportBtn);
+      hist.appendChild(actions);
+
+      const reportContainer = document.createElement('div');
+      reportContainer.className = 'timeline-report-block';
+      reportContainer.style.marginTop = '12px';
+
+      const reportMessage = document.createElement('div');
+      reportMessage.className = 'muted';
+      reportMessage.textContent = useRemote()
+        ? 'Cliquez sur « Bilan complet » pour générer un rapport synthétique.'
+        : 'Connectez-vous pour générer un bilan complet.';
+      reportMessage.setAttribute('role', 'status');
+      reportMessage.setAttribute('aria-live', 'polite');
+
+      const reportContent = document.createElement('div');
+      reportContent.className = 'timeline-report-content';
+      reportContent.style.whiteSpace = 'pre-wrap';
+      reportContent.style.lineHeight = '1.5';
+      reportContent.style.fontSize = '14px';
+      reportContent.style.padding = '12px';
+      reportContent.style.borderRadius = '12px';
+      reportContent.style.border = '1px solid var(--border)';
+      reportContent.style.background = 'rgba(255,255,255,.06)';
+      reportContent.style.marginTop = '8px';
+      reportContent.style.maxHeight = '260px';
+      reportContent.style.overflowY = 'auto';
+      reportContent.hidden = true;
+      reportContent.tabIndex = 0;
+      const reportContentId = `child-full-report-${child.id}`;
+      reportContent.id = reportContentId;
+      reportBtn.setAttribute('aria-controls', reportContentId);
+
+      reportContainer.appendChild(reportMessage);
+      reportContainer.appendChild(reportContent);
+      hist.appendChild(reportContainer);
+
+      reportBtn.addEventListener('click', async () => {
+        if (reportBtn.dataset.loading === '1') return;
+        const remoteReady = useRemote();
+        if (!remoteReady) {
+          reportMessage.textContent = 'Connectez-vous pour générer un bilan complet.';
+          return;
+        }
+        reportBtn.dataset.loading = '1';
+        const originalText = reportBtn.textContent;
+        reportBtn.disabled = true;
+        reportBtn.textContent = 'Génération…';
+        reportMessage.textContent = 'Génération du bilan en cours…';
+        reportContent.hidden = true;
+        reportContent.textContent = '';
+        try {
+          const report = await fetchChildFullReport(child.id);
+          reportMessage.textContent = 'Bilan généré ci-dessous.';
+          reportContent.textContent = report;
+          reportContent.hidden = false;
+          reportContent.scrollTop = 0;
+          if (typeof reportContent.focus === 'function') {
+            try { reportContent.focus({ preventScroll: true }); } catch {}
+          }
+        } catch (err) {
+          const msg = err && typeof err.message === 'string'
+            ? err.message
+            : 'Bilan indisponible pour le moment.';
+          reportMessage.textContent = msg;
+          reportContent.hidden = true;
+          reportContent.textContent = '';
+        } finally {
+          reportBtn.dataset.loading = '0';
+          reportBtn.disabled = false;
+          reportBtn.textContent = originalText;
+        }
+      });
+
       if (rid !== renderDashboard._rid) return;
       dom.appendChild(hist);
       maybeFocusDashboardSection();
@@ -5492,6 +5575,46 @@ const TIMELINE_MILESTONES = [
     } catch (err) {
       console.warn('Supabase child_updates summary fetch failed', err);
       return [];
+    }
+  }
+
+  async function fetchChildFullReport(childId) {
+    if (!childId) throw new Error('Profil enfant introuvable.');
+    if (!useRemote()) throw new Error('Connectez-vous pour générer un bilan complet.');
+    try {
+      const res = await fetch('/api/ai?type=child-full-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childId, child_id: childId })
+      });
+      const text = await res.text();
+      let data = null;
+      if (text) {
+        try { data = JSON.parse(text); } catch {}
+      }
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('Pas assez de données pour générer un bilan complet.');
+        }
+        const errorText = data && typeof data === 'object'
+          ? `${data.error || ''} ${data.details || ''}`.trim()
+          : text;
+        if (errorText) {
+          console.warn('child-full-report failed', res.status, errorText);
+        } else {
+          console.warn('child-full-report failed', res.status);
+        }
+        throw new Error('Bilan indisponible pour le moment. Réessayez plus tard.');
+      }
+      const report = typeof data?.report === 'string' ? data.report.trim() : '';
+      if (!report) {
+        throw new Error('Pas assez de données pour générer un bilan complet.');
+      }
+      return report;
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      console.warn('child-full-report request error', err);
+      throw new Error('Bilan indisponible pour le moment. Réessayez plus tard.');
     }
   }
 
