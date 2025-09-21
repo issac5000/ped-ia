@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+
 // Route API dédiée à la mise à jour des profils anonymes via leur code unique
 const KEY_MAP = {
   fullName: 'full_name',
@@ -59,6 +61,11 @@ function normalizeField(key, value) {
   if (key === 'full_name') return normalizeFullName(value);
   if (key === 'avatar_url') return normalizeAvatarUrl(value);
   if (key === 'parent_role') return normalizeParentRole(value);
+  if (key === 'show_children_count') {
+    if (value === null) return null;
+    if (typeof value === 'boolean') return value;
+    return undefined;
+  }
   return value;
 }
 
@@ -135,13 +142,18 @@ export default async function handler(req, res) {
     }
 
     const updatePayload = buildUpdatePayload(payload);
-    if (!Object.keys(updatePayload).length) {
-      console.error('updateAnonProfile no valid fields to update', payload);
+    if (!Object.prototype.hasOwnProperty.call(updatePayload, 'full_name')) {
+      console.error('updateAnonProfile missing full_name');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.status(400).json({ error: 'No valid fields to update' });
+      return res.status(400).json({ error: 'full_name is required' });
+    }
+    if (typeof updatePayload.full_name !== 'string') {
+      console.error('updateAnonProfile invalid full_name type');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(400).json({ error: 'full_name must be a string' });
     }
 
-    const profileQuery = `${supaUrl}/rest/v1/profiles?select=id,user_id,code_unique,full_name,avatar_url&code_unique=eq.${encodeURIComponent(code)}&limit=1`;
+    const profileQuery = `${supaUrl}/rest/v1/profiles?select=id,user_id,code_unique,full_name,avatar_url,parent_role,show_children_count&code_unique=eq.${encodeURIComponent(code)}&limit=1`;
     const profileRes = await fetch(profileQuery, {
       headers: {
         'apikey': serviceKey,
@@ -158,59 +170,111 @@ export default async function handler(req, res) {
 
     const existingList = await profileRes.json().catch(() => []);
     const existing = Array.isArray(existingList) ? existingList[0] : existingList;
-    if (!existing) {
-      console.error('updateAnonProfile code not found', code);
+    if (existing) {
+      if (existing.user_id) {
+        console.error('updateAnonProfile non anonymous profile attempted update', { code, user_id: existing.user_id });
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(403).json({ error: 'Only anonymous profiles can update via code' });
+      }
+
+      const updateUrl = `${supaUrl}/rest/v1/profiles?code_unique=eq.${encodeURIComponent(code)}`;
+      const updateRes = await fetch(updateUrl, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(updatePayload)
+      });
+
+      const updateText = await updateRes.text().catch(() => '');
+      let updateJson = null;
+      if (updateText) {
+        try {
+          updateJson = JSON.parse(updateText);
+        } catch (e) {
+          console.error('updateAnonProfile invalid JSON response', e);
+        }
+      }
+
+      if (!updateRes.ok) {
+        console.error('updateAnonProfile update failed', updateRes.status, updateText);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(updateRes.status).json({ error: 'Update failed', details: updateText || undefined });
+      }
+
+      const updated = Array.isArray(updateJson) ? updateJson[0] : updateJson;
+      if (!updated) {
+        console.error('updateAnonProfile update returned empty payload', updateJson);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(500).json({ error: 'Update succeeded but no data returned' });
+      }
+
+      const profile = {
+        id: updated.id || existing.id,
+        code_unique: updated.code_unique || existing.code_unique || code,
+        full_name: typeof updated.full_name === 'string' ? updated.full_name : existing.full_name || '',
+        avatar_url: Object.prototype.hasOwnProperty.call(updated, 'avatar_url') ? updated.avatar_url : (existing.avatar_url ?? null),
+        parent_role: Object.prototype.hasOwnProperty.call(updated, 'parent_role') ? updated.parent_role : (existing.parent_role ?? null),
+        show_children_count: Object.prototype.hasOwnProperty.call(updated, 'show_children_count') ? updated.show_children_count : (existing.show_children_count ?? null),
+        user_id: updated.user_id ?? existing.user_id ?? null
+      };
+
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.status(404).json({ error: 'Code not found' });
+      return res.status(200).json({ profile });
     }
 
-    if (existing.user_id) {
-      console.error('updateAnonProfile non anonymous profile attempted update', { code, user_id: existing.user_id });
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.status(403).json({ error: 'Only anonymous profiles can update via code' });
-    }
+    const insertPayload = {
+      ...updatePayload,
+      id: randomUUID(),
+      code_unique: code,
+      user_id: null
+    };
 
-    const updateUrl = `${supaUrl}/rest/v1/profiles?code_unique=eq.${encodeURIComponent(code)}`;
-    const updateRes = await fetch(updateUrl, {
-      method: 'PATCH',
+    const insertRes = await fetch(`${supaUrl}/rest/v1/profiles`, {
+      method: 'POST',
       headers: {
         'apikey': serviceKey,
         'Authorization': `Bearer ${serviceKey}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
       },
-      body: JSON.stringify(updatePayload)
+      body: JSON.stringify(insertPayload)
     });
 
-    const updateText = await updateRes.text().catch(() => '');
-    let updateJson = null;
-    if (updateText) {
+    const insertText = await insertRes.text().catch(() => '');
+    let insertJson = null;
+    if (insertText) {
       try {
-        updateJson = JSON.parse(updateText);
+        insertJson = JSON.parse(insertText);
       } catch (e) {
-        console.error('updateAnonProfile invalid JSON response', e);
+        console.error('updateAnonProfile invalid insert JSON response', e);
       }
     }
 
-    if (!updateRes.ok) {
-      console.error('updateAnonProfile update failed', updateRes.status, updateText);
+    if (!insertRes.ok) {
+      console.error('updateAnonProfile insert failed', insertRes.status, insertText);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.status(updateRes.status).json({ error: 'Update failed', details: updateText || undefined });
+      return res.status(insertRes.status).json({ error: 'Insert failed', details: insertText || undefined });
     }
 
-    const updated = Array.isArray(updateJson) ? updateJson[0] : updateJson;
-    if (!updated) {
-      console.error('updateAnonProfile update returned empty payload', updateJson);
+    const created = Array.isArray(insertJson) ? insertJson[0] : insertJson;
+    if (!created) {
+      console.error('updateAnonProfile insert returned empty payload', insertJson);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.status(500).json({ error: 'Update succeeded but no data returned' });
+      return res.status(500).json({ error: 'Insert succeeded but no data returned' });
     }
 
     const profile = {
-      id: updated.id || existing.id,
-      code_unique: updated.code_unique || existing.code_unique || code,
-      full_name: typeof updated.full_name === 'string' ? updated.full_name : existing.full_name || '',
-      avatar_url: Object.prototype.hasOwnProperty.call(updated, 'avatar_url') ? updated.avatar_url : (existing.avatar_url ?? null),
-      user_id: updated.user_id ?? existing.user_id ?? null
+      id: created.id || insertPayload.id,
+      code_unique: created.code_unique || code,
+      full_name: typeof created.full_name === 'string' ? created.full_name : updatePayload.full_name,
+      avatar_url: Object.prototype.hasOwnProperty.call(created, 'avatar_url') ? created.avatar_url : (updatePayload.avatar_url ?? null),
+      parent_role: Object.prototype.hasOwnProperty.call(created, 'parent_role') ? created.parent_role : (updatePayload.parent_role ?? null),
+      show_children_count: Object.prototype.hasOwnProperty.call(created, 'show_children_count') ? created.show_children_count : (updatePayload.show_children_count ?? null),
+      user_id: created.user_id ?? null
     };
 
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
