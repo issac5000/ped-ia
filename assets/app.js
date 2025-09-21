@@ -5082,20 +5082,6 @@ const TIMELINE_MILESTONES = [
 
     return `
       ${header}
-        <button type="button" class="timeline-1000__nav timeline-1000__nav--prev" aria-label="Défiler vers la gauche">
-          <span class="timeline-1000__nav-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-              <path d="M14.53 5.47a.75.75 0 0 1 0 1.06L10.06 11l4.47 4.47a.75.75 0 0 1-1.06 1.06l-5-5a.75.75 0 0 1 0-1.06l5-5a.75.75 0 0 1 1.06 0z" fill="currentColor"/>
-            </svg>
-          </span>
-        </button>
-        <button type="button" class="timeline-1000__nav timeline-1000__nav--next" aria-label="Défiler vers la droite">
-          <span class="timeline-1000__nav-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-              <path d="M9.47 5.47a.75.75 0 0 0 0 1.06L13.94 11l-4.47 4.47a.75.75 0 1 0 1.06 1.06l5-5a.75.75 0 0 0 0-1.06l-5-5a.75.75 0 0 0-1.06 0z" fill="currentColor"/>
-            </svg>
-          </span>
-        </button>
         <div class="timeline-1000__scroll" role="region" aria-label="Frise des 1000 jours">
           <div class="timeline-1000__track">
             <span class="timeline-1000__line" aria-hidden="true"></span>
@@ -5108,6 +5094,36 @@ const TIMELINE_MILESTONES = [
             </div>
             <div class="timeline-1000__tooltip" role="dialog" aria-live="polite" hidden></div>
           </div>
+        </div>
+        <div class="timeline-1000__nav-bar">
+          <button type="button" class="timeline-1000__nav timeline-1000__nav--prev" aria-label="Défiler vers la gauche">
+            <span class="timeline-1000__nav-icon timeline-1000__nav-icon--prev" aria-hidden="true">
+              <svg viewBox="0 0 64 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
+                <path d="M6 12c9-8 22-11 35-7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
+                <path d="M6 12c9 8 22 11 35 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
+                <path d="M35 4l15 8-15 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="55" cy="12" r="2.2" fill="currentColor" opacity=".85"/>
+                <path d="M55 12l3.2-3.2m-3.2 3.2 3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+              </svg>
+            </span>
+            <span class="timeline-1000__nav-label">Glisser à gauche</span>
+          </button>
+          <div class="timeline-1000__nav-hint">
+            <span class="timeline-1000__nav-hint-track" aria-hidden="true"></span>
+            <span class="timeline-1000__nav-hint-text">Faites défiler pour explorer les 1000 jours</span>
+          </div>
+          <button type="button" class="timeline-1000__nav timeline-1000__nav--next" aria-label="Défiler vers la droite">
+            <span class="timeline-1000__nav-label">Glisser à droite</span>
+            <span class="timeline-1000__nav-icon timeline-1000__nav-icon--next" aria-hidden="true">
+              <svg viewBox="0 0 64 24" focusable="false" aria-hidden="true" class="timeline-1000__nav-symbol">
+                <path d="M6 12c9-8 22-11 35-7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
+                <path d="M6 12c9 8 22 11 35 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".55"/>
+                <path d="M35 4l15 8-15 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="55" cy="12" r="2.2" fill="currentColor" opacity=".85"/>
+                <path d="M55 12l3.2-3.2m-3.2 3.2 3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+              </svg>
+            </span>
+          </button>
         </div>
       </section>
     `;
