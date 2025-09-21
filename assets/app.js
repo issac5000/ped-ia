@@ -223,13 +223,12 @@ const TIMELINE_MILESTONES = [
   async function anonMessagesRequest(code_unique) {
     const ok = await ensureSupabaseClient();
     if (!ok || !supabase) return [];
-    const code = (code_unique || '').toString().trim().toUpperCase();
-    if (!code) return [];
+    if (code_unique == null || code_unique === '') return [];
     try {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('receiver_code', code)
+        .eq('receiver_id', code_unique)
         .eq('is_read', false)
         .order('created_at', { ascending: false });
 
