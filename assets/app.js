@@ -5364,28 +5364,81 @@ const TIMELINE_MILESTONES = [
 
   async function logChildUpdate(childId, updateType, updateContent) {
     if (!childId || !useRemote()) return;
+    const normalizedContent = normalizeUpdateContentForLog(updateContent);
+    const content = JSON.stringify(normalizedContent);
+    if (isAnonProfile()) {
+      await anonChildRequest('log-update', {
+        childId,
+        updateType,
+        updateContent: content
+      });
+      return;
+    }
+    const historySummaries = await fetchChildUpdateSummaries(childId);
+    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(updateType, normalizedContent, historySummaries);
+    const payload = { child_id: childId, update_type: updateType, update_content: content };
+    if (aiSummary) payload.ai_summary = aiSummary;
+    if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
     try {
-      const normalizedContent = normalizeUpdateContentForLog(updateContent);
-      const content = JSON.stringify(normalizedContent);
-      if (isAnonProfile()) {
-        await anonChildRequest('log-update', {
-          childId,
-          updateType,
-          updateContent: content
-        });
-        return;
-      }
-      const historySummaries = await fetchChildUpdateSummaries(childId);
-      const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(updateType, normalizedContent, historySummaries);
-      const payload = { child_id: childId, update_type: updateType, update_content: content };
-      if (aiSummary) payload.ai_summary = aiSummary;
-      if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
       const { error } = await supabase
         .from('child_updates')
         .insert([payload]);
       if (error) throw error;
-    } catch (e) {
-      console.warn('Supabase child_updates insert failed', e);
+    } catch (err) {
+      console.error('Supabase child_updates insert failed', { error: err, payload });
+      try {
+        await logChildUpdateViaApi({
+          childId,
+          updateType,
+          updateContent: content,
+          aiSummary,
+          aiCommentaire,
+        });
+      } catch (fallbackErr) {
+        console.error('Fallback child_updates API insert failed', fallbackErr);
+        throw fallbackErr;
+      }
+    }
+  }
+
+  async function logChildUpdateViaApi({ childId, updateType, updateContent, aiSummary, aiCommentaire }) {
+    const body = {
+      childId,
+      updateType,
+      updateContent,
+    };
+    if (aiSummary) body.aiSummary = aiSummary;
+    if (aiCommentaire) body.aiCommentaire = aiCommentaire;
+    let token = authSession?.access_token || '';
+    if (!token && supabase?.auth) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token || '';
+      } catch {}
+    }
+    if (!token) throw new Error('Missing access token for child update logging');
+    const res = await fetch('/api/child-updates', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      let details = '';
+      try {
+        const text = await res.text();
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            details = parsed?.details || parsed?.error || text;
+          } catch {
+            details = text;
+          }
+        }
+      } catch {}
+      throw new Error(details || `HTTP ${res.status}`);
     }
   }
 
