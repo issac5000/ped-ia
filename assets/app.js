@@ -228,7 +228,7 @@ const TIMELINE_MILESTONES = [
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('receiver_id', code_unique)
+        .eq('receiver_code', code_unique)
         .eq('is_read', false)
         .order('created_at', { ascending: false });
 
