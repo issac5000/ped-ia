@@ -1,6 +1,12 @@
 import { loadSupabaseEnv } from './supabase-env-loader.js';
+import { ensureReactGlobals } from './react-shim.js';
 
 document.body.classList.remove('no-js');
+try {
+  await ensureReactGlobals();
+} catch (err) {
+  console.warn('Optional React globals failed to load', err);
+}
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 let supabase=null, authSession=null;

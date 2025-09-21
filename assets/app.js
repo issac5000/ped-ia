@@ -4,6 +4,7 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 // Synap'Kids SPA — Prototype 100 % front avec localStorage + authentification Supabase (Google)
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { loadSupabaseEnv } from './supabase-env-loader.js';
+import { ensureReactGlobals } from './react-shim.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -32,6 +33,11 @@ const TIMELINE_MILESTONES = [
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 (async () => {
   document.body.classList.remove('no-js');
+  try {
+    await ensureReactGlobals();
+  } catch (err) {
+    console.warn('Optional React globals failed to load', err);
+  }
   // Forcer l’interface « menu hamburger » sur tous les formats d’écran
   try { document.body.classList.add('force-mobile'); } catch {}
   // Helpers DOM accessibles immédiatement
