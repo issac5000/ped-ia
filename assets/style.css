@@ -1187,7 +1187,39 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   height:20px;
   border-radius:50%;
   background:var(--orange-strong);
+  position:relative;
   box-shadow:0 0 0 6px rgba(255,150,64,.28);
+  animation:timeline-current-breathe 3s ease-in-out infinite;
+}
+.timeline-1000__current-dot::after{
+  content:"";
+  position:absolute;
+  inset:-6px;
+  border-radius:inherit;
+  border:2px solid rgba(255,150,64,.45);
+  opacity:0;
+  transform:scale(.8);
+  animation:timeline-current-breathe-ring 3s ease-in-out infinite;
+}
+@keyframes timeline-current-breathe{
+  0%,100%{
+    transform:scale(1);
+    box-shadow:0 0 0 6px rgba(255,150,64,.28);
+  }
+  50%{
+    transform:scale(1.1);
+    box-shadow:0 0 0 10px rgba(255,150,64,.18);
+  }
+}
+@keyframes timeline-current-breathe-ring{
+  0%,100%{
+    opacity:0;
+    transform:scale(.8);
+  }
+  50%{
+    opacity:.55;
+    transform:scale(1.25);
+  }
 }
 .timeline-1000__current-label{
   background:rgba(255,255,255,.08);
