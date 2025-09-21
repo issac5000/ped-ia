@@ -462,7 +462,7 @@ async function anonMessagesRequest(code_unique) {
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .eq('receiver_id', code_unique)
+      .eq('receiver_code', code_unique)
       .eq('is_read', false)
       .order('created_at', { ascending: false });
     if (error) {
