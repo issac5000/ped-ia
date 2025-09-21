@@ -3200,6 +3200,10 @@ const TIMELINE_MILESTONES = [
           <button type="button" class="btn btn-secondary" id="toggle-milestones" data-expanded="0" aria-expanded="false">Afficher les jalons</button>
         </div>
         <div id="edit-milestones" hidden>${milestonesHtml}</div>
+        <label>Commentaire pour cette mise à jour
+          <textarea name="update_note" rows="3" placeholder="Ajoutez une observation personnelle, un évènement marquant ou une question pour le prochain suivi."></textarea>
+          <p class="muted">Visible dans l’historique et pris en compte par l’assistant IA.</p>
+        </label>
         <div class="form-actions-center"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
       </form>
     `;
@@ -3402,122 +3406,136 @@ const TIMELINE_MILESTONES = [
       const base = settingsState.childrenMap.get(childId);
       if (!base) throw new Error('Profil enfant introuvable');
       const prevSnapshot = settingsState.snapshots.get(childId) || makeUpdateSnapshot(base);
-      const { child: updated, growthInputs } = buildChildUpdateFromForm(base, form);
+      const { child: updated, growthInputs, userComment } = buildChildUpdateFromForm(base, form);
       const nextSnapshot = makeUpdateSnapshot(updated);
       const summary = summarizeUpdate(prevSnapshot, nextSnapshot);
-      if (!summary) {
+      const commentText = typeof userComment === 'string' ? userComment.trim() : '';
+      const hasComment = !!commentText;
+      if (!summary && !hasComment) {
         alert('Aucun changement détecté.');
         return;
       }
+      const hasProfileChanges = !!summary;
 
-      const prevGrowth = prevSnapshot.growth || {};
-      const nextGrowthState = nextSnapshot.growth || {};
-      const growthChanged = (prevGrowth.heightCm ?? null) !== (nextGrowthState.heightCm ?? null)
-        || (prevGrowth.weightKg ?? null) !== (nextGrowthState.weightKg ?? null)
-        || (prevGrowth.teethCount ?? null) !== (nextGrowthState.teethCount ?? null);
-      const growthData = growthInputs || {};
       let measurementRecords = [];
       let teethRecords = [];
-      if (growthChanged && Number.isInteger(growthData.month)) {
-        const measurementPayload = {};
-        if (Number.isFinite(growthData.height)) measurementPayload.height = growthData.height;
-        if (Number.isFinite(growthData.weight)) measurementPayload.weight = growthData.weight;
-        if (Object.keys(measurementPayload).length) {
-          measurementRecords = buildMeasurementPayloads([{ month: growthData.month, ...measurementPayload }]);
-        }
-        if (Number.isFinite(growthData.teeth)) {
-          teethRecords = buildTeethPayloads([{ month: growthData.month, count: growthData.teeth }]);
-        }
-      }
-
-      if (useRemote()) {
-        if (isAnonProfile()) {
-          const payload = {
-            firstName: updated.firstName,
-            sex: updated.sex,
-            dob: updated.dob,
-            contextAllergies: updated.context.allergies,
-            contextHistory: updated.context.history,
-            contextCare: updated.context.care,
-            contextLanguages: updated.context.languages,
-            feedingType: updated.context.feedingType,
-            eatingStyle: updated.context.eatingStyle,
-            sleepFalling: updated.context.sleep.falling,
-            sleepSleepsThrough: updated.context.sleep.sleepsThrough,
-            sleepNightWakings: updated.context.sleep.nightWakings,
-            sleepWakeDuration: updated.context.sleep.wakeDuration,
-            sleepBedtime: updated.context.sleep.bedtime,
-            milestones: updated.milestones,
-          };
-          const requestBody = { childId, child: payload };
-          if (measurementRecords.length) requestBody.growthMeasurements = measurementRecords;
-          if (teethRecords.length) requestBody.growthTeeth = teethRecords;
-          await anonChildRequest('update', requestBody);
-        } else {
-          const payload = {
-            first_name: updated.firstName,
-            sex: updated.sex,
-            dob: updated.dob,
-            context_allergies: updated.context.allergies,
-            context_history: updated.context.history,
-            context_care: updated.context.care,
-            context_languages: updated.context.languages,
-            feeding_type: updated.context.feedingType,
-            eating_style: updated.context.eatingStyle,
-            sleep_falling: updated.context.sleep.falling,
-            sleep_sleeps_through: typeof updated.context.sleep.sleepsThrough === 'boolean' ? updated.context.sleep.sleepsThrough : null,
-            sleep_night_wakings: updated.context.sleep.nightWakings,
-            sleep_wake_duration: updated.context.sleep.wakeDuration,
-            sleep_bedtime: updated.context.sleep.bedtime,
-            milestones: updated.milestones,
-          };
-          await supabase.from('children').update(payload).eq('id', childId);
-          if (measurementRecords.length || teethRecords.length) {
-            const remoteUpdates = [];
-            if (measurementRecords.length) {
-              const upsertMeasurements = measurementRecords.map((rec) => {
-                const payload = { child_id: childId, month: rec.month };
-                if (Object.prototype.hasOwnProperty.call(rec, 'height_cm')) payload.height_cm = rec.height_cm;
-                if (Object.prototype.hasOwnProperty.call(rec, 'weight_kg')) payload.weight_kg = rec.weight_kg;
-                return payload;
-              });
-              remoteUpdates.push(
-                supabase.from('growth_measurements').upsert(upsertMeasurements, { onConflict: 'child_id,month' })
-              );
-            }
-            if (teethRecords.length) {
-              const upsertTeeth = teethRecords.map((rec) => ({
-                child_id: childId,
-                month: rec.month,
-                count: rec.count,
-              }));
-              remoteUpdates.push((async () => {
-                try {
-                  await supabase.from('growth_teeth').upsert(upsertTeeth, { onConflict: 'child_id,month' });
-                } catch (errTeeth) {
-                  console.warn('growth_teeth upsert failed, fallback to insert', errTeeth);
-                  await supabase.from('growth_teeth').insert(upsertTeeth);
-                }
-              })());
-            }
-            if (remoteUpdates.length) await Promise.all(remoteUpdates);
+      if (hasProfileChanges) {
+        const prevGrowth = prevSnapshot.growth || {};
+        const nextGrowthState = nextSnapshot.growth || {};
+        const growthChanged = (prevGrowth.heightCm ?? null) !== (nextGrowthState.heightCm ?? null)
+          || (prevGrowth.weightKg ?? null) !== (nextGrowthState.weightKg ?? null)
+          || (prevGrowth.teethCount ?? null) !== (nextGrowthState.teethCount ?? null);
+        const growthData = growthInputs || {};
+        if (growthChanged && Number.isInteger(growthData.month)) {
+          const measurementPayload = {};
+          if (Number.isFinite(growthData.height)) measurementPayload.height = growthData.height;
+          if (Number.isFinite(growthData.weight)) measurementPayload.weight = growthData.weight;
+          if (Object.keys(measurementPayload).length) {
+            measurementRecords = buildMeasurementPayloads([{ month: growthData.month, ...measurementPayload }]);
+          }
+          if (Number.isFinite(growthData.teeth)) {
+            teethRecords = buildTeethPayloads([{ month: growthData.month, count: growthData.teeth }]);
           }
         }
+
+        if (useRemote()) {
+          if (isAnonProfile()) {
+            const payload = {
+              firstName: updated.firstName,
+              sex: updated.sex,
+              dob: updated.dob,
+              contextAllergies: updated.context.allergies,
+              contextHistory: updated.context.history,
+              contextCare: updated.context.care,
+              contextLanguages: updated.context.languages,
+              feedingType: updated.context.feedingType,
+              eatingStyle: updated.context.eatingStyle,
+              sleepFalling: updated.context.sleep.falling,
+              sleepSleepsThrough: updated.context.sleep.sleepsThrough,
+              sleepNightWakings: updated.context.sleep.nightWakings,
+              sleepWakeDuration: updated.context.sleep.wakeDuration,
+              sleepBedtime: updated.context.sleep.bedtime,
+              milestones: updated.milestones,
+            };
+            const requestBody = { childId, child: payload };
+            if (measurementRecords.length) requestBody.growthMeasurements = measurementRecords;
+            if (teethRecords.length) requestBody.growthTeeth = teethRecords;
+            await anonChildRequest('update', requestBody);
+          } else {
+            const payload = {
+              first_name: updated.firstName,
+              sex: updated.sex,
+              dob: updated.dob,
+              context_allergies: updated.context.allergies,
+              context_history: updated.context.history,
+              context_care: updated.context.care,
+              context_languages: updated.context.languages,
+              feeding_type: updated.context.feedingType,
+              eating_style: updated.context.eatingStyle,
+              sleep_falling: updated.context.sleep.falling,
+              sleep_sleeps_through: typeof updated.context.sleep.sleepsThrough === 'boolean' ? updated.context.sleep.sleepsThrough : null,
+              sleep_night_wakings: updated.context.sleep.nightWakings,
+              sleep_wake_duration: updated.context.sleep.wakeDuration,
+              sleep_bedtime: updated.context.sleep.bedtime,
+              milestones: updated.milestones,
+            };
+            await supabase.from('children').update(payload).eq('id', childId);
+            if (measurementRecords.length || teethRecords.length) {
+              const remoteUpdates = [];
+              if (measurementRecords.length) {
+                const upsertMeasurements = measurementRecords.map((rec) => {
+                  const payload = { child_id: childId, month: rec.month };
+                  if (Object.prototype.hasOwnProperty.call(rec, 'height_cm')) payload.height_cm = rec.height_cm;
+                  if (Object.prototype.hasOwnProperty.call(rec, 'weight_kg')) payload.weight_kg = rec.weight_kg;
+                  return payload;
+                });
+                remoteUpdates.push(
+                  supabase.from('growth_measurements').upsert(upsertMeasurements, { onConflict: 'child_id,month' })
+                );
+              }
+              if (teethRecords.length) {
+                const upsertTeeth = teethRecords.map((rec) => ({
+                  child_id: childId,
+                  month: rec.month,
+                  count: rec.count,
+                }));
+                remoteUpdates.push((async () => {
+                  try {
+                    await supabase.from('growth_teeth').upsert(upsertTeeth, { onConflict: 'child_id,month' });
+                  } catch (errTeeth) {
+                    console.warn('growth_teeth upsert failed, fallback to insert', errTeeth);
+                    await supabase.from('growth_teeth').insert(upsertTeeth);
+                  }
+                })());
+              }
+              if (remoteUpdates.length) await Promise.all(remoteUpdates);
+            }
+          }
+        } else {
+          const localChildren = store.get(K.children, []).map((child) => {
+            if (String(child.id) === String(childId)) return updated;
+            return child;
+          });
+          store.set(K.children, localChildren);
+        }
+
+        settingsState.childrenMap.set(childId, updated);
+        settingsState.children = settingsState.children.map((child) => (String(child.id) === String(childId) ? updated : child));
+        settingsState.snapshots.set(childId, nextSnapshot);
       } else {
-        const localChildren = store.get(K.children, []).map((child) => {
-          if (String(child.id) === String(childId)) return updated;
-          return child;
-        });
-        store.set(K.children, localChildren);
+        settingsState.snapshots.set(childId, nextSnapshot);
       }
 
-      settingsState.childrenMap.set(childId, updated);
-      settingsState.children = settingsState.children.map((child) => (String(child.id) === String(childId) ? updated : child));
-      settingsState.snapshots.set(childId, nextSnapshot);
-      await logChildUpdate(childId, 'profil', { prev: prevSnapshot, next: nextSnapshot, summary });
-      invalidateSettingsRemoteCache();
+      const logPayload = { prev: prevSnapshot, next: nextSnapshot, summary };
+      if (hasComment) logPayload.userComment = commentText;
+      await logChildUpdate(childId, 'profil', logPayload);
+      if (hasProfileChanges) {
+        invalidateSettingsRemoteCache();
+        renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
+      }
       notifyChildProfileUpdated();
-      renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
+      const noteField = form.querySelector('[name="update_note"]');
+      if (noteField) noteField.value = '';
     } catch (err) {
       console.warn('handleChildFormSubmit failed', err);
       alert('Impossible de mettre à jour le profil enfant.');
@@ -3596,6 +3614,8 @@ const TIMELINE_MILESTONES = [
   function buildChildUpdateFromForm(base, form) {
     const fd = new FormData(form);
     const clone = JSON.parse(JSON.stringify(base));
+    const rawComment = (fd.get('update_note') || '').toString();
+    const userComment = rawComment.trim().slice(0, 600);
     clone.firstName = (fd.get('firstName') || '').toString().trim();
     clone.sex = (fd.get('sex') || '').toString();
     clone.dob = (fd.get('dob') || '').toString();
@@ -3692,7 +3712,7 @@ const TIMELINE_MILESTONES = [
       teeth: hasTeeth ? Math.max(0, Math.round(teethVal)) : null,
     };
 
-    return { child: clone, growthInputs };
+    return { child: clone, growthInputs, userComment };
   }
 
   function mergeChildContext(base, updates) {
@@ -3871,9 +3891,22 @@ const TIMELINE_MILESTONES = [
           : 'Date inconnue';
         const iso = hasValidDate ? created.toISOString() : '';
         let details = '';
+        let parentNoteHtml = '';
         try {
           const parsed = JSON.parse(u.update_content || '');
-          details = escapeHtml(parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {}));
+          const summaryText = parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {});
+          if (summaryText) details = escapeHtml(summaryText);
+          const parentNote = typeof parsed.userComment === 'string' ? parsed.userComment.trim() : '';
+          if (parentNote) {
+            const formattedNote = escapeHtml(parentNote).replace(/\n/g, '<br>');
+            parentNoteHtml = `
+              <div class="timeline-parent-note">
+                <span class="timeline-parent-note__label">Commentaire parent</span>
+                <div class="timeline-parent-note__text">${formattedNote}</div>
+              </div>
+            `.trim();
+            if (!details) details = 'Commentaire ajouté au profil.';
+          }
         } catch {
           details = escapeHtml(u.update_content || '');
         }
@@ -3890,6 +3923,7 @@ const TIMELINE_MILESTONES = [
                 ${typeBadge}
               </div>
               <div class="timeline-summary">${details}</div>
+              ${parentNoteHtml}
               ${comment}
             </div>
           </article>
@@ -5262,6 +5296,56 @@ const TIMELINE_MILESTONES = [
   }
 
   // --- Update history helpers ---
+  function normalizeUpdateContentForLog(updateContent) {
+    if (typeof updateContent === 'string') {
+      const trimmed = updateContent.trim();
+      return trimmed ? { summary: trimmed } : {};
+    }
+    if (!updateContent || typeof updateContent !== 'object') return {};
+    let clone;
+    try {
+      clone = JSON.parse(JSON.stringify(updateContent));
+    } catch {
+      clone = { ...updateContent };
+    }
+    if (typeof clone.summary === 'string') {
+      const trimmedSummary = clone.summary.trim();
+      if (trimmedSummary) clone.summary = trimmedSummary;
+      else delete clone.summary;
+    }
+    if (typeof clone.userComment === 'string') {
+      const trimmedComment = clone.userComment.trim().slice(0, 600);
+      if (trimmedComment) clone.userComment = trimmedComment;
+      else delete clone.userComment;
+    }
+    return clone;
+  }
+
+  function buildAiCommentInput(updateType, contentObj) {
+    const safe = contentObj && typeof contentObj === 'object' ? contentObj : {};
+    const lines = [];
+    const summary = typeof safe.summary === 'string' ? safe.summary.trim() : '';
+    const parentNote = typeof safe.userComment === 'string' ? safe.userComment.trim() : '';
+    if (updateType) lines.push(`Type de mise à jour: ${updateType}`);
+    if (summary) lines.push(`Résumé des modifications: ${summary}`);
+    if (parentNote) lines.push(`Commentaire du parent: ${parentNote}`);
+    const extras = {};
+    Object.keys(safe).forEach((key) => {
+      if (!['summary', 'userComment', 'prev', 'next'].includes(key)) {
+        extras[key] = safe[key];
+      }
+    });
+    if (Object.keys(extras).length) {
+      lines.push(`Données complémentaires: ${JSON.stringify(extras).slice(0, 600)}`);
+    }
+    if (safe.prev || safe.next) {
+      const diff = JSON.stringify({ avant: safe.prev ?? null, apres: safe.next ?? null });
+      lines.push(`État avant/après (JSON): ${diff.slice(0, 600)}`);
+    }
+    const text = lines.join('\n').trim();
+    return text.slice(0, 1900);
+  }
+
   function makeUpdateSnapshot(childLike) {
     if (!childLike) return {};
     const measures = normalizeMeasures(Array.isArray(childLike?.growth?.measurements) ? childLike.growth.measurements : []);
@@ -5318,8 +5402,10 @@ const TIMELINE_MILESTONES = [
   async function logChildUpdate(childId, updateType, updateContent) {
     if (!childId || !useRemote()) return;
     try {
-      const content = typeof updateContent === 'string' ? updateContent : JSON.stringify(updateContent);
-      const comment = await generateAiComment(content);
+      const normalizedContent = normalizeUpdateContentForLog(updateContent);
+      const content = JSON.stringify(normalizedContent);
+      const aiInput = buildAiCommentInput(updateType, normalizedContent);
+      const comment = aiInput ? await generateAiComment(aiInput) : '';
       if (isAnonProfile()) {
         await anonChildRequest('log-update', {
           childId,
