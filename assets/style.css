@@ -271,6 +271,9 @@ section{opacity:.8}
   .page-logo-img {
     height: clamp(140px, 20vw, 300px); /* logo principal légèrement agrandi sur mobile */
   }
+  .interior-page .page-logo-img {
+    height: clamp(160px, 24vw, 320px); /* logo des pages internes un peu plus grand sur mobile */
+  }
 }
 
 
