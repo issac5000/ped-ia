@@ -43,6 +43,20 @@ const TIMELINE_MILESTONES = [
   // Helpers DOM accessibles immédiatement
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const safeScrollTo = (el, options) => {
+    if (!el) return;
+    try {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo(options);
+        return;
+      }
+    } catch {}
+    try {
+      if (options && typeof options === 'object' && 'top' in options) {
+        el.scrollTop = options.top;
+      }
+    } catch {}
+  };
   const normalizeRoutePath = (input) => {
     const raw = typeof input === 'string' ? input.trim() : '';
     if (!raw) return '/';
@@ -84,6 +98,18 @@ const TIMELINE_MILESTONES = [
       card.classList.remove('ai-focus-highlight');
       aiFocusCleanupTimer = null;
     }, 1600);
+  }
+  const aiPageState = { currentChild: null, instance: 0 };
+  function disposeAIPage(){
+    aiPageState.instance += 1;
+    aiPageState.currentChild = null;
+    try {
+      const chatInput = document.querySelector('section[data-route="/ai"] textarea[name="q"]');
+      if (chatInput && chatInput._aiPlaceholderInterval) {
+        clearInterval(chatInput._aiPlaceholderInterval);
+        delete chatInput._aiPlaceholderInterval;
+      }
+    } catch {}
   }
   let pendingDashboardFocus = null;
   let dashboardFocusCleanupTimer = null;
@@ -915,6 +941,7 @@ const TIMELINE_MILESTONES = [
       }
     } else {
       clearAiFocusHighlight();
+      disposeAIPage();
     }
     if (path === '/contact') { setupContact(); }
     if (typeof requestAnimationFrame === 'function') {
@@ -2444,8 +2471,19 @@ const TIMELINE_MILESTONES = [
 
   // --- Gestion de la page IA ---
   function setupAIPage(){
-    // Déterminer l’enfant courant via Supabase si connecté, sinon via le stockage local
-    let currentChild = null;
+    const route = document.querySelector('section[data-route="/ai"]');
+    if (!route) return;
+    const instanceId = ++aiPageState.instance;
+    aiPageState.currentChild = null;
+
+    const isActiveInstance = () => aiPageState.instance === instanceId;
+    const isRouteAttached = () => isActiveInstance() && document.body.contains(route);
+    const setCurrentChild = (child) => {
+      if (!isActiveInstance()) return;
+      aiPageState.currentChild = child || null;
+    };
+    const getCurrentChild = () => (isActiveInstance() ? aiPageState.currentChild : null);
+
     const loadChild = async () => {
       if (useRemote()) {
         try {
@@ -2455,9 +2493,9 @@ const TIMELINE_MILESTONES = [
             if (!rows.length) {
               const user = store.get(K.user);
               const children = store.get(K.children, []);
-              return children.find(c => c.id === user?.primaryChildId) || children[0] || null;
+              return children.find((c) => c.id === user?.primaryChildId) || children[0] || null;
             }
-            const primaryRow = rows.find(x => x.is_primary) || rows[0];
+            const primaryRow = rows.find((x) => x.is_primary) || rows[0];
             if (!primaryRow) return null;
             const detail = await anonChildRequest('get', { childId: primaryRow.id });
             const data = detail.child;
@@ -2465,7 +2503,7 @@ const TIMELINE_MILESTONES = [
             const child = mapRowToChild(data);
             if (!child) return null;
             const growth = detail.growth || {};
-            (growth.measurements || []).forEach(m => {
+            (growth.measurements || []).forEach((m) => {
               const h = Number(m?.height_cm);
               const w = Number(m?.weight_kg);
               const heightValid = Number.isFinite(h);
@@ -2475,22 +2513,26 @@ const TIMELINE_MILESTONES = [
                 height: heightValid ? h : null,
                 weight: weightValid ? w : null,
                 bmi: heightValid && weightValid && h ? w / Math.pow(h / 100, 2) : null,
-                measured_at: m.created_at
+                measured_at: m.created_at,
               });
             });
-            (growth.sleep || []).forEach(s => child.growth.sleep.push({ month: s.month, hours: s.hours }));
-            (growth.teeth || []).forEach(t => child.growth.teeth.push({ month: t.month, count: t.count }));
+            (growth.sleep || []).forEach((s) => child.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (growth.teeth || []).forEach((t) => child.growth.teeth.push({ month: t.month, count: t.count }));
             return child;
           }
           const uid = authSession?.user?.id || getActiveProfileId();
           if (!uid) {
-            console.warn("Aucun user_id disponible pour la requête children (loadChild) — fallback local");
+            console.warn('Aucun user_id disponible pour la requête children (loadChild) — fallback local');
             const user = store.get(K.user);
             const children = store.get(K.children, []);
-            return children.find(c => c.id === user?.primaryChildId) || children[0] || null;
+            return children.find((c) => c.id === user?.primaryChildId) || children[0] || null;
           }
-          const { data: rows } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
-          const r = (rows||[]).find(x=>x.is_primary) || (rows||[])[0];
+          const { data: rows } = await supabase
+            .from('children')
+            .select('*')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: true });
+          const r = (rows || []).find((x) => x.is_primary) || (rows || [])[0];
           if (r) {
             const child = mapRowToChild(r);
             if (!child) return null;
@@ -2500,8 +2542,8 @@ const TIMELINE_MILESTONES = [
                 supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
                 supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
               ]);
-              (gm||[])
-                .map(m => {
+              (gm || [])
+                .map((m) => {
                   const h = m.height_cm == null ? null : Number(m.height_cm);
                   const w = m.weight_kg == null ? null : Number(m.weight_kg);
                   return {
@@ -2509,12 +2551,12 @@ const TIMELINE_MILESTONES = [
                     height: h,
                     weight: w,
                     bmi: w && h ? w / Math.pow(h / 100, 2) : null,
-                    measured_at: m.created_at
+                    measured_at: m.created_at,
                   };
                 })
-                .forEach(m => child.growth.measurements.push(m));
-              (gs||[]).forEach(s=> child.growth.sleep.push({ month: s.month, hours: s.hours }));
-              (gt||[]).forEach(t=> child.growth.teeth.push({ month: t.month, count: t.count }));
+                .forEach((m) => child.growth.measurements.push(m));
+              (gs || []).forEach((s) => child.growth.sleep.push({ month: s.month, hours: s.hours }));
+              (gt || []).forEach((t) => child.growth.teeth.push({ month: t.month, count: t.count }));
             } catch {}
             return child;
           }
@@ -2522,7 +2564,7 @@ const TIMELINE_MILESTONES = [
       } else {
         const user = store.get(K.user);
         const children = store.get(K.children, []);
-        const c = children.find(c => c.id === user?.primaryChildId) || children[0];
+        const c = children.find((child) => child.id === user?.primaryChildId) || children[0];
         if (c) return c;
       }
       return null;
@@ -2539,7 +2581,7 @@ const TIMELINE_MILESTONES = [
             const ch = mapRowToChild(data);
             if (!ch) return null;
             const growth = detail.growth || {};
-            (growth.measurements || []).forEach(m => {
+            (growth.measurements || []).forEach((m) => {
               const h = Number(m?.height_cm);
               const w = Number(m?.weight_kg);
               const heightValid = Number.isFinite(h);
@@ -2549,114 +2591,177 @@ const TIMELINE_MILESTONES = [
                 height: heightValid ? h : null,
                 weight: weightValid ? w : null,
                 bmi: heightValid && weightValid && h ? w / Math.pow(h / 100, 2) : null,
-                measured_at: m.created_at
+                measured_at: m.created_at,
               });
             });
-            (growth.sleep || []).forEach(s => ch.growth.sleep.push({ month: s.month, hours: s.hours }));
-            (growth.teeth || []).forEach(t => ch.growth.teeth.push({ month: t.month, count: t.count }));
+            (growth.sleep || []).forEach((s) => ch.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (growth.teeth || []).forEach((t) => ch.growth.teeth.push({ month: t.month, count: t.count }));
             return ch;
           }
           const uid = getActiveProfileId();
           if (!uid) {
-            console.warn("Aucun user_id disponible pour la requête children (loadChildById) — fallback local");
+            console.warn('Aucun user_id disponible pour la requête children (loadChildById) — fallback local');
             const children = store.get(K.children, []);
-            return children.find(c=>c.id===id) || null;
+            return children.find((c) => c.id === id) || null;
           }
           const { data: r } = await supabase.from('children').select('*').eq('id', id).maybeSingle();
           if (!r) return null;
           const ch = mapRowToChild(r);
           if (!ch) return null;
           try {
-              const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
-                supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
-                supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
-                supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
-              ]);
-              (gm||[])
-                .map(m => {
-                  const h = m.height_cm == null ? null : Number(m.height_cm);
-                  const w = m.weight_kg == null ? null : Number(m.weight_kg);
-                  return {
-                    month: m.month,
-                    height: h,
-                    weight: w,
-                    bmi: w && h ? w / Math.pow(h / 100, 2) : null,
-                    measured_at: m.created_at
-                  };
-                })
-                .forEach(m => ch.growth.measurements.push(m));
-            (gs||[]).forEach(s=> ch.growth.sleep.push({ month: s.month, hours: s.hours }));
-            (gt||[]).forEach(t=> ch.growth.teeth.push({ month: t.month, count: t.count }));
+            const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
+              supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
+              supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
+              supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
+            ]);
+            (gm || [])
+              .map((m) => {
+                const h = m.height_cm == null ? null : Number(m.height_cm);
+                const w = m.weight_kg == null ? null : Number(m.weight_kg);
+                return {
+                  month: m.month,
+                  height: h,
+                  weight: w,
+                  bmi: w && h ? w / Math.pow(h / 100, 2) : null,
+                  measured_at: m.created_at,
+                };
+              })
+              .forEach((m) => ch.growth.measurements.push(m));
+            (gs || []).forEach((s) => ch.growth.sleep.push({ month: s.month, hours: s.hours }));
+            (gt || []).forEach((t) => ch.growth.teeth.push({ month: t.month, count: t.count }));
           } catch {}
           return ch;
-        } catch { return null; }
+        } catch {
+          return null;
+        }
       }
       const children = store.get(K.children, []);
-      return children.find(c=>c.id===id) || null;
+      return children.find((c) => c.id === id) || null;
     };
 
-    // Helpers d’historique de chat (local, par enfant)
-    const chatKey = (c) => `pedia_ai_chat_${c?.id||'anon'}`;
-    const loadChat = (c) => { try { return JSON.parse(localStorage.getItem(chatKey(c))||'[]'); } catch { return []; } };
-    const saveChat = (c, arr) => { try { localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20))); } catch {} };
+    const chatKey = (c) => `pedia_ai_chat_${c?.id || 'anon'}`;
+    const loadChat = (c) => {
+      try {
+        return JSON.parse(localStorage.getItem(chatKey(c)) || '[]');
+      } catch {
+        return [];
+      }
+    };
+    const saveChat = (c, arr) => {
+      try {
+        localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20)));
+      } catch {}
+    };
     const renderChat = (arr) => {
+      if (!isRouteAttached()) return;
       const el = document.getElementById('ai-chat-messages');
-      if (!el) return;
+      if (!el || !document.body.contains(el)) return;
       const userRole = store.get(K.user)?.role;
       const userAvatar = userRole === 'papa' ? '👨' : '👩';
-      el.innerHTML = arr.map(m=>{
-        const role = m.role==='user' ? 'user' : 'assistant';
-        const avatar = role==='user' ? userAvatar : '🤖';
-        const label = role==='user' ? 'Vous' : 'Assistant';
-        return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
-      }).join('');
-      el.scrollTo({ top: el.scrollHeight, behavior:'smooth' });
+      el.innerHTML = arr
+        .map((m) => {
+          const role = m.role === 'user' ? 'user' : 'assistant';
+          const avatar = role === 'user' ? userAvatar : '🤖';
+          const label = role === 'user' ? 'Vous' : 'Assistant';
+          return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
+        })
+        .join('');
+      safeScrollTo(el, { top: el.scrollHeight, behavior: 'smooth' });
     };
 
-    // Recettes
     const fRecipes = document.getElementById('form-ai-recipes');
     const sRecipes = document.getElementById('ai-recipes-status');
     const outRecipes = document.getElementById('ai-recipes-result');
-    if (fRecipes && !fRecipes.dataset.bound) fRecipes.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (fRecipes.dataset.busy === '1') return;
-      fRecipes.dataset.busy = '1';
-      const submitBtn = fRecipes.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      if (!currentChild) { outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>'; return; }
-      const prefs = new FormData(fRecipes).get('prefs')?.toString() || '';
-      sRecipes.textContent = 'Génération en cours…'; outRecipes.innerHTML='';
-      try {
-        const text = await askAIRecipes(currentChild, prefs);
-        outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
-      } catch (err){
-        outRecipes.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
-      } finally { sRecipes.textContent=''; fRecipes.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
-    }); fRecipes && (fRecipes.dataset.bound='1');
+    if (fRecipes) {
+      if (fRecipes._aiSubmitHandler) {
+        fRecipes.removeEventListener('submit', fRecipes._aiSubmitHandler);
+      }
+      const handleRecipesSubmit = async (e) => {
+        e.preventDefault();
+        if (!isActiveInstance()) return;
+        if (fRecipes.dataset.busy === '1') return;
+        fRecipes.dataset.busy = '1';
+        const submitBtn = fRecipes.querySelector('button[type="submit"],input[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        const runId = aiPageState.instance;
+        const child = getCurrentChild();
+        if (!child) {
+          if (outRecipes) outRecipes.innerHTML = '<div class="muted">Ajoutez un profil enfant pour des recommandations personnalisées.</div>';
+          if (sRecipes) sRecipes.textContent = '';
+          fRecipes.dataset.busy = '0';
+          if (submitBtn) submitBtn.disabled = false;
+          return;
+        }
+        const prefs = new FormData(fRecipes).get('prefs')?.toString() || '';
+        if (sRecipes) sRecipes.textContent = 'Génération en cours…';
+        if (outRecipes) outRecipes.innerHTML = '';
+        try {
+          const text = await askAIRecipes(child, prefs);
+          if (aiPageState.instance !== runId || !isRouteAttached()) return;
+          if (outRecipes) outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
+        } catch (err) {
+          if (aiPageState.instance !== runId || !isRouteAttached()) return;
+          if (outRecipes) outRecipes.innerHTML = '<div class="muted">Serveur IA indisponible.</div>';
+        } finally {
+          if (aiPageState.instance === runId) {
+            if (sRecipes) sRecipes.textContent = '';
+            fRecipes.dataset.busy = '0';
+            if (submitBtn) submitBtn.disabled = false;
+          }
+        }
+      };
+      fRecipes.addEventListener('submit', handleRecipesSubmit);
+      fRecipes._aiSubmitHandler = handleRecipesSubmit;
+    }
 
-    // Histoire
     const fStory = document.getElementById('form-ai-story');
     const sStory = document.getElementById('ai-story-status');
     const outStory = document.getElementById('ai-story-result');
-    if (fStory && !fStory.dataset.bound) fStory.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (fStory.dataset.busy === '1') return;
-      fStory.dataset.busy = '1';
-      const submitBtn = fStory.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      if (!currentChild) { outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>'; return; }
-      const fd = new FormData(fStory);
-      const theme = fd.get('theme')?.toString() || '';
-      const duration = parseInt(fd.get('duration')?.toString() || '3');
-      const sleepy = !!fd.get('sleepy');
-      sStory.textContent = 'Génération en cours…'; outStory.innerHTML='';
-      try {
-        const text = await askAIStory(currentChild, { theme, duration, sleepy });
-        outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
-      } catch (err){
-        outStory.innerHTML = `<div class="muted">Serveur IA indisponible.</div>`;
-      } finally { sStory.textContent=''; fStory.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
-    }); fStory && (fStory.dataset.bound='1');
+    if (fStory) {
+      if (fStory._aiSubmitHandler) {
+        fStory.removeEventListener('submit', fStory._aiSubmitHandler);
+      }
+      const handleStorySubmit = async (e) => {
+        e.preventDefault();
+        if (!isActiveInstance()) return;
+        if (fStory.dataset.busy === '1') return;
+        fStory.dataset.busy = '1';
+        const submitBtn = fStory.querySelector('button[type="submit"],input[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        const runId = aiPageState.instance;
+        const child = getCurrentChild();
+        if (!child) {
+          if (outStory) outStory.innerHTML = '<div class="muted">Ajoutez un profil enfant pour générer une histoire personnalisée.</div>';
+          if (sStory) sStory.textContent = '';
+          fStory.dataset.busy = '0';
+          if (submitBtn) submitBtn.disabled = false;
+          return;
+        }
+        const fd = new FormData(fStory);
+        const theme = fd.get('theme')?.toString() || '';
+        const duration = parseInt(fd.get('duration')?.toString() || '3', 10);
+        const sleepy = !!fd.get('sleepy');
+        if (sStory) sStory.textContent = 'Génération en cours…';
+        if (outStory) outStory.innerHTML = '';
+        try {
+          const text = await askAIStory(child, { theme, duration, sleepy });
+          if (aiPageState.instance !== runId || !isRouteAttached()) return;
+          if (outStory) outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
+        } catch (err) {
+          if (aiPageState.instance !== runId || !isRouteAttached()) return;
+          if (outStory) outStory.innerHTML = '<div class="muted">Serveur IA indisponible.</div>';
+        } finally {
+          if (aiPageState.instance === runId) {
+            if (sStory) sStory.textContent = '';
+            fStory.dataset.busy = '0';
+            if (submitBtn) submitBtn.disabled = false;
+          }
+        }
+      };
+      fStory.addEventListener('submit', handleStorySubmit);
+      fStory._aiSubmitHandler = handleStorySubmit;
+    }
 
-    // Générateur d'images
     const fImage = document.getElementById('form-ai-image');
     const sImage = document.getElementById('ai-image-status');
     const errorImage = document.getElementById('ai-image-error');
@@ -2664,204 +2769,267 @@ const TIMELINE_MILESTONES = [
     const imgPreview = figureImage?.querySelector('img');
     const statusMessage = document.getElementById('generation-status');
     const spinnerImage = document.getElementById('ai-image-spinner');
-    if (fImage && !fImage.dataset.bound) fImage.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (fImage.dataset.busy === '1') return;
-      const fd = new FormData(fImage);
-      const prompt = fd.get('prompt')?.toString().trim();
-      if (!prompt) {
-        if (sImage) sImage.textContent = 'Décrivez une scène pour lancer la génération.';
-        return;
+    if (fImage) {
+      if (fImage._aiSubmitHandler) {
+        fImage.removeEventListener('submit', fImage._aiSubmitHandler);
       }
-      console.info('[AI image] Génération demandée', { promptLength: prompt.length, preview: prompt.slice(0, 80) });
-      fImage.dataset.busy = '1';
-      const runToken = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      fImage.dataset.runToken = runToken;
-      const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      if (sImage) sImage.textContent = '';
-      if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
-      if (figureImage) figureImage.hidden = true;
-      if (imgPreview) imgPreview.removeAttribute('src');
-      if (spinnerImage) spinnerImage.hidden = false;
+      const handleImageSubmit = async (e) => {
+        e.preventDefault();
+        if (!isActiveInstance()) return;
+        if (fImage.dataset.busy === '1') return;
+        const fd = new FormData(fImage);
+        const prompt = fd.get('prompt')?.toString().trim();
+        if (!prompt) {
+          if (sImage) sImage.textContent = 'Décrivez une scène pour lancer la génération.';
+          return;
+        }
+        console.info('[AI image] Génération demandée', { promptLength: prompt.length, preview: prompt.slice(0, 80) });
+        fImage.dataset.busy = '1';
+        const runToken = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        fImage.dataset.runToken = runToken;
+        const submitBtn = fImage.querySelector('button[type="submit"],input[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        if (sImage) sImage.textContent = '';
+        if (errorImage) {
+          errorImage.textContent = '';
+          errorImage.hidden = true;
+        }
+        if (figureImage) figureImage.hidden = true;
+        if (imgPreview) imgPreview.removeAttribute('src');
+        if (spinnerImage) spinnerImage.hidden = false;
 
-      const statusTimers = [];
-      let hideStatusTimeout = null;
-      let statusActive = false;
-      const clearStatusTimers = () => {
-        statusTimers.forEach(clearTimeout);
-        statusTimers.length = 0;
-        if (hideStatusTimeout) { clearTimeout(hideStatusTimeout); hideStatusTimeout = null; }
-      };
-      const setStatusText = (text) => {
-        if (!statusMessage) return;
-        const activeToken = fImage.dataset.runToken;
-        if (activeToken && activeToken !== runToken) return;
-        statusMessage.hidden = false;
-        statusMessage.textContent = text;
-      };
-      const startStatusSequence = () => {
-        statusActive = true;
-        setStatusText('✨ Ton image est en préparation…');
-        statusTimers.push(setTimeout(() => {
-          if (statusActive) setStatusText('⌛ Ça prend quelques secondes, merci de ta patience 🙏');
-        }, 4000));
-        statusTimers.push(setTimeout(() => {
-          if (statusActive) setStatusText('🎨 L’IA met les dernières touches à ton illustration…');
-        }, 8000));
-      };
-      const showSuccessStatus = () => {
-        statusActive = false;
-        clearStatusTimers();
-        setStatusText('✅ Ton image est prête !');
-        hideStatusTimeout = setTimeout(() => {
+        const statusTimers = [];
+        let hideStatusTimeout = null;
+        let statusActive = false;
+        const clearStatusTimers = () => {
+          statusTimers.forEach(clearTimeout);
+          statusTimers.length = 0;
+          if (hideStatusTimeout) {
+            clearTimeout(hideStatusTimeout);
+            hideStatusTimeout = null;
+          }
+        };
+        const setStatusText = (text) => {
           if (!statusMessage) return;
           const activeToken = fImage.dataset.runToken;
           if (activeToken && activeToken !== runToken) return;
-          statusMessage.hidden = true;
-          statusMessage.textContent = '';
-        }, 1200);
-      };
-      const showFailureStatus = () => {
-        statusActive = false;
-        clearStatusTimers();
-        setStatusText('❌ Impossible de générer l’image pour le moment.');
-      };
-      const showSpinner = () => {
-        if (!spinnerImage) return;
-        const activeToken = fImage.dataset.runToken;
-        if (activeToken && activeToken !== runToken) return;
-        spinnerImage.hidden = false;
-      };
-      const hideSpinner = () => {
-        if (!spinnerImage) return;
-        const activeToken = fImage.dataset.runToken;
-        if (activeToken && activeToken !== runToken) return;
-        spinnerImage.hidden = true;
-      };
+          statusMessage.hidden = false;
+          statusMessage.textContent = text;
+        };
+        const startStatusSequence = () => {
+          statusActive = true;
+          setStatusText('✨ Ton image est en préparation…');
+          statusTimers.push(
+            setTimeout(() => {
+              if (statusActive) setStatusText('⌛ Ça prend quelques secondes, merci de ta patience 🙏');
+            }, 4000),
+          );
+          statusTimers.push(
+            setTimeout(() => {
+              if (statusActive) setStatusText('🎨 L’IA met les dernières touches à ton illustration…');
+            }, 8000),
+          );
+        };
+        const showSuccessStatus = () => {
+          statusActive = false;
+          clearStatusTimers();
+          setStatusText('✅ Ton image est prête !');
+          hideStatusTimeout = setTimeout(() => {
+            if (!statusMessage) return;
+            const activeToken = fImage.dataset.runToken;
+            if (activeToken && activeToken !== runToken) return;
+            statusMessage.hidden = true;
+            statusMessage.textContent = '';
+          }, 1200);
+        };
+        const showFailureStatus = () => {
+          statusActive = false;
+          clearStatusTimers();
+          setStatusText('❌ Impossible de générer l’image pour le moment.');
+        };
+        const showSpinner = () => {
+          if (!spinnerImage) return;
+          const activeToken = fImage.dataset.runToken;
+          if (activeToken && activeToken !== runToken) return;
+          spinnerImage.hidden = false;
+        };
+        const hideSpinner = () => {
+          if (!spinnerImage) return;
+          const activeToken = fImage.dataset.runToken;
+          if (activeToken && activeToken !== runToken) return;
+          spinnerImage.hidden = true;
+        };
 
-      showSpinner();
-      startStatusSequence();
+        showSpinner();
+        startStatusSequence();
+        const runId = aiPageState.instance;
 
-      try {
-        const res = await fetch('/api/image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt })
-        });
-        const raw = await res.text();
-        console.info('[AI image] Réponse reçue', { status: res.status, ok: res.ok, bodySize: raw?.length ?? 0 });
-        if (!res.ok) {
-          let msg = 'Impossible de générer l’illustration pour le moment.';
-          try {
-            const payload = JSON.parse(raw || '{}');
-            const basic = payload?.error || payload?.message;
-            const detail = payload?.details || payload?.error?.message;
-            msg = [basic || msg, detail].filter(Boolean).join(' — ');
-          } catch {}
-          throw new Error(msg);
-        }
-        let payload = {};
         try {
-          payload = JSON.parse(raw || '{}');
-        } catch {
-          payload = { image: raw };
+          const res = await fetch('/api/image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+          });
+          const raw = await res.text();
+          console.info('[AI image] Réponse reçue', { status: res.status, ok: res.ok, bodySize: raw?.length ?? 0 });
+          if (!res.ok) {
+            let msg = 'Impossible de générer l’illustration pour le moment.';
+            try {
+              const payload = JSON.parse(raw || '{}');
+              const basic = payload?.error || payload?.message;
+              const detail = payload?.details || payload?.error?.message;
+              msg = [basic || msg, detail].filter(Boolean).join(' — ');
+            } catch {}
+            throw new Error(msg);
+          }
+          let payload = {};
+          try {
+            payload = JSON.parse(raw || '{}');
+          } catch {
+            payload = { image: raw };
+          }
+          const rawImage = payload?.image || payload?.base64 || payload?.data || payload?.result || '';
+          const mime = typeof payload?.mime === 'string' ? payload.mime : 'image/png';
+          const dataUrl = rawImage.startsWith('data:')
+            ? rawImage
+            : (rawImage ? `data:${mime.startsWith('image/') ? mime : 'image/png'};base64,${rawImage}` : '');
+          if (!dataUrl) throw new Error('Réponse image invalide.');
+          if (aiPageState.instance !== runId || !isRouteAttached()) return;
+          if (imgPreview) {
+            imgPreview.src = dataUrl;
+          }
+          if (figureImage) figureImage.hidden = false;
+          if (errorImage) {
+            errorImage.textContent = '';
+            errorImage.hidden = true;
+          }
+          hideSpinner();
+          showSuccessStatus();
+          if (sImage) sImage.textContent = '';
+        } catch (err) {
+          if (aiPageState.instance !== runId || !isRouteAttached()) return;
+          console.error('[AI image] Erreur', err);
+          const message = err instanceof Error ? err.message : 'Illustration indisponible.';
+          if (errorImage) {
+            errorImage.textContent = message;
+            errorImage.hidden = false;
+          }
+          hideSpinner();
+          showFailureStatus();
+          if (sImage) sImage.textContent = '';
+        } finally {
+          hideSpinner();
+          fImage.dataset.busy = '0';
+          const submitBtnFinal = fImage.querySelector('button[type="submit"],input[type="submit"]');
+          if (submitBtnFinal) submitBtnFinal.disabled = false;
         }
-        const rawImage = payload?.image || payload?.base64 || payload?.data || payload?.result || '';
-        const mime = typeof payload?.mime === 'string' ? payload.mime : 'image/png';
-        const dataUrl = rawImage.startsWith('data:') ? rawImage : (rawImage ? `data:${mime.startsWith('image/') ? mime : 'image/png'};base64,${rawImage}` : '');
-        if (!dataUrl) throw new Error('Réponse image invalide.');
-        if (imgPreview) {
-          imgPreview.src = dataUrl;
-        }
-        if (figureImage) figureImage.hidden = false;
-        if (errorImage) { errorImage.textContent = ''; errorImage.hidden = true; }
-        hideSpinner();
-        showSuccessStatus();
-        if (sImage) sImage.textContent = '';
-      } catch (err) {
-        console.error('[AI image] Erreur', err);
-        const message = err instanceof Error ? err.message : 'Illustration indisponible.';
-        if (errorImage) {
-          errorImage.textContent = message;
-          errorImage.hidden = false;
-        }
-        hideSpinner();
-        showFailureStatus();
-        if (sImage) sImage.textContent = '';
-      } finally {
-        hideSpinner();
-        fImage.dataset.busy = '0';
-        const submitBtnFinal = fImage.querySelector('button[type="submit"],input[type="submit"]');
-        if (submitBtnFinal) submitBtnFinal.disabled = false;
-      }
-    }); fImage && (fImage.dataset.bound='1');
+      };
+      fImage.addEventListener('submit', handleImageSubmit);
+      fImage._aiSubmitHandler = handleImageSubmit;
+    }
 
-    // Discussion
     const fChat = document.getElementById('form-ai-chat');
     const sChat = document.getElementById('ai-chat-status');
     const msgsEl = document.getElementById('ai-chat-messages');
     const btnReset = document.getElementById('ai-chat-reset');
     const txtChat = fChat?.querySelector('textarea[name="q"]');
     if (txtChat) {
-      const placeholders = ['Écris ici…','Pose ta question…','Dis-moi tout…'];
+      if (txtChat._aiPlaceholderInterval) {
+        clearInterval(txtChat._aiPlaceholderInterval);
+      }
+      const placeholders = ['Écris ici…', 'Pose ta question…', 'Dis-moi tout…'];
       let idx = 0;
-      setInterval(() => {
+      txtChat._aiPlaceholderInterval = setInterval(() => {
         if (document.activeElement !== txtChat) {
           idx = (idx + 1) % placeholders.length;
           txtChat.placeholder = placeholders[idx];
         }
       }, 4000);
     }
-    if (btnReset && !btnReset.dataset.bound) {
-      btnReset.addEventListener('click', (e) => {
+    if (btnReset) {
+      if (btnReset._aiClickHandler) {
+        btnReset.removeEventListener('click', btnReset._aiClickHandler);
+      }
+      const handleReset = (e) => {
         e.preventDefault();
-        const key = chatKey(currentChild);
-        try { localStorage.removeItem(key); } catch {}
+        const child = getCurrentChild();
+        const key = chatKey(child);
+        try {
+          localStorage.removeItem(key);
+        } catch {}
         renderChat([]);
-        sChat.textContent = '';
-      });
-      btnReset.dataset.bound = '1';
+        if (sChat) sChat.textContent = '';
+      };
+      btnReset.addEventListener('click', handleReset);
+      btnReset._aiClickHandler = handleReset;
     }
-    if (fChat && !fChat.dataset.bound) fChat.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (fChat.dataset.busy === '1') return;
-      fChat.dataset.busy = '1';
-      const submitBtn = fChat.querySelector('button[type="submit"],input[type="submit"]'); if (submitBtn) submitBtn.disabled = true;
-      const q = new FormData(fChat).get('q')?.toString().trim();
-      if (!q) return;
-      sChat.textContent = 'Réflexion en cours…';
-      // Afficher immédiatement la bulle de l’utilisateur
-      const history = loadChat(currentChild);
-      history.push({ role:'user', content:q });
-      saveChat(currentChild, history);
-      renderChat(history);
-      // Afficher l’indicateur de frappe
-      document.getElementById('ai-typing')?.remove();
-      const typing = document.createElement('div');
-      typing.id='ai-typing';
-      typing.className='chat-line assistant';
-      typing.innerHTML='<div class="avatar">🤖</div><div class="message"><div class="bubble assistant"><span class="typing"><span></span><span></span><span></span></span></div></div>';
-      msgsEl?.appendChild(typing);
-      msgsEl?.scrollTo({ top: msgsEl.scrollHeight, behavior:"smooth" });
-      try {
-        const resp = await askAI(q, currentChild, history);
-        const newH = loadChat(currentChild);
-        newH.push({ role:'assistant', content:resp });
-        saveChat(currentChild, newH);
-        renderChat(newH);
-      } catch (err){
-        const msg = (err && err.message) ? err.message : String(err||'IA indisponible');
-        const newH = loadChat(currentChild);
-        newH.push({ role:'assistant', content:`[Erreur IA] ${msg}` });
-        saveChat(currentChild, newH);
-        renderChat(newH);
-      } finally { sChat.textContent=''; document.getElementById('ai-typing')?.remove(); fChat.dataset.busy='0'; if (submitBtn) submitBtn.disabled = false; }
-    }); fChat && (fChat.dataset.bound='1');
+    if (fChat) {
+      if (fChat._aiSubmitHandler) {
+        fChat.removeEventListener('submit', fChat._aiSubmitHandler);
+      }
+      const handleChatSubmit = async (e) => {
+        e.preventDefault();
+        if (!isActiveInstance()) return;
+        if (fChat.dataset.busy === '1') return;
+        fChat.dataset.busy = '1';
+        const submitBtn = fChat.querySelector('button[type="submit"],input[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        const runId = aiPageState.instance;
+        const child = getCurrentChild();
+        const childId = child && child.id != null ? String(child.id) : 'anon';
+        const q = new FormData(fChat).get('q')?.toString().trim();
+        if (!q) {
+          fChat.dataset.busy = '0';
+          if (submitBtn) submitBtn.disabled = false;
+          return;
+        }
+        if (sChat) sChat.textContent = 'Réflexion en cours…';
+        const history = loadChat(child);
+        history.push({ role: 'user', content: q });
+        saveChat(child, history);
+        renderChat(history);
+        document.getElementById('ai-typing')?.remove();
+        const typing = document.createElement('div');
+        typing.id = 'ai-typing';
+        typing.className = 'chat-line assistant';
+        typing.innerHTML = '<div class="avatar">🤖</div><div class="message"><div class="bubble assistant"><span class="typing"><span></span><span></span><span></span></span></div></div>';
+        if (msgsEl && document.body.contains(msgsEl)) {
+          msgsEl.appendChild(typing);
+          safeScrollTo(msgsEl, { top: msgsEl.scrollHeight, behavior: 'smooth' });
+        }
+        try {
+          const resp = await askAI(q, child, history);
+          const active = getCurrentChild();
+          const activeId = active && active.id != null ? String(active.id) : 'anon';
+          if (aiPageState.instance !== runId || activeId !== childId || !isRouteAttached()) return;
+          const newH = loadChat(child);
+          newH.push({ role: 'assistant', content: resp });
+          saveChat(child, newH);
+          renderChat(newH);
+        } catch (err) {
+          const active = getCurrentChild();
+          const activeId = active && active.id != null ? String(active.id) : 'anon';
+          if (aiPageState.instance !== runId || activeId !== childId || !isRouteAttached()) return;
+          const msg = err instanceof Error && err.message ? err.message : String(err || 'IA indisponible');
+          const newH = loadChat(child);
+          newH.push({ role: 'assistant', content: `[Erreur IA] ${msg}` });
+          saveChat(child, newH);
+          renderChat(newH);
+        } finally {
+          document.getElementById('ai-typing')?.remove();
+          if (aiPageState.instance === runId) {
+            if (sChat) sChat.textContent = '';
+            fChat.dataset.busy = '0';
+            if (submitBtn) submitBtn.disabled = false;
+          }
+        }
+      };
+      fChat.addEventListener('submit', handleChatSubmit);
+      fChat._aiSubmitHandler = handleChatSubmit;
+    }
 
-    // Charger l’enfant de façon asynchrone pour personnaliser l’IA
     const renderIndicator = async (child) => {
-      const route = document.querySelector('section[data-route="/ai"]');
-      if (!route) return;
+      if (!isRouteAttached()) return;
       const container = route.querySelector('.stack');
       if (!container) return;
       let box = document.getElementById('ai-profile-indicator');
@@ -2872,13 +3040,16 @@ const TIMELINE_MILESTONES = [
       }
       container.insertBefore(box, container.firstChild);
       const slim = await listChildrenSlim();
+      if (!isActiveInstance()) return;
       if (!child || !slim.length) {
-        box.innerHTML = `<div class="muted">Aucun profil enfant chargé pour l’IA. <a href="#/onboarding">Créer un profil</a>.</div>`;
+        box.innerHTML = '<div class="muted">Aucun profil enfant chargé pour l’IA. <a href="#/onboarding">Créer un profil</a>.</div>';
         return;
       }
       const ageTxt = formatAge(child.dob);
       const selectedId = child.id;
-      const opts = slim.map(c => `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${escapeHtml(c.firstName)}${c.dob?` • ${formatAge(c.dob)}`:''}</option>`).join('');
+      const opts = slim
+        .map((c) => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.firstName)}${c.dob ? ` • ${formatAge(c.dob)}` : ''}</option>`)
+        .join('');
       box.className = 'ai-child-selector';
       const ctx = child.context || {};
       const safeAge = ageTxt ? escapeHtml(ageTxt) : '';
@@ -2905,23 +3076,39 @@ const TIMELINE_MILESTONES = [
           <p class="ai-child-hint">${summary ? `${safeName} • ${summary}` : safeName}</p>
         </div>`;
       const sel = box.querySelector('#ai-child-switcher');
-      if (sel && !sel.dataset.bound) {
-        sel.addEventListener('change', async (e) => {
+      if (sel) {
+        if (sel._aiChangeHandler) {
+          sel.removeEventListener('change', sel._aiChangeHandler);
+        }
+        const handleChange = async (e) => {
           const id = e.currentTarget.value;
           await setPrimaryChild(id);
-          currentChild = await loadChildById(id);
-          // Rafraîchir l’indicateur et les historiques pour cet enfant
-          await renderIndicator(currentChild);
-          renderChat(loadChat(currentChild));
-          // Vider les textes générés précédemment pour éviter la confusion
-          const outR = document.getElementById('ai-recipes-result'); if (outR) outR.innerHTML = '';
-          const outS = document.getElementById('ai-story-result'); if (outS) outS.innerHTML = '';
-        });
-        sel.dataset.bound = '1';
+          const nextChild = await loadChildById(id);
+          if (!isActiveInstance()) return;
+          setCurrentChild(nextChild);
+          await renderIndicator(nextChild);
+          if (!isActiveInstance()) return;
+          renderChat(loadChat(nextChild));
+          const outR = document.getElementById('ai-recipes-result');
+          if (outR) outR.innerHTML = '';
+          const outS = document.getElementById('ai-story-result');
+          if (outS) outS.innerHTML = '';
+        };
+        sel.addEventListener('change', handleChange);
+        sel._aiChangeHandler = handleChange;
       }
     };
 
-    (async () => { currentChild = await loadChild(); await renderIndicator(currentChild); renderChat(loadChat(currentChild)); const m=document.getElementById('ai-chat-messages'); m?.scrollTo({top:m.scrollHeight, behavior:'smooth'}); })();
+    (async () => {
+      const child = await loadChild();
+      if (!isActiveInstance()) return;
+      setCurrentChild(child);
+      await renderIndicator(child);
+      if (!isActiveInstance()) return;
+      renderChat(loadChat(child));
+      const m = document.getElementById('ai-chat-messages');
+      if (m) safeScrollTo(m, { top: m.scrollHeight, behavior: 'smooth' });
+    })();
   }
 
   // Onboarding
@@ -4625,6 +4812,11 @@ const TIMELINE_MILESTONES = [
     // Garde d’instance pour éviter les courses et les doublons DOM
     const rid = (renderCommunity._rid = (renderCommunity._rid || 0) + 1);
     const list = $('#forum-list');
+    if (!list) {
+      console.warn('Forum list container introuvable');
+      return;
+    }
+    const isListActive = () => document.body.contains(list) && renderCommunity._rid === rid;
     list.innerHTML = '';
     const refreshBtn = $('#btn-refresh-community');
     if (refreshBtn && !refreshBtn.dataset.bound) {
@@ -4777,7 +4969,7 @@ const TIMELINE_MILESTONES = [
       });
     }
     const showEmpty = () => {
-      if (rid !== renderCommunity._rid) return;
+      if (rid !== renderCommunity._rid || !isListActive()) return;
       const empty = document.createElement('div');
       empty.className = 'card';
       empty.textContent = 'Aucun sujet pour le moment. Lancez la discussion !';
@@ -4858,6 +5050,7 @@ const TIMELINE_MILESTONES = [
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
       if (rid !== renderCommunity._rid) return;
+      if (!isListActive()) return;
       const openSet = (renderCommunity._open = renderCommunity._open || new Set());
       if (openSet.size) {
         const validTopicIds = new Set(
@@ -5017,6 +5210,7 @@ const TIMELINE_MILESTONES = [
             ${deleteBtn}
           </div>
         `;
+        if (!isListActive()) return;
         list.appendChild(el);
       });
       bindReplyForms(list);
