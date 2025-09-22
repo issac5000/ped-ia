@@ -3225,8 +3225,8 @@ const TIMELINE_MILESTONES = [
           <button type="button" class="btn btn-secondary" id="toggle-milestones" data-expanded="0" aria-expanded="false">Afficher les jalons</button>
         </div>
         <div id="edit-milestones" hidden>${milestonesHtml}</div>
-        <label>Commentaire pour cette mise à jour
-          <textarea name="update_note" rows="3" placeholder="Ajoutez une observation personnelle, un évènement marquant ou une question pour le prochain suivi."></textarea>
+        <label>Commentaire pour cette mise à jour <span style="font-size:0.85em;color:#6c757d;font-style:italic;">(recommandé)</span>
+          <textarea name="update_note" rows="3" placeholder="« Partagez une observation, un détail marquant ou votre ressenti de parent. »"></textarea>
           <p class="muted">Visible dans l’historique et pris en compte par l’assistant IA.</p>
         </label>
         <div class="form-actions-center"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
