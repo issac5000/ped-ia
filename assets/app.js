@@ -720,12 +720,147 @@ const TIMELINE_MILESTONES = [
 
   
 
+  // Données démo locales pour pré-remplir le carnet de santé & la communauté
+  const DEMO_CHILD_ID = 'demo-child-1';
+  function buildDemoChild() {
+    const baseDob = '2022-05-12';
+    const now = Date.now();
+    const withTimestamp = (offsetDays) => {
+      const date = new Date(now - offsetDays * 24 * 3600 * 1000);
+      return date.toISOString();
+    };
+    const demoMilestones = Array.from({ length: DEV_QUESTIONS.length }, (_, idx) => idx < 14 ? true : idx < 18 ? idx % 2 === 0 : false);
+    return {
+      id: DEMO_CHILD_ID,
+      firstName: 'Maya',
+      sex: 'fille',
+      dob: baseDob,
+      photo: '',
+      context: {
+        allergies: 'Arachide (surveillée)',
+        history: 'Suivi classique, RAS',
+        care: 'Crèche municipale',
+        languages: 'Français, Anglais',
+        feedingType: 'mixte_allaitement_biberon',
+        eatingStyle: 'mange_tres_bien',
+        sleep: {
+          falling: 'Routine apaisée (10 min)',
+          sleepsThrough: true,
+          nightWakings: '1 réveil rare',
+          wakeDuration: 'Réveils brefs',
+          bedtime: '20:30',
+        },
+      },
+      milestones: demoMilestones,
+      growth: {
+        measurements: [
+          { month: 0, height: 50, weight: 3.4, measured_at: withTimestamp(950) },
+          { month: 3, height: 60, weight: 5.6, measured_at: withTimestamp(860) },
+          { month: 6, height: 66, weight: 7.3, measured_at: withTimestamp(770) },
+          { month: 9, height: 71, weight: 8.2, measured_at: withTimestamp(680) },
+          { month: 12, height: 75, weight: 9.1, measured_at: withTimestamp(590) },
+          { month: 18, height: 82, weight: 10.4, measured_at: withTimestamp(410) },
+          { month: 24, height: 88, weight: 11.6, measured_at: withTimestamp(230) },
+          { month: 30, height: 93, weight: 12.4, measured_at: withTimestamp(50) },
+        ],
+        sleep: [
+          { month: 6, hours: 15 },
+          { month: 12, hours: 14 },
+          { month: 24, hours: 13 },
+        ],
+        teeth: [
+          { month: 8, count: 2 },
+          { month: 12, count: 6 },
+          { month: 18, count: 12 },
+        ],
+      },
+    };
+  }
+
+  function buildDemoForum() {
+    const base = Date.now();
+    return [
+      {
+        id: 'demo-topic-1',
+        title: '[Sommeil] Vos rituels du coucher préférés ? ',
+        content: 'Bonjour à tous ! Notre petite Maya de bientôt 2 ans a encore besoin de beaucoup de câlins avant de dormir. Quels rituels utilisent vos enfants pour se détendre ? 😊',
+        author: 'Élodie — maman de Maya',
+        createdAt: base - 1000 * 60 * 60 * 12,
+        replies: [
+          {
+            author: 'Karim — papa de Lina',
+            content: 'On lit une histoire courte avec une veilleuse tamisée. Depuis que nous avons introduit un petit massage des mains, elle s’endort beaucoup plus vite !',
+            createdAt: base - 1000 * 60 * 60 * 8,
+          },
+          {
+            author: 'Sophie — maman de Jules',
+            content: 'Chez nous, on chante la même berceuse tous les soirs. La répétition rassure énormément Jules.',
+            createdAt: base - 1000 * 60 * 60 * 6,
+          },
+        ],
+      },
+      {
+        id: 'demo-topic-2',
+        title: '[Alimentation] Idées de petits-déjeuners équilibrés',
+        content: 'Je cherche des idées rapides mais gourmandes pour varier les petits-déjeuners. Maya adore les fruits, et chez vous ? 🥣🍓',
+        author: 'Élodie — maman de Maya',
+        createdAt: base - 1000 * 60 * 60 * 30,
+        replies: [
+          {
+            author: 'Léa — maman d’Émile',
+            content: 'Nous faisons souvent un porridge avec flocons d’avoine, lait végétal et banane écrasée. Je rajoute parfois des graines de chia pour les oméga-3.',
+            createdAt: base - 1000 * 60 * 60 * 26,
+          },
+        ],
+      },
+      {
+        id: 'demo-topic-3',
+        title: '[Développement] Des jeux pour encourager le langage',
+        content: 'Avez-vous des jeux simples à proposer pour enrichir le vocabulaire ? Nous aimons chanter et montrer des cartes imagées, mais je suis preneuse d’autres idées.',
+        author: 'Camille — maman de Zoé',
+        createdAt: base - 1000 * 60 * 60 * 52,
+        replies: [
+          {
+            author: 'Thomas — papa de Hugo',
+            content: 'Les imagiers sonores ont été une révélation ici. On commente chaque image et on invente une mini-histoire.',
+            createdAt: base - 1000 * 60 * 60 * 48,
+          },
+          {
+            author: 'Fatou — maman de Sélena',
+            content: 'On adore aussi le jeu “je vois, tu vois” en décrivant un objet de la pièce. C’est ludique et ça enrichit le vocabulaire.',
+            createdAt: base - 1000 * 60 * 60 * 45,
+          },
+        ],
+      },
+    ];
+  }
+
   // Valeurs par défaut de démarrage
   function bootstrap() {
-    if (!store.get(K.forum)) store.set(K.forum, { topics: [] });
-    if (!store.get(K.children)) store.set(K.children, []);
-    if (!store.get(K.privacy)) store.set(K.privacy, { showStats: true, allowMessages: true });
-    if (!store.get(K.session)) store.set(K.session, { loggedIn: false });
+    const forumData = store.get(K.forum);
+    if (!forumData || !Array.isArray(forumData.topics) || forumData.topics.length === 0) {
+      store.set(K.forum, { topics: buildDemoForum() });
+    }
+    const childrenData = store.get(K.children);
+    if (!Array.isArray(childrenData) || childrenData.length === 0) {
+      store.set(K.children, [buildDemoChild()]);
+    }
+    const privacyData = store.get(K.privacy);
+    if (!privacyData) {
+      store.set(K.privacy, { showStats: true, allowMessages: true });
+    }
+    const sessionData = store.get(K.session);
+    if (!sessionData) {
+      store.set(K.session, { loggedIn: false });
+    }
+    const userData = store.get(K.user);
+    if (!userData || Object.keys(userData).length === 0) {
+      store.set(K.user, {
+        pseudo: 'Élodie',
+        role: 'maman',
+        primaryChildId: DEMO_CHILD_ID,
+      });
+    }
   }
 
   // Gestion du routage
@@ -3810,42 +3945,52 @@ const TIMELINE_MILESTONES = [
       $('#btn-refresh-profile')?.addEventListener('click', () => location.reload());
     }
     const renderForChild = async (child) => {
-      const ageM = ageInMonths(child.dob);
-      const ageTxt = formatAge(child.dob);
+      const safeChild = child && typeof child === 'object' ? child : {};
+      const dobValue = safeChild.dob;
+      const ageRaw = dobValue ? ageInMonths(dobValue) : NaN;
+      const ageM = Number.isFinite(ageRaw) ? ageRaw : 0;
+      const ageTxt = Number.isFinite(ageRaw) ? formatAge(dobValue) : 'Date de naissance à compléter';
+      const context = safeChild.context && typeof safeChild.context === 'object' ? safeChild.context : {};
+      const sleepContext = context.sleep && typeof context.sleep === 'object' ? context.sleep : {};
+      const growth = safeChild.growth && typeof safeChild.growth === 'object' ? safeChild.growth : {};
+      const measurements = Array.isArray(growth.measurements) ? growth.measurements : [];
+      const sleepEntries = Array.isArray(growth.sleep) ? growth.sleep : [];
+      const teethEntries = Array.isArray(growth.teeth) ? growth.teeth : [];
+      const milestones = Array.isArray(safeChild.milestones) ? safeChild.milestones : [];
       if (rid !== renderDashboard._rid) return;
-    // Calculer le dernier état de santé (mesures récentes)
-    const msAll = normalizeMeasures(child.growth.measurements);
-    const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
-    const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
-    const lastTeeth = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
-    const lastSleepHours = [...(child.growth.sleep||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
-    const ageDays = ageInDays(child.dob);
-    const timelineSection = build1000DaysTimeline(child, ageDays);
-    if (rid !== renderDashboard._rid) return;
-    dom.innerHTML = `
+      // Calculer le dernier état de santé (mesures récentes)
+      const msAll = normalizeMeasures(measurements);
+      const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
+      const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
+      const lastTeeth = [...teethEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
+      const lastSleepHours = [...sleepEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
+      const ageDays = ageInDays(dobValue);
+      const timelineSection = build1000DaysTimeline(safeChild, ageDays);
+      if (rid !== renderDashboard._rid) return;
+      dom.innerHTML = `
       <div class="grid-2">
         <div class="card stack">
           <div class="hstack">
-            ${child.photo ? `<img src="${child.photo}" alt="${child.firstName}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid var(--border);"/>` :
-            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid var(--border);display:grid;place-items:center;background:#111845;font-weight:600;font-size:24px;color:#fff;">${(child.firstName||'?').slice(0,1).toUpperCase()}</div>`}
+            ${safeChild.photo ? `<img src="${safeChild.photo}" alt="${safeChild.firstName}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid var(--border);"/>` :
+            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid var(--border);display:grid;place-items:center;background:#111845;font-weight:600;font-size:24px;color:#fff;">${(safeChild.firstName||'?').slice(0,1).toUpperCase()}</div>`}
             <div>
-              <h2 style="margin:0">${child.firstName}</h2>
-              <div class="muted">${child.sex} • ${ageTxt}</div>
+              <h2 style="margin:0">${safeChild.firstName || 'Votre enfant'}</h2>
+              <div class="muted">${safeChild.sex || '—'} • ${ageTxt}</div>
             </div>
           </div>
           <div class="hstack">
-            <span class="chip">Allergies: ${child.context.allergies || '—'}</span>
-            <span class="chip">Mode de garde: ${child.context.care || '—'}</span>
-            <span class="chip">Langues: ${child.context.languages || '—'}</span>
-            <span class="chip">Alimentation: ${labelFeedingType(child.context.feedingType)}</span>
-            <span class="chip">Appétit: ${labelEatingStyle(child.context.eatingStyle)}</span>
-            <span class="chip">Sommeil: ${summarizeSleep(child.context.sleep)}</span>
+            <span class="chip">Allergies: ${context.allergies || '—'}</span>
+            <span class="chip">Mode de garde: ${context.care || '—'}</span>
+            <span class="chip">Langues: ${context.languages || '—'}</span>
+            <span class="chip">Alimentation: ${labelFeedingType(context.feedingType)}</span>
+            <span class="chip">Appétit: ${labelEatingStyle(context.eatingStyle)}</span>
+            <span class="chip">Sommeil: ${summarizeSleep(sleepContext)}</span>
           </div>
           <div class="hstack">
             <button class="btn btn-primary" type="button" id="btn-toggle-milestones">Afficher les jalons</button>
           </div>
           <div class="hstack" id="milestones-list" hidden>
-            ${child.milestones.map((v,i)=> v?`<span class="badge done">${DEV_QUESTIONS[i]?.label||''}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
+            ${milestones.map((v,i)=> v?`<span class="badge done">${DEV_QUESTIONS[i]?.label||''}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
           </div>
         </div>
       </div>
@@ -3909,7 +4054,7 @@ const TIMELINE_MILESTONES = [
 
     // Ajouter le bloc d’historique des mises à jour
     try {
-      const updates = await getChildUpdates(child.id);
+      const updates = await getChildUpdates(safeChild.id);
       if (rid !== renderDashboard._rid) return;
       const hist = document.createElement('div');
       hist.className = 'card stack';
@@ -4044,7 +4189,7 @@ const TIMELINE_MILESTONES = [
       reportContent.style.overflowY = 'auto';
       reportContent.hidden = true;
       reportContent.tabIndex = 0;
-      const reportContentId = `child-full-report-${child.id}`;
+      const reportContentId = `child-full-report-${safeChild.id || 'local'}`;
       reportContent.id = reportContentId;
       reportBtn.setAttribute('aria-controls', reportContentId);
 
@@ -4067,7 +4212,7 @@ const TIMELINE_MILESTONES = [
         reportContent.hidden = true;
         reportContent.textContent = '';
         try {
-          const report = await fetchChildFullReport(child.id);
+          const report = await fetchChildFullReport(safeChild.id);
           reportMessage.textContent = 'Bilan généré ci-dessous.';
           reportContent.textContent = report;
           reportContent.hidden = false;
@@ -4145,12 +4290,12 @@ const TIMELINE_MILESTONES = [
               const sleepRecords = Number.isFinite(sleep) ? buildSleepPayloads([{ month, hours: sleep }]) : [];
               const teethRecords = Number.isFinite(teeth) ? buildTeethPayloads([{ month, count: teeth }]) : [];
               await anonChildRequest('add-growth', {
-                childId: child.id,
+                childId: safeChild.id,
                 growthMeasurements: measurementRecords,
                 growthSleep: sleepRecords,
                 growthTeeth: teethRecords
               });
-              await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
+              await logChildUpdate(safeChild.id, 'measure', { summary, month, height, weight, sleep, teeth });
               renderDashboard();
               handled = true;
             } else {
@@ -4162,7 +4307,7 @@ const TIMELINE_MILESTONES = [
               const promises = [];
               if (Number.isFinite(height) || Number.isFinite(weight)) {
                 const payload = {
-                  child_id: child.id,
+                  child_id: safeChild.id,
                   month,
                   height_cm: Number.isFinite(height) ? Number(height) : null,
                   weight_kg: Number.isFinite(weight) ? Number(weight) : null,
@@ -4177,12 +4322,12 @@ const TIMELINE_MILESTONES = [
                   console.warn('Skip growth_measurements, invalid payload:', payload);
                 }
               }
-              if (Number.isFinite(sleep) && child?.id) {
+              if (Number.isFinite(sleep) && safeChild?.id) {
                 promises.push((async () => {
                   try {
                     const { data, error } = await supabase
                       .from('growth_sleep')
-                      .insert([{ child_id: child.id, month, hours: sleep }]);
+                      .insert([{ child_id: safeChild.id, month, hours: sleep }]);
                     if (error) {
                       console.error('Erreur insert growth_sleep:', error);
                     } else {
@@ -4193,7 +4338,7 @@ const TIMELINE_MILESTONES = [
                 })());
               }
               if (Number.isFinite(teeth)) {
-                const payload = { child_id: child.id, month, count: teeth };
+                const payload = { child_id: safeChild.id, month, count: teeth };
                 promises.push(
                   supabase
                     .from('growth_teeth')
@@ -4201,7 +4346,7 @@ const TIMELINE_MILESTONES = [
                 );
               }
               const results = await Promise.allSettled(promises);
-              await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
+              await logChildUpdate(safeChild.id, 'measure', { summary, month, height, weight, sleep, teeth });
               renderDashboard();
               handled = true;
             }
@@ -4213,21 +4358,27 @@ const TIMELINE_MILESTONES = [
         if (!handled) {
         // Repli local
           const children = store.get(K.children, []);
-          const c = children.find(x => x.id === child.id);
-          if (Number.isFinite(height) || Number.isFinite(weight)) {
-            const m = { month };
-            if (Number.isFinite(height)) m.height = height;
-            if (Number.isFinite(weight)) m.weight = weight;
-            if (Number.isFinite(height) && Number.isFinite(weight)) {
-              m.bmi = weight / Math.pow(height / 100, 2);
+          const c = children.find(x => x.id === safeChild.id);
+          if (c) {
+            if (!c.growth || typeof c.growth !== 'object') { c.growth = { measurements: [], sleep: [], teeth: [] }; }
+            if (!Array.isArray(c.growth.measurements)) c.growth.measurements = [];
+            if (!Array.isArray(c.growth.sleep)) c.growth.sleep = [];
+            if (!Array.isArray(c.growth.teeth)) c.growth.teeth = [];
+            if (Number.isFinite(height) || Number.isFinite(weight)) {
+              const m = { month };
+              if (Number.isFinite(height)) m.height = height;
+              if (Number.isFinite(weight)) m.weight = weight;
+              if (Number.isFinite(height) && Number.isFinite(weight)) {
+                m.bmi = weight / Math.pow(height / 100, 2);
+              }
+              m.measured_at = new Date().toISOString();
+              c.growth.measurements.push(m);
             }
-            m.measured_at = new Date().toISOString();
-            c.growth.measurements.push(m);
+            if (Number.isFinite(sleep)) c.growth.sleep.push({ month, hours: sleep });
+            if (Number.isFinite(teeth)) c.growth.teeth.push({ month, count: teeth });
+            store.set(K.children, children);
           }
-          if (Number.isFinite(sleep)) c.growth.sleep.push({ month, hours: sleep });
-          if (Number.isFinite(teeth)) c.growth.teeth.push({ month, count: teeth });
-          store.set(K.children, children);
-          await logChildUpdate(child.id, 'measure', { summary, month, height, weight, sleep, teeth });
+          await logChildUpdate(safeChild.id, 'measure', { summary, month, height, weight, sleep, teeth });
           renderDashboard();
         }
       } finally {
@@ -4251,7 +4402,7 @@ const TIMELINE_MILESTONES = [
     } catch {}
 
     // Graphiques
-    const ms = normalizeMeasures(child.growth.measurements);
+    const ms = normalizeMeasures(measurements);
     const heightData = ms.filter(m=>Number.isFinite(m.height)).map(m=>({month:m.month,value:m.height}));
     const weightData = ms.filter(m=>Number.isFinite(m.weight)).map(m=>({month:m.month,value:m.weight}));
     const bmiData = ms.filter(m=>Number.isFinite(m.bmi))
@@ -4275,13 +4426,13 @@ const TIMELINE_MILESTONES = [
     safeRender('chart-weight', weightData, curves.WEIGHT_FOR_AGE, 'kg');
     safeRender('chart-bmi', bmiData, curves.BMI_FOR_AGE, 'IMC');
     if (rid === renderDashboard._rid) {
-      drawChart($('#chart-teeth'), buildSeries(child.growth.teeth.map(t=>({x:t.month,y:t.count}))));
+      drawChart($('#chart-teeth'), buildSeries(teethEntries.map(t=>({x:t.month,y:t.count}))));
     }
 
     // Notes explicatives en langage simple pour les parents
     try {
       if (rid !== renderDashboard._rid) return;
-      const latestT = [...(child.growth.teeth||[])].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
+      const latestT = [...teethEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0];
       const noteT = document.createElement('div'); noteT.className='chart-note';
       if (latestT) noteT.textContent = `Dernier relevé: ${latestT.count} dent(s). Le calendrier d’éruption varie beaucoup — comparez surtout avec les observations précédentes.`;
       else noteT.textContent = 'Ajoutez un relevé de dents pour suivre l’évolution.';
@@ -4491,6 +4642,15 @@ const TIMELINE_MILESTONES = [
         renderCommunity();
       });
       cats.dataset.bound='1';
+    }
+    if (cats && !cats.hasAttribute('data-active')) {
+      cats.setAttribute('data-active', 'all');
+    }
+    if (cats) {
+      const activeValue = cats.getAttribute('data-active') || 'all';
+      cats.querySelectorAll('.cat').forEach((btn) => {
+        btn.classList.toggle('active', (btn.dataset.cat || 'all') === activeValue);
+      });
     }
     const activeCat = cats?.getAttribute('data-active') || 'all';
     const topicDialog = $('#dialog-topic');
@@ -4756,6 +4916,10 @@ const TIMELINE_MILESTONES = [
           || 'Anonyme';
         const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
         const openSet = (renderCommunity._open = renderCommunity._open || new Set());
+        if (!openSet.size && topics.length) {
+          const firstTopicId = topics[0]?.id;
+          if (firstTopicId != null) openSet.add(String(firstTopicId));
+        }
         const tid = String(t.id);
         const isOpen = openSet.has(tid);
         const toggleLabel = isOpen ? 'Réduire la publication' : 'Afficher les commentaires';
