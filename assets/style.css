@@ -1837,7 +1837,7 @@ section[data-route="/ai"] .card{
   background: transparent !important;
 }
 section[data-route="/ai"] > .route-canvas{
-  z-index: -1;
+  z-index: 1;
   opacity: .45;
 }
 /* Exception: keep a frame for the profile indicator empty state */
