@@ -16,6 +16,8 @@
   --muted:rgba(255,255,255,.72); /* muted text: soft white */
   --text:#ffffff;  /* global text color white */
   --text-inverse:#ffffff;
+  --card-text:#1f2933;
+  --card-muted:#6c757d;
   --border:rgba(255,255,255,.18);
   --danger:#ef476f;
   --ok:#2dc07a;
@@ -1680,6 +1682,95 @@ section[data-route="/dashboard"] .chart-card{
 .child-point{stroke:#ffffff; stroke-width:1.5}
 .child-point-latest{animation:breathe 2s ease-in-out infinite; transform-box:fill-box; transform-origin:center}
 @keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.5}}
+
+.dashboard-view-toggle{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:16px;
+}
+.dashboard-view-toggle__btn{
+  border:1px solid rgba(30,50,100,.18);
+  background:rgba(255,255,255,.12);
+  color:var(--text);
+  padding:8px 18px;
+  border-radius:999px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.dashboard-view-toggle__btn:hover{
+  border-color:var(--violet-strong);
+  background:rgba(255,255,255,.18);
+}
+.dashboard-view-toggle__btn.is-active{
+  background:rgba(110,163,255,.28);
+  border-color:var(--violet-strong);
+  box-shadow:0 6px 20px rgba(110,163,255,.35);
+}
+
+.family-context-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:grid;
+  gap:6px;
+}
+.family-context-list li{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:6px 0;
+  border-bottom:1px solid rgba(30,50,100,.1);
+}
+.family-context-list li:last-child{border-bottom:none}
+.family-context-list span{
+  color:var(--card-muted);
+  font-size:.9rem;
+}
+.family-context-list strong{
+  font-weight:600;
+  color:var(--card-text);
+  text-align:right;
+}
+
+.family-children-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:grid;
+  gap:10px;
+}
+.family-children-list li{
+  padding:10px 14px;
+  border:1px solid rgba(30,50,100,.08);
+  border-radius:16px;
+  background:rgba(255,255,255,.75);
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.family-children-list strong{color:var(--card-text); font-size:1rem;}
+.family-children-list span{color:var(--card-muted); font-size:.85rem;}
+
+.family-bilan-card{
+  margin-top:16px;
+  display:grid;
+  gap:12px;
+}
+.family-bilan-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.family-bilan-text{
+  font-size:.95rem;
+  line-height:1.6;
+  color:var(--card-text);
+}
+.family-bilan-text p{margin:0 0 12px;}
+.family-bilan-text p:last-child{margin-bottom:0;}
 
 /* Landing sections */
 .section{position:relative; padding:32px 0; overflow:visible}
