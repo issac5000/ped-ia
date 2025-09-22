@@ -15,6 +15,13 @@ const ALLOWED_UPDATE_FIELDS = new Set([
   'avatar_url',
   'parent_role',
   'show_children_count',
+  'marital_status',
+  'number_of_children',
+  'parental_employment',
+  'parental_emotion',
+  'parental_stress',
+  'parental_fatigue',
+  'context_parental',
 ]);
 
 // Convertit une clé camelCase en snake_case compatible avec la base
@@ -72,7 +79,39 @@ function normalizeField(key, value) {
     if (typeof value === 'boolean') return value;
     return undefined;
   }
+  if (key === 'marital_status' || key === 'parental_employment' || key === 'parental_emotion' || key === 'parental_stress' || key === 'parental_fatigue') {
+    if (value === null) return null;
+    if (typeof value !== 'string') return undefined;
+    return value.trim().slice(0, 120);
+  }
+  if (key === 'number_of_children') {
+    if (value === null) return null;
+    const parsed = parseInt(String(value).trim(), 10);
+    if (!Number.isFinite(parsed)) return undefined;
+    return Math.max(0, Math.min(20, parsed));
+  }
+  if (key === 'context_parental') {
+    if (value === null) return null;
+    if (typeof value !== 'object') return undefined;
+    const ctx = normalizeParentContextObject(value);
+    return ctx;
+  }
   return value;
+}
+
+function normalizeParentContextObject(value) {
+  const ctx = {};
+  const assign = (field, raw) => {
+    const normalized = normalizeField(field, raw);
+    if (normalized !== undefined) ctx[field] = normalized;
+  };
+  assign('marital_status', value?.maritalStatus ?? value?.marital_status ?? null);
+  assign('number_of_children', value?.numberOfChildren ?? value?.number_of_children ?? null);
+  assign('parental_employment', value?.parentalEmployment ?? value?.parental_employment ?? null);
+  assign('parental_emotion', value?.parentalEmotion ?? value?.parental_emotion ?? null);
+  assign('parental_stress', value?.parentalStress ?? value?.parental_stress ?? null);
+  assign('parental_fatigue', value?.parentalFatigue ?? value?.parental_fatigue ?? null);
+  return ctx;
 }
 
 // Récupère le code unique en acceptant plusieurs alias (code, codeUnique, code_unique)

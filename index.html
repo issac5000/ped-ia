@@ -810,6 +810,57 @@
                 <option value="papa">Papa</option>
               </select>
             </label>
+            <h3>Contexte parental</h3>
+            <label>Statut marital
+              <select name="marital_status">
+                <option value="">—</option>
+                <option value="marie">Marié·e / Pacsé·e</option>
+                <option value="couple">En couple</option>
+                <option value="celibataire">Célibataire</option>
+                <option value="separe">Séparé·e / Divorcé·e</option>
+                <option value="veuf">Veuf / Veuve</option>
+                <option value="autre">Autre</option>
+              </select>
+            </label>
+            <label>Nombre d’enfants
+              <input type="number" name="number_of_children" min="0" step="1" inputmode="numeric" />
+            </label>
+            <label>Situation professionnelle
+              <select name="parental_employment">
+                <option value="">—</option>
+                <option value="conge_parental">Congé parental</option>
+                <option value="temps_plein">Temps plein</option>
+                <option value="temps_partiel">Temps partiel</option>
+                <option value="horaires_decales">Horaires décalés / Nuit</option>
+                <option value="sans_emploi">Sans emploi / Entre deux</option>
+                <option value="autre">Autre</option>
+              </select>
+            </label>
+            <label>Niveau de stress
+              <select name="parental_stress">
+                <option value="">—</option>
+                <option value="faible">Faible</option>
+                <option value="modere">Modéré</option>
+                <option value="eleve">Élevé</option>
+              </select>
+            </label>
+            <label>Niveau de fatigue
+              <select name="parental_fatigue">
+                <option value="">—</option>
+                <option value="faible">Faible</option>
+                <option value="modere">Modérée</option>
+                <option value="eleve">Élevée</option>
+              </select>
+            </label>
+            <label>État émotionnel
+              <select name="parental_emotion">
+                <option value="">—</option>
+                <option value="positif">Positif / serein</option>
+                <option value="neutre">Neutre</option>
+                <option value="fragile">Fragile / sensible</option>
+                <option value="anxieux">Anxieux / stressé</option>
+              </select>
+            </label>
             <h3>Confidentialité</h3>
             <label class="switch">
               <input type="checkbox" name="showStats" />

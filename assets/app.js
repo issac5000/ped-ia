@@ -215,6 +215,247 @@ const TIMELINE_MILESTONES = [
     snapshots: new Map(),
   };
 
+  const dashboardState = {
+    viewMode: 'child',
+    family: {
+      data: null,
+      error: null,
+      loading: false,
+      lastFetchedAt: 0,
+      inFlight: null,
+      regenerating: false,
+      pendingRefresh: false,
+      regenerationPromise: null,
+    },
+  };
+
+  const PARENT_FIELD_DEFS = [
+    { key: 'maritalStatus', column: 'marital_status', form: 'marital_status', type: 'string' },
+    { key: 'numberOfChildren', column: 'number_of_children', form: 'number_of_children', type: 'number' },
+    { key: 'parentalEmployment', column: 'parental_employment', form: 'parental_employment', type: 'string' },
+    { key: 'parentalEmotion', column: 'parental_emotion', form: 'parental_emotion', type: 'string' },
+    { key: 'parentalStress', column: 'parental_stress', form: 'parental_stress', type: 'string' },
+    { key: 'parentalFatigue', column: 'parental_fatigue', form: 'parental_fatigue', type: 'string' },
+  ];
+
+  const PARENT_LABELS = {
+    marital_status: {
+      marie: 'Marié·e / Pacsé·e',
+      couple: 'En couple',
+      celibataire: 'Célibataire',
+      separe: 'Séparé·e / Divorcé·e',
+      veuf: 'Veuf / Veuve',
+      autre: 'Autre',
+    },
+    parental_employment: {
+      conge_parental: 'Congé parental',
+      temps_plein: 'Temps plein',
+      temps_partiel: 'Temps partiel',
+      horaires_decales: 'Horaires décalés / Nuit',
+      sans_emploi: 'Sans emploi / Entre deux',
+      autre: 'Autre',
+    },
+    parental_emotion: {
+      positif: 'Positif / serein',
+      neutre: 'Neutre',
+      fragile: 'Fragile / sensible',
+      anxieux: 'Anxieux / stressé',
+    },
+    parental_stress: {
+      faible: 'Faible',
+      modere: 'Modéré',
+      eleve: 'Élevé',
+    },
+    parental_fatigue: {
+      faible: 'Faible',
+      modere: 'Modérée',
+      eleve: 'Élevée',
+    },
+  };
+
+  const DEFAULT_PARENT_CONTEXT = Object.freeze(PARENT_FIELD_DEFS.reduce((acc, def) => {
+    acc[def.key] = def.type === 'number' ? null : '';
+    return acc;
+  }, {}));
+
+  function normalizeParentField(def, raw) {
+    if (!def) return raw;
+    if (def.type === 'number') {
+      if (raw == null || raw === '') return null;
+      const num = typeof raw === 'number' ? raw : parseInt(String(raw).replace(/[^0-9-]/g, ''), 10);
+      if (!Number.isFinite(num)) return null;
+      const clamped = Math.max(0, Math.min(20, num));
+      return clamped;
+    }
+    if (raw == null) return '';
+    const str = String(raw).trim();
+    return str.slice(0, 120);
+  }
+
+  function normalizeParentContext(source = {}, fallback = {}) {
+    const context = { ...DEFAULT_PARENT_CONTEXT, ...fallback };
+    const rawCtx = source && typeof source === 'object' ? source : {};
+    const ctxJson = rawCtx.context_parental && typeof rawCtx.context_parental === 'object'
+      ? rawCtx.context_parental
+      : {};
+    PARENT_FIELD_DEFS.forEach((def) => {
+      let value;
+      if (rawCtx && Object.prototype.hasOwnProperty.call(rawCtx, def.column)) {
+        value = rawCtx[def.column];
+      }
+      if (value == null && Object.prototype.hasOwnProperty.call(rawCtx, def.key)) {
+        value = rawCtx[def.key];
+      }
+      if (value == null && Object.prototype.hasOwnProperty.call(ctxJson, def.column)) {
+        value = ctxJson[def.column];
+      }
+      if (value == null && Object.prototype.hasOwnProperty.call(ctxJson, def.key)) {
+        value = ctxJson[def.key];
+      }
+      if (value != null) {
+        context[def.key] = normalizeParentField(def, value);
+      }
+    });
+    return context;
+  }
+
+  function parentContextToDbPayload(context = {}) {
+    const payload = {};
+    PARENT_FIELD_DEFS.forEach((def) => {
+      const value = context[def.key];
+      if (def.type === 'number') {
+        payload[def.column] = Number.isFinite(value) ? Math.max(0, Math.min(20, Number(value))) : null;
+      } else {
+        if (value == null) payload[def.column] = null;
+        else {
+          const str = String(value).trim();
+          payload[def.column] = str ? str.slice(0, 120) : null;
+        }
+      }
+    });
+    payload.context_parental = {};
+    PARENT_FIELD_DEFS.forEach((def) => {
+      const value = context[def.key];
+      if (def.type === 'number') {
+        payload.context_parental[def.column] = Number.isFinite(value) ? Math.max(0, Math.min(20, Number(value))) : null;
+      } else {
+        const str = value == null ? '' : String(value).trim();
+        payload.context_parental[def.column] = str ? str.slice(0, 120) : null;
+      }
+    });
+    return payload;
+  }
+
+  function readParentContextFromForm(form) {
+    if (!form) return { ...DEFAULT_PARENT_CONTEXT };
+    const fd = form instanceof FormData ? form : new FormData(form);
+    const context = { ...DEFAULT_PARENT_CONTEXT };
+    PARENT_FIELD_DEFS.forEach((def) => {
+      const raw = fd.get(def.form);
+      context[def.key] = normalizeParentField(def, raw == null ? null : raw);
+    });
+    return context;
+  }
+
+  function diffParentContexts(prev = {}, next = {}) {
+    const changes = [];
+    PARENT_FIELD_DEFS.forEach((def) => {
+      const prevVal = prev[def.key];
+      const nextVal = next[def.key];
+      const changed = def.type === 'number'
+        ? (Number.isFinite(prevVal) ? prevVal : null) !== (Number.isFinite(nextVal) ? nextVal : null)
+        : (prevVal || '') !== (nextVal || '');
+      if (changed) {
+        changes.push({ field: def.column, key: def.key, previous: prevVal, next: nextVal });
+      }
+    });
+    return changes;
+  }
+
+  function buildParentUpdateInsert(profileId, change) {
+    const def = PARENT_FIELD_DEFS.find((d) => d.column === change.field);
+    const formatValue = (value) => {
+      if (def?.type === 'number') {
+        if (!Number.isFinite(value)) return null;
+        return Math.max(0, Math.min(20, Number(value)));
+      }
+      if (value == null) return null;
+      const str = String(value).trim();
+      return str ? str.slice(0, 120) : null;
+    };
+    return {
+      profile_id: profileId,
+      update_type: change.field,
+      update_content: JSON.stringify({
+        field: change.field,
+        previous: formatValue(change.previous),
+        next: formatValue(change.next),
+      }),
+    };
+  }
+
+  function formatParentContextValue(column, value) {
+    if (column === 'number_of_children') {
+      if (!Number.isFinite(value)) return '—';
+      const n = Number(value);
+      return `${n} enfant${n > 1 ? 's' : ''}`;
+    }
+    const labels = PARENT_LABELS[column];
+    if (labels) {
+      const key = typeof value === 'string' ? value.trim().toLowerCase() : '';
+      if (key && Object.prototype.hasOwnProperty.call(labels, key)) return labels[key];
+    }
+    if (value == null) return '—';
+    const str = String(value).trim();
+    return str || '—';
+  }
+
+  function getEffectiveParentContext() {
+    const merged = { ...DEFAULT_PARENT_CONTEXT };
+    const apply = (ctx) => {
+      if (!ctx) return;
+      PARENT_FIELD_DEFS.forEach((def) => {
+        const value = ctx[def.key];
+        if (def.type === 'number') {
+          if (Number.isFinite(value)) merged[def.key] = Number(value);
+        } else if (value != null) {
+          const str = String(value).trim();
+          if (str) merged[def.key] = str;
+        }
+      });
+    };
+    try {
+      apply(normalizeParentContext(store.get(K.user) || {}));
+    } catch {}
+    if (activeProfile) {
+      apply(normalizeParentContext({
+        ...activeProfile,
+        context_parental: activeProfile.context_parental,
+      }));
+    }
+    apply(normalizeParentContext(settingsState.user || {}));
+    return merged;
+  }
+
+  function buildParentContextForPrompt() {
+    const ctx = getEffectiveParentContext();
+    const storedUser = (() => {
+      try { return store.get(K.user) || {}; } catch { return {}; }
+    })();
+    const role = (settingsState.user?.role || activeProfile?.parent_role || storedUser.role || '').toString().trim();
+    const pseudo = (settingsState.user?.pseudo || activeProfile?.full_name || storedUser.pseudo || '').toString().trim();
+    return {
+      pseudo,
+      role,
+      maritalStatus: ctx.maritalStatus || '',
+      numberOfChildren: Number.isFinite(ctx.numberOfChildren) ? Number(ctx.numberOfChildren) : null,
+      parentalEmployment: ctx.parentalEmployment || '',
+      parentalEmotion: ctx.parentalEmotion || '',
+      parentalStress: ctx.parentalStress || '',
+      parentalFatigue: ctx.parentalFatigue || '',
+    };
+  }
+
   const SETTINGS_REMOTE_CACHE_TTL = 15000;
   let settingsRemoteCache = null;
   let settingsRemoteCacheAt = 0;
@@ -305,7 +546,7 @@ const TIMELINE_MILESTONES = [
             const [profileRes, childrenRes] = await Promise.all([
               supabase
                 .from('profiles')
-                .select('id,full_name,avatar_url,parent_role,code_unique,show_children_count')
+                .select('id,full_name,avatar_url,parent_role,code_unique,show_children_count,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental')
                 .eq('id', uid)
                 .maybeSingle(),
               supabase
@@ -317,10 +558,12 @@ const TIMELINE_MILESTONES = [
             if (!profileRes.error && profileRes.data) {
               const profileRow = profileRes.data;
               const pseudo = profileRow.full_name || working.user.pseudo || '';
+              const parentContext = normalizeParentContext(profileRow, working.user);
               working.user = {
                 ...working.user,
                 pseudo,
                 role: profileRow.parent_role || working.user.role || 'maman',
+                ...parentContext,
               };
               working.privacy = {
                 ...working.privacy,
@@ -343,6 +586,12 @@ const TIMELINE_MILESTONES = [
                 if (Object.prototype.hasOwnProperty.call(profileRow, 'show_children_count')) {
                   nextProfile.show_children_count = profileRow.show_children_count;
                 }
+                PARENT_FIELD_DEFS.forEach((def) => {
+                  if (Object.prototype.hasOwnProperty.call(profileRow, def.column)) {
+                    nextProfile[def.column] = profileRow[def.column];
+                  }
+                });
+                nextProfile.context_parental = parentContextToDbPayload(parentContext).context_parental;
                 setActiveProfile(nextProfile);
               }
             }
@@ -393,6 +642,7 @@ const TIMELINE_MILESTONES = [
 
     const normalizedUser = {
       role: 'maman',
+      ...DEFAULT_PARENT_CONTEXT,
       ...(snapshot.user || {}),
     };
     if (!normalizedUser.role) normalizedUser.role = 'maman';
@@ -448,6 +698,17 @@ const TIMELINE_MILESTONES = [
     if (pseudoInput) pseudoInput.value = userForStore.pseudo || '';
     const roleSelect = form.elements.namedItem('role');
     if (roleSelect) roleSelect.value = userForStore.role || 'maman';
+
+    PARENT_FIELD_DEFS.forEach((def) => {
+      const control = form.elements.namedItem(def.form);
+      if (!control) return;
+      const value = userForStore[def.key];
+      if (def.type === 'number') {
+        control.value = Number.isFinite(value) ? String(value) : '';
+      } else {
+        control.value = value || '';
+      }
+    });
 
     const showStatsInput = form.elements.namedItem('showStats');
     if (showStatsInput) {
@@ -2054,6 +2315,7 @@ const TIMELINE_MILESTONES = [
       const hasAvatar = Object.prototype.hasOwnProperty.call(profile, 'avatar_url');
       const hasRole = Object.prototype.hasOwnProperty.call(profile, 'parent_role');
       const hasShowChildren = Object.prototype.hasOwnProperty.call(profile, 'show_children_count');
+      const hasContext = Object.prototype.hasOwnProperty.call(profile, 'context_parental');
 
       activeProfile = {
         id: profile.id,
@@ -2068,6 +2330,29 @@ const TIMELINE_MILESTONES = [
         show_children_count: hasShowChildren
           ? profile.show_children_count ?? null
           : previous.show_children_count ?? null,
+        marital_status: Object.prototype.hasOwnProperty.call(profile, 'marital_status')
+          ? profile.marital_status ?? previous.marital_status ?? null
+          : previous.marital_status ?? null,
+        number_of_children: Object.prototype.hasOwnProperty.call(profile, 'number_of_children')
+          ? (Number.isFinite(profile.number_of_children) ? Number(profile.number_of_children) : null)
+          : (Number.isFinite(previous.number_of_children) ? Number(previous.number_of_children) : null),
+        parental_employment: Object.prototype.hasOwnProperty.call(profile, 'parental_employment')
+          ? profile.parental_employment ?? previous.parental_employment ?? null
+          : previous.parental_employment ?? null,
+        parental_emotion: Object.prototype.hasOwnProperty.call(profile, 'parental_emotion')
+          ? profile.parental_emotion ?? previous.parental_emotion ?? null
+          : previous.parental_emotion ?? null,
+        parental_stress: Object.prototype.hasOwnProperty.call(profile, 'parental_stress')
+          ? profile.parental_stress ?? previous.parental_stress ?? null
+          : previous.parental_stress ?? null,
+        parental_fatigue: Object.prototype.hasOwnProperty.call(profile, 'parental_fatigue')
+          ? profile.parental_fatigue ?? previous.parental_fatigue ?? null
+          : previous.parental_fatigue ?? null,
+        context_parental: hasContext
+          ? (profile.context_parental && typeof profile.context_parental === 'object'
+              ? profile.context_parental
+              : (profile.context_parental ?? null))
+          : (previous.context_parental ?? null),
       };
     } else {
       activeProfile = null;
@@ -2151,7 +2436,7 @@ const TIMELINE_MILESTONES = [
       if (!uid) return;
       const { data: prof, error } = await supabase
         .from('profiles')
-        .select('id, full_name, code_unique, avatar_url, parent_role, show_children_count')
+        .select('id, full_name, code_unique, avatar_url, parent_role, show_children_count, marital_status, number_of_children, parental_employment, parental_emotion, parental_stress, parental_fatigue, context_parental')
         .eq('id', uid)
         .maybeSingle();
       if (error) throw error;
@@ -3596,12 +3881,25 @@ const TIMELINE_MILESTONES = [
       const role = (fd.get('role') || 'maman').toString();
       const showStats = !!fd.get('showStats');
       const allowMessages = !!fd.get('allowMessages');
+      const parentContext = readParentContextFromForm(fd);
+      const previousUser = { ...(settingsState.user || {}) };
+      const previousContext = normalizeParentContext(previousUser || {});
+      const parentContextChanges = diffParentContexts(previousContext, parentContext);
+      const pseudoChanged = (previousUser.pseudo || '') !== pseudo;
+      const roleChanged = (previousUser.role || 'maman') !== role;
       const nextPrivacy = { showStats, allowMessages };
-      const nextUser = { ...settingsState.user, pseudo, role };
+      const nextUser = { ...previousUser, pseudo, role, ...parentContext };
       store.set(K.user, nextUser);
       store.set(K.privacy, nextPrivacy);
       settingsState.user = nextUser;
       settingsState.privacy = nextPrivacy;
+
+      const parentUpdateEntries = [];
+      if (pseudoChanged) parentUpdateEntries.push({ field: 'full_name', previous: previousUser.pseudo || '', next: pseudo });
+      if (roleChanged) parentUpdateEntries.push({ field: 'parent_role', previous: previousUser.role || '', next: role });
+      parentContextChanges.forEach((change) => parentUpdateEntries.push(change));
+
+      const parentDbPayload = parentContextToDbPayload(parentContext);
 
       if (useRemote()) {
         if (isAnonProfile()) {
@@ -3615,63 +3913,72 @@ const TIMELINE_MILESTONES = [
                 fullName: pseudo,
                 role,
                 showChildrenCount: showStats,
+                maritalStatus: parentContext.maritalStatus,
+                numberOfChildren: parentContext.numberOfChildren,
+                parentalEmployment: parentContext.parentalEmployment,
+                parentalEmotion: parentContext.parentalEmotion,
+                parentalStress: parentContext.parentalStress,
+                parentalFatigue: parentContext.parentalFatigue,
+                contextParental: parentDbPayload.context_parental,
               }),
             });
           }
         } else {
           const uid = getActiveProfileId();
           if (uid) {
-            try {
-              await supabase
-                .from('profiles')
-                .update({
-                  full_name: pseudo,
-                  parent_role: role,
-                  show_children_count: showStats,
-                })
-                .eq('id', uid);
-            } catch (err) {
-              console.warn('Profil: mise à jour complète impossible, tentative sans parent_role', err);
+            const updatePayload = {
+              full_name: pseudo,
+              parent_role: role,
+              show_children_count: showStats,
+              ...parentDbPayload,
+            };
+            await supabase.from('profiles').update(updatePayload).eq('id', uid);
+            if (parentUpdateEntries.length) {
               try {
-                await supabase
-                  .from('profiles')
-                  .update({
-                    full_name: pseudo,
-                    show_children_count: showStats,
-                  })
-                  .eq('id', uid);
-              } catch (errFallback) {
-                console.warn('Profil: mise à jour sans role impossible', errFallback);
-                try {
-                  await supabase
-                    .from('profiles')
-                    .update({ full_name: pseudo })
-                    .eq('id', uid);
-                } catch (err2) {
-                  console.warn('Profil: mise à jour minimale impossible', err2);
-                }
+                const inserts = parentUpdateEntries.map((entry) => buildParentUpdateInsert(uid, entry));
+                await supabase.from('parent_updates').insert(inserts);
+              } catch (logErr) {
+                console.warn('parent_updates insert failed', logErr);
               }
             }
           }
         }
-        setActiveProfile({
+        const nextProfile = {
           ...activeProfile,
           full_name: pseudo,
           parent_role: role,
           show_children_count: showStats,
+        };
+        PARENT_FIELD_DEFS.forEach((def) => {
+          nextProfile[def.column] = parentDbPayload[def.column];
         });
+        nextProfile.context_parental = parentDbPayload.context_parental;
+        setActiveProfile(nextProfile);
       } else {
-        setActiveProfile({
+        const nextProfile = {
           ...activeProfile,
           full_name: pseudo,
           parent_role: role,
           show_children_count: showStats,
+        };
+        PARENT_FIELD_DEFS.forEach((def) => {
+          nextProfile[def.column] = parentContext[def.key];
         });
+        nextProfile.context_parental = parentDbPayload.context_parental;
+        setActiveProfile(nextProfile);
       }
 
       invalidateSettingsRemoteCache();
 
-      alert('Profil parent mis à jour.');
+      showNotification({
+        title: 'Profil parent mis à jour',
+        text: 'Vos informations parentales sont enregistrées.',
+        durationMs: 5000,
+      });
+
+      if (useRemote() && !isAnonProfile() && parentUpdateEntries.length) {
+        scheduleFamilyContextRefresh();
+      }
     } catch (err) {
       console.warn('handleSettingsSubmit failed', err);
       alert('Impossible de mettre à jour le profil parent.');
@@ -4114,6 +4421,34 @@ const TIMELINE_MILESTONES = [
       }
       return;
     }
+    const viewMode = dashboardState.viewMode === 'family' ? 'family' : 'child';
+    dashboardState.viewMode = viewMode;
+    const buildToggleHtml = () => `
+      <div class="dashboard-view-toggle" role="group" aria-label="Changer de vue">
+        <button type="button" class="dashboard-view-toggle__btn ${viewMode === 'child' ? 'is-active' : ''}" data-dashboard-view="child">Vue enfant</button>
+        <button type="button" class="dashboard-view-toggle__btn ${viewMode === 'family' ? 'is-active' : ''}" data-dashboard-view="family">Vue famille</button>
+      </div>
+    `;
+    const bindToggle = () => {
+      const buttons = dom.querySelectorAll('[data-dashboard-view]');
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const mode = btn.getAttribute('data-dashboard-view');
+          if (!mode || dashboardState.viewMode === mode) return;
+          dashboardState.viewMode = mode;
+          renderDashboard();
+        });
+      });
+    };
+    const setDashboardHtml = (html) => {
+      dom.innerHTML = `${buildToggleHtml()}${html}`;
+      bindToggle();
+    };
+
+    if (viewMode === 'family') {
+      await renderFamilyDashboardView({ dom, rid, setDashboardHtml });
+      return;
+    }
     // Local : afficher le sélecteur d’enfant si des profils existent
     if (!useRemote()) {
       const u = store.get(K.user) || {};
@@ -4122,13 +4457,13 @@ const TIMELINE_MILESTONES = [
     }
     if (!useRemote() && !child) {
       if (rid !== renderDashboard._rid) return;
-      dom.innerHTML = `<div class="card stack"><p>Aucun profil enfant. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`;
+      setDashboardHtml(`<div class="card stack"><p>Aucun profil enfant. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`);
       return;
     }
     // Placeholder pendant le chargement distant
     if (useRemote()) {
       if (rid !== renderDashboard._rid) return;
-      dom.innerHTML = `<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Forcer le chargement</button></div>`;
+      setDashboardHtml(`<div class="card stack"><p>Chargement du profil…</p><button id="btn-refresh-profile" class="btn btn-secondary">Forcer le chargement</button></div>`);
       $('#btn-refresh-profile')?.addEventListener('click', () => location.reload());
     }
     const renderForChild = async (child) => {
@@ -4154,7 +4489,7 @@ const TIMELINE_MILESTONES = [
       const ageDays = ageInDays(dobValue);
       const timelineSection = build1000DaysTimeline(safeChild, ageDays);
       if (rid !== renderDashboard._rid) return;
-      dom.innerHTML = `
+      setDashboardHtml(`
       <div class="grid-2">
         <div class="card stack">
           <div class="hstack">
@@ -4233,9 +4568,9 @@ const TIMELINE_MILESTONES = [
 
       ${timelineSection}
 
-    `;
+      `);
 
-    setupTimelineScroller(dom);
+      setupTimelineScroller(dom);
 
     // Section « Profil santé » retirée à la demande
 
@@ -4642,7 +4977,7 @@ const TIMELINE_MILESTONES = [
             const rows = Array.isArray(listRes.children) ? listRes.children : [];
             if (!rows.length) {
               if (rid !== renderDashboard._rid) return;
-              dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+              setDashboardHtml(`<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
               return;
             }
             const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
@@ -4681,7 +5016,7 @@ const TIMELINE_MILESTONES = [
               const all = store.get(K.children, []);
               if (!all.length) {
                 if (rid !== renderDashboard._rid) return;
-                dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+                setDashboardHtml(`<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
                 return;
               }
               const slimLocal = all.map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
@@ -4696,7 +5031,7 @@ const TIMELINE_MILESTONES = [
             if (rowsErr) throw rowsErr;
             if (!rows || !rows.length) {
               if (rid !== renderDashboard._rid) return;
-              dom.innerHTML = `<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`;
+              setDashboardHtml(`<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
               return;
             }
             const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
@@ -4756,7 +5091,7 @@ const TIMELINE_MILESTONES = [
           }
         } catch (e) {
           if (rid !== renderDashboard._rid) return;
-          dom.innerHTML = `<div class="card">Erreur de chargement Supabase. Réessayez.</div>`;
+          setDashboardHtml(`<div class="card">Erreur de chargement Supabase. Réessayez.</div>`);
           return;
         }
         if (rid !== renderDashboard._rid) return;
@@ -4784,6 +5119,316 @@ const TIMELINE_MILESTONES = [
           });
         }
       })();
+    }
+  }
+
+  async function renderFamilyDashboardView({ dom, rid, setDashboardHtml }) {
+    if (!useRemote()) {
+      setDashboardHtml('<div class="card stack"><p>Connectez-vous pour accéder à la vue famille.</p></div>');
+      return;
+    }
+    if (isAnonProfile()) {
+      setDashboardHtml('<div class="card stack"><p>La vue famille est disponible pour les comptes connectés.</p></div>');
+      return;
+    }
+    try {
+      setDashboardHtml('<div class="card stack"><p>Chargement du contexte familial…</p></div>');
+      const data = await fetchFamilyOverview();
+      if (rid !== renderDashboard._rid) return;
+      setDashboardHtml(buildFamilyDashboardHtml(data));
+      bindFamilyViewActions(dom);
+    } catch (err) {
+      console.warn('renderFamilyDashboardView failed', err);
+      if (rid !== renderDashboard._rid) return;
+      setDashboardHtml('<div class="card stack"><p>Impossible de charger la vue famille pour le moment.</p><button type="button" class="btn btn-secondary" id="btn-retry-family">Réessayer</button></div>');
+      dom.querySelector('#btn-retry-family')?.addEventListener('click', () => renderDashboard());
+    }
+  }
+
+  function buildFamilyDashboardHtml(data = {}) {
+    const parentInfo = data.parentInfo || {};
+    const parentContext = { ...DEFAULT_PARENT_CONTEXT, ...(data.parentContext || {}) };
+    const contextRows = [
+      { label: 'Pseudo', value: parentInfo.pseudo || '—' },
+      { label: 'Rôle affiché', value: parentInfo.role || '—' },
+      { label: 'Statut marital', value: formatParentContextValue('marital_status', parentContext.maritalStatus) },
+      { label: 'Nombre d’enfants', value: formatParentContextValue('number_of_children', parentContext.numberOfChildren) },
+      { label: 'Situation professionnelle', value: formatParentContextValue('parental_employment', parentContext.parentalEmployment) },
+      { label: 'État émotionnel', value: formatParentContextValue('parental_emotion', parentContext.parentalEmotion) },
+      { label: 'Niveau de stress', value: formatParentContextValue('parental_stress', parentContext.parentalStress) },
+      { label: 'Niveau de fatigue', value: formatParentContextValue('parental_fatigue', parentContext.parentalFatigue) },
+    ];
+    const contextList = `
+      <ul class="family-context-list">
+        ${contextRows.map(row => `
+          <li>
+            <span>${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(row.value)}</strong>
+          </li>
+        `).join('')}
+      </ul>
+    `;
+    const children = Array.isArray(data.children) ? data.children : [];
+    const childrenList = children.length
+      ? `<ul class="family-children-list">${children.map((child) => {
+          const name = escapeHtml(child.firstName || 'Enfant');
+          const details = [child.sex || '—', child.ageText || (child.dob ? formatAge(child.dob) : 'Âge inconnu')]
+            .filter(Boolean)
+            .map((v) => escapeHtml(v))
+            .join(' • ');
+          return `<li><strong>${name}</strong><span>${details}</span></li>`;
+        }).join('')}</ul>`
+      : '<p class="muted">Aucun enfant associé pour le moment.</p>';
+    const bilanRaw = typeof data.familyContext?.ai_bilan === 'string' ? data.familyContext.ai_bilan.trim() : '';
+    const bilanText = bilanRaw
+      ? `<div class="family-bilan-text"><p>${escapeHtml(bilanRaw).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p></div>`
+      : '<div class="empty-state muted">Aucun bilan généré pour l’instant.</div>';
+    let generatedInfo = '';
+    if (data.familyContext?.last_generated_at) {
+      const date = new Date(data.familyContext.last_generated_at);
+      if (!Number.isNaN(date.getTime())) {
+        generatedInfo = `<p class="muted">Dernière génération : ${escapeHtml(date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }))}</p>`;
+      }
+    }
+    return `
+      <div class="grid-2">
+        <div class="card stack">
+          <h3>Contexte parental</h3>
+          ${contextList}
+        </div>
+        <div class="card stack">
+          <h3>Enfants associés (${children.length})</h3>
+          ${childrenList}
+        </div>
+      </div>
+      <div class="card stack family-bilan-card">
+        <div class="card-header family-bilan-header">
+          <h3>Bilan familial IA</h3>
+          <button type="button" class="btn btn-secondary" id="btn-refresh-family-bilan">Rafraîchir</button>
+        </div>
+        ${bilanText}
+        ${generatedInfo}
+      </div>
+    `;
+  }
+
+  function bindFamilyViewActions(dom) {
+    const refreshBtn = dom.querySelector('#btn-refresh-family-bilan');
+    if (refreshBtn) {
+      if (dashboardState.family.regenerating) {
+        refreshBtn.dataset.busy = '1';
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Génération…';
+      }
+      refreshBtn.addEventListener('click', async () => {
+        if (refreshBtn.dataset.busy === '1') return;
+        const originalText = refreshBtn.textContent || 'Rafraîchir';
+        refreshBtn.dataset.busy = '1';
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Génération…';
+        try {
+          await runFamilyContextRegeneration({ refreshDashboard: true, skipIfRunning: false });
+          showNotification({ title: 'Bilan familial mis à jour', text: 'Un nouveau bilan est disponible.' });
+        } catch (err) {
+          console.warn('Family bilan refresh failed', err);
+          alert('Impossible de générer un nouveau bilan pour le moment.');
+        } finally {
+          refreshBtn.dataset.busy = '0';
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalText;
+          if (dashboardState.family.regenerating) {
+            refreshBtn.dataset.busy = '1';
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = 'Génération…';
+          }
+        }
+      });
+    }
+  }
+
+  async function fetchFamilyOverview({ force = false } = {}) {
+    if (!useRemote()) {
+      const parentContext = getEffectiveParentContext();
+      const storedUser = (() => { try { return store.get(K.user) || {}; } catch { return {}; } })();
+      const children = (() => {
+        try {
+          return (store.get(K.children) || []).map((child) => ({
+            id: child.id,
+            firstName: child.firstName,
+            sex: child.sex,
+            dob: child.dob,
+            ageText: child.dob ? formatAge(child.dob) : '',
+          }));
+        } catch {
+          return [];
+        }
+      })();
+      return {
+        parentContext,
+        parentInfo: {
+          pseudo: storedUser.pseudo || '',
+          role: storedUser.role || 'maman',
+        },
+        children,
+        familyContext: null,
+      };
+    }
+    if (isAnonProfile()) {
+      return {
+        parentContext: getEffectiveParentContext(),
+        parentInfo: {
+          pseudo: activeProfile?.full_name || '',
+          role: activeProfile?.parent_role || 'parent',
+        },
+        children: [],
+        familyContext: null,
+      };
+    }
+    const state = dashboardState.family;
+    if (!force && state.data && Date.now() - state.lastFetchedAt < 15000) {
+      return state.data;
+    }
+    if (state.inFlight) {
+      try { return await state.inFlight; }
+      catch (err) { throw err; }
+    }
+    const uid = getActiveProfileId();
+    if (!uid) throw new Error('Profil introuvable');
+    const fetchPromise = (async () => {
+      state.loading = true;
+      state.error = null;
+      try {
+        const [profileRes, childrenRes, familyRes] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental')
+            .eq('id', uid)
+            .maybeSingle(),
+          supabase
+            .from('children')
+            .select('id,first_name,sex,dob')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('family_context')
+            .select('ai_bilan,last_generated_at,children_ids')
+            .eq('profile_id', uid)
+            .order('last_generated_at', { ascending: false })
+            .limit(1),
+        ]);
+        if (profileRes.error) throw profileRes.error;
+        if (childrenRes.error) throw childrenRes.error;
+        if (familyRes.error) throw familyRes.error;
+        const parentContext = normalizeParentContext(profileRes.data || {});
+        const storedUser = (() => { try { return store.get(K.user) || {}; } catch { return {}; } })();
+        const parentInfo = {
+          pseudo: profileRes.data?.full_name || settingsState.user?.pseudo || storedUser.pseudo || '',
+          role: profileRes.data?.parent_role || settingsState.user?.role || storedUser.role || 'maman',
+        };
+        const children = Array.isArray(childrenRes.data)
+          ? childrenRes.data.map((row) => ({
+              id: row.id,
+              firstName: row.first_name,
+              sex: row.sex,
+              dob: row.dob,
+              ageText: row.dob ? formatAge(row.dob) : '',
+            }))
+          : [];
+        const familyRow = Array.isArray(familyRes.data) ? (familyRes.data[0] || null) : (familyRes.data || null);
+        return {
+          parentContext,
+          parentInfo,
+          children,
+          familyContext: familyRow,
+        };
+      } finally {
+        state.loading = false;
+        state.inFlight = null;
+      }
+    })();
+    state.inFlight = fetchPromise;
+    try {
+      const data = await fetchPromise;
+      state.data = data;
+      state.lastFetchedAt = Date.now();
+      return data;
+    } catch (err) {
+      state.error = err;
+      throw err;
+    }
+  }
+
+  async function regenerateFamilyContext() {
+    const uid = getActiveProfileId();
+    if (!uid) throw new Error('Profil introuvable');
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'family-bilan', profileId: uid }),
+    });
+    const text = await res.text().catch(() => '');
+    let data = {};
+    if (text) {
+      try { data = JSON.parse(text); } catch {}
+    }
+    if (!res.ok) {
+      const message = (data && typeof data.error === 'string') ? data.error : 'Échec de génération du bilan familial.';
+      throw new Error(message);
+    }
+    return data;
+  }
+
+  async function runFamilyContextRegeneration({ refreshDashboard = true, skipIfRunning = false } = {}) {
+    if (!useRemote() || isAnonProfile()) return null;
+    const state = dashboardState.family;
+    if (state.regenerationPromise) {
+      if (skipIfRunning) {
+        state.pendingRefresh = true;
+        return state.regenerationPromise;
+      }
+      try {
+        await state.regenerationPromise;
+      } catch {}
+      return runFamilyContextRegeneration({ refreshDashboard, skipIfRunning });
+    }
+    state.pendingRefresh = false;
+    state.regenerating = true;
+    const promise = (async () => {
+      try {
+        const result = await regenerateFamilyContext();
+        state.data = null;
+        state.lastFetchedAt = 0;
+        if (refreshDashboard && dashboardState.viewMode === 'family') {
+          try {
+            await renderDashboard();
+          } catch (renderErr) {
+            console.warn('family dashboard render failed after regeneration', renderErr);
+          }
+        }
+        return result;
+      } finally {
+        state.regenerating = false;
+        state.regenerationPromise = null;
+        if (state.pendingRefresh) {
+          const shouldRunAgain = state.pendingRefresh;
+          state.pendingRefresh = false;
+          if (shouldRunAgain) {
+            runFamilyContextRegeneration({ refreshDashboard, skipIfRunning: true }).catch((err) => {
+              console.warn('family context regeneration retry failed', err);
+            });
+          }
+        }
+      }
+    })();
+    state.regenerationPromise = promise;
+    return promise;
+  }
+
+  async function scheduleFamilyContextRefresh() {
+    try {
+      await runFamilyContextRegeneration({ refreshDashboard: true, skipIfRunning: true });
+    } catch (err) {
+      console.warn('scheduleFamilyContextRefresh failed', err);
     }
   }
 
@@ -5885,6 +6530,7 @@ const TIMELINE_MILESTONES = [
         throw fallbackErr;
       }
     }
+    scheduleFamilyContextRefresh();
   }
 
   async function logChildUpdateViaApi({ childId, updateType, updateContent, aiSummary, aiCommentaire }) {
@@ -5998,6 +6644,7 @@ const TIMELINE_MILESTONES = [
         parentComment: typeof contentObj?.userComment === 'string' ? contentObj.userComment : '',
         historySummaries: Array.isArray(historySummaries) ? historySummaries.slice(0, 10) : [],
       };
+      payload.parentContext = buildParentContextForPrompt();
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
