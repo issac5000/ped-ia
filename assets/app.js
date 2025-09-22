@@ -4858,6 +4858,20 @@ const TIMELINE_MILESTONES = [
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
       if (rid !== renderCommunity._rid) return;
+      const openSet = (renderCommunity._open = renderCommunity._open || new Set());
+      if (openSet.size) {
+        const validTopicIds = new Set(
+          topics
+            .map((topic) => {
+              const value = topic?.id;
+              return value != null ? String(value) : '';
+            })
+            .filter(Boolean)
+        );
+        Array.from(openSet).forEach((id) => {
+          if (!validTopicIds.has(id)) openSet.delete(id);
+        });
+      }
       const formatDateParts = (value) => {
         if (!value) return { label: '', iso: '' };
         const date = new Date(value);
@@ -4915,11 +4929,6 @@ const TIMELINE_MILESTONES = [
           || t.author
           || 'Anonyme';
         const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
-        const openSet = (renderCommunity._open = renderCommunity._open || new Set());
-        if (!openSet.size && topics.length) {
-          const firstTopicId = topics[0]?.id;
-          if (firstTopicId != null) openSet.add(String(firstTopicId));
-        }
         const tid = String(t.id);
         const isOpen = openSet.has(tid);
         const toggleLabel = isOpen ? 'Réduire la publication' : 'Afficher les commentaires';
