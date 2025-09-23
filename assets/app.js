@@ -393,11 +393,27 @@ const TIMELINE_MILESTONES = [
     return str.slice(0, max);
   }
 
+  const PARENT_AI_COMMENT_WORD_LIMIT = 80;
+
   function sanitizeParentComment(value) {
     if (value == null) return '';
     const str = String(value).trim();
     if (!str) return '';
     return str.slice(0, 2000);
+  }
+
+  function sanitizeParentAiFeedback(value) {
+    if (value == null) return '';
+    const str = String(value).trim();
+    if (!str) return '';
+    return str.slice(0, 2000);
+  }
+
+  function truncateWords(text, maxWords = 80) {
+    if (!text) return '';
+    const words = text.trim().split(/\s+/);
+    if (words.length <= maxWords) return text.trim();
+    return `${words.slice(0, maxWords).join(' ')}…`;
   }
 
   function buildParentSnapshot(userInfo = {}, context = {}) {
@@ -492,11 +508,16 @@ const TIMELINE_MILESTONES = [
     if (hasChanges) payload.changes = changeDetails;
     if (hasChanges) payload.previous_snapshot = previousSnapshot;
     if (sanitizedComment) payload.comment_origin = 'parent';
-    return {
+    const row = {
       profile_id: profileId,
       update_type: PARENT_UPDATE_SNAPSHOT_TYPE,
       update_content: JSON.stringify(payload),
-      ai_commentaire: sanitizedComment || null,
+    };
+    if (sanitizedComment) row.parent_comment = sanitizedComment;
+    return {
+      row,
+      sanitizedComment,
+      updateContent: payload,
     };
   }
 
@@ -560,6 +581,32 @@ const TIMELINE_MILESTONES = [
       parentalStress: ctx.parentalStress || '',
       parentalFatigue: ctx.parentalFatigue || '',
     };
+  }
+
+  async function generateParentUpdateAiComment({ updateType, updateContent, parentComment }) {
+    try {
+      const payload = {
+        type: 'parent-update',
+        updateType: typeof updateType === 'string' ? updateType : String(updateType || ''),
+        updateContent,
+        parentComment,
+        parentContext: buildParentContextForPrompt(),
+      };
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) return '';
+      const data = await res.json();
+      let text = sanitizeParentAiFeedback(data?.comment ?? data?.text ?? '');
+      if (!text) return '';
+      text = truncateWords(text, PARENT_AI_COMMENT_WORD_LIMIT);
+      return text;
+    } catch (err) {
+      console.warn('generateParentUpdateAiComment request failed', err);
+      return '';
+    }
   }
 
   const SETTINGS_REMOTE_CACHE_TTL = 15000;
@@ -4047,7 +4094,7 @@ const TIMELINE_MILESTONES = [
             const shouldLogSnapshot = parentUpdateEntries.length || hasParentComment;
             if (shouldLogSnapshot) {
               try {
-                const snapshotInsert = buildParentContextSnapshotInsert({
+                const snapshotResult = buildParentContextSnapshotInsert({
                   profileId: uid,
                   previousUser,
                   previousContext,
@@ -4056,9 +4103,22 @@ const TIMELINE_MILESTONES = [
                   changes: parentUpdateEntries,
                   comment: parentComment,
                 });
-                if (snapshotInsert) {
-                  await supabase.from('parent_updates').insert(snapshotInsert);
-                  if (snapshotInsert.ai_commentaire) shouldResetComment = true;
+                if (snapshotResult?.row) {
+                  const { row: snapshotRow, sanitizedComment } = snapshotResult;
+                  if (sanitizedComment) {
+                    try {
+                      const aiFeedback = await generateParentUpdateAiComment({
+                        updateType: snapshotRow.update_type,
+                        updateContent: snapshotResult.updateContent,
+                        parentComment: sanitizedComment,
+                      });
+                      if (aiFeedback) snapshotRow.ai_commentaire = aiFeedback;
+                    } catch (aiErr) {
+                      console.warn('generateParentUpdateAiComment failed', aiErr);
+                    }
+                  }
+                  await supabase.from('parent_updates').insert(snapshotRow);
+                  if (sanitizedComment) shouldResetComment = true;
                   shouldRefreshFamily = true;
                 }
               } catch (logErr) {
@@ -5393,30 +5453,47 @@ const TIMELINE_MILESTONES = [
         detailsHtml = `<ul class="parent-update-details">${detailsToRender.map((detail) => `<li>${escapeHtml(detail)}</li>`).join('')}</ul>`;
       }
     }
-    const commentText = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
-    let commentHtml = '';
-    if (commentText) {
-      if (parsed.commentOrigin === 'ai') {
-        commentHtml = `
-          <div class="timeline-comment">
-            <strong><em>${escapeHtml(commentText)}</em></strong>
-          </div>
-        `;
-      } else {
-        const originKey = (parsed.commentOrigin || 'parent').toLowerCase();
+    const storedParentComment = typeof row?.parent_comment === 'string' ? row.parent_comment.trim() : '';
+    const storedAiComment = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
+    const originKey = (parsed.commentOrigin || '').toLowerCase();
+    const parentBlocks = [];
+    const aiBlocks = [];
+    const otherBlocks = [];
+    if (storedParentComment) {
+      parentBlocks.push({ label: 'Commentaire parent', text: storedParentComment });
+    }
+    if (storedAiComment) {
+      if (!storedParentComment && (!originKey || originKey === 'parent')) {
+        parentBlocks.push({ label: 'Commentaire parent', text: storedAiComment });
+      } else if (originKey && originKey !== 'ai' && originKey !== 'parent') {
         const originLabel = originKey === 'coach'
           ? 'Commentaire coach'
           : originKey === 'pro'
             ? 'Commentaire professionnel'
-            : 'Commentaire parent';
-        commentHtml = `
-          <div class="timeline-parent-note">
-            <span class="timeline-parent-note__label">${escapeHtml(originLabel)}</span>
-            <div class="timeline-parent-note__text">${escapeHtml(commentText).replace(/\n/g, '<br>')}</div>
-          </div>
-        `;
+            : `Commentaire ${originKey}`;
+        otherBlocks.push({ label: originLabel, text: storedAiComment });
+      } else {
+        aiBlocks.push({ label: 'Réponse de Ped’IA', text: storedAiComment });
       }
     }
+    const renderNote = (label, text) => `
+      <div class="timeline-parent-note">
+        <span class="timeline-parent-note__label">${escapeHtml(label)}</span>
+        <div class="timeline-parent-note__text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+      </div>
+    `;
+    const renderAi = (label, text) => `
+      <div class="timeline-ai-note">
+        <span class="timeline-ai-note__label">${escapeHtml(label)}</span>
+        <div class="timeline-ai-note__text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+      </div>
+    `;
+    const blocksHtml = [
+      ...parentBlocks.map((block) => renderNote(block.label, block.text)),
+      ...aiBlocks.map((block) => renderAi(block.label, block.text)),
+      ...otherBlocks.map((block) => renderNote(block.label, block.text)),
+    ].filter(Boolean);
+    const commentHtml = blocksHtml.join('');
     return `
       <li class="parent-update-item">
         <div class="parent-update-meta">
@@ -5737,7 +5814,7 @@ const TIMELINE_MILESTONES = [
             .limit(1),
           supabase
             .from('parent_updates')
-            .select('id,update_type,update_content,ai_commentaire,created_at')
+            .select('id,update_type,update_content,parent_comment,ai_commentaire,created_at')
             .eq('profile_id', uid)
             .order('created_at', { ascending: false })
             .limit(PARENT_UPDATES_LIMIT),
