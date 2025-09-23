@@ -1043,6 +1043,28 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 .timeline-parent-note__text{
   font-size:14px;
 }
+.timeline-ai-note{
+  margin-top:8px;
+  padding:12px;
+  border-radius:12px;
+  background:rgba(110,163,255,.16);
+  border:1px solid rgba(110,163,255,.26);
+  color:#ffffff;
+  font-size:13px;
+  line-height:1.55;
+}
+.timeline-ai-note__label{
+  display:block;
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:rgba(202,220,255,.9);
+  margin-bottom:4px;
+}
+.timeline-ai-note__text{
+  font-size:13px;
+}
 .timeline-comment{
   font-size:13px;
   color:#ffffff;

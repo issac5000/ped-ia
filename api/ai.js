@@ -133,11 +133,11 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(200).send(JSON.stringify({ text }));
       }
-     case 'comment': {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
-  const content = String(body.content || '').slice(0, 2000);
-  const system = `Tu es Ped’IA, un assistant bienveillant pour parents. 
+      case 'comment': {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        const content = String(body.content || '').slice(0, 2000);
+        const system = `Tu es Ped’IA, un assistant bienveillant pour parents.
   Ta mission est de rédiger un commentaire bref et clair (max 80 mots) sur la mise à jour donnée. 
 
   - Sois objectif et factuel.  
@@ -170,6 +170,66 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(200).send(JSON.stringify({ text }));
+      }
+      case 'parent-update': {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        const updateType = typeof body.updateType === 'string'
+          ? body.updateType.trim().slice(0, 64)
+          : typeof body.update_type === 'string'
+            ? String(body.update_type).trim().slice(0, 64)
+            : '';
+        const updatePayload = sanitizeUpdatePayload(body.updateContent ?? body.update_content ?? {});
+        const parentComment = typeof body.parentComment === 'string'
+          ? body.parentComment.trim().slice(0, 600)
+          : '';
+        const parentContext = sanitizeParentContextInput(body.parentContext);
+        const parentContextLines = parentContextToPromptLines(parentContext);
+        const updateFacts = formatParentUpdateFacts(updateType, updatePayload);
+        const userParts = [
+          updateType ? `Type de mise à jour: ${updateType}` : '',
+          updateFacts ? `Données factuelles de la mise à jour: ${updateFacts}` : '',
+          parentComment
+            ? `Commentaire libre du parent: ${parentComment}`
+            : 'Commentaire libre du parent: aucun commentaire transmis.'
+        ];
+        if (parentContextLines.length) {
+          userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
+        }
+        const userContent = userParts.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
+        const system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (80 mots max).
+Ton ton est empathique, rassurant et constructif.
+Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éclairage nouveau.`;
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            temperature: 0.35,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: userContent }
+            ]
+          })
+        });
+        if (!aiRes.ok) {
+          const errText = await aiRes.text();
+          return res.status(502).json({ error: 'OpenAI error', details: errText });
+        }
+        const aiJson = await aiRes.json();
+        let comment = aiJson.choices?.[0]?.message?.content?.trim() || '';
+        comment = enforceWordLimit(comment, 80);
+        comment = comment.slice(0, 2000);
+        if (!comment || areTextsTooSimilar(comment, parentComment)) {
+          comment = fallbackParentAiComment(parentComment);
+        }
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(200).send(JSON.stringify({ comment }));
       }
       case 'child-update': {
         const apiKey = process.env.OPENAI_API_KEY;
@@ -310,7 +370,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         }
         try {
           const parentRows = await supabaseRequest(
-            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
+            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
             { headers }
           );
           parentUpdates = Array.isArray(parentRows) ? parentRows : [];
@@ -673,41 +733,10 @@ function formatParentUpdatesForPrompt(updates = []) {
         ? 'Contexte parental'
         : (PARENT_CONTEXT_FIELD_LABELS[type] || (type ? type.replace(/_/g, ' ') : 'Champ'));
       const date = formatDateForPrompt(row?.created_at);
-      let summary = '';
+      const summaryParts = [];
       if (type === 'parent_context') {
-        let parsed = null;
-        if (typeof row?.update_content === 'string') {
-          try { parsed = JSON.parse(row.update_content); } catch { parsed = null; }
-        } else if (row?.update_content && typeof row.update_content === 'object') {
-          parsed = row.update_content;
-        }
-        const lines = [];
-        if (parsed && typeof parsed === 'object') {
-          if (typeof parsed.summary === 'string' && parsed.summary.trim()) {
-            lines.push(parsed.summary.trim());
-          }
-          const context = parsed.snapshot?.context || parsed.context || {};
-          const contextKeys = ['parental_emotion', 'parental_stress', 'parental_fatigue', 'parental_employment', 'marital_status', 'number_of_children'];
-          contextKeys.forEach((key) => {
-            if (!Object.prototype.hasOwnProperty.call(context, key)) return;
-            const formatted = formatParentContextValue(key, context[key]);
-            if (formatted && formatted !== '—') {
-              const keyLabel = PARENT_CONTEXT_FIELD_LABELS[key] || key.replace(/_/g, ' ');
-              lines.push(`${keyLabel}: ${formatted}`);
-            }
-          });
-          if (Array.isArray(parsed.changes)) {
-            parsed.changes.slice(0, 4).forEach((change) => {
-              if (!change || !change.field) return;
-              const field = String(change.field);
-              const before = formatParentContextValue(field, change.previous);
-              const after = formatParentContextValue(field, change.next);
-              const changeLabel = PARENT_CONTEXT_FIELD_LABELS[field] || field.replace(/_/g, ' ');
-              lines.push(`${changeLabel}: ${before || 'non renseigné'} → ${after || 'non renseigné'}`);
-            });
-          }
-        }
-        summary = lines.join(' ; ');
+        const facts = formatParentUpdateFacts(type, row?.update_content ?? '');
+        if (facts) summaryParts.push(facts);
       } else {
         let previous = '';
         let next = '';
@@ -723,18 +752,96 @@ function formatParentUpdatesForPrompt(updates = []) {
           previous = formatParentContextValue(type, row.update_content.previous);
           next = formatParentContextValue(type, row.update_content.next);
         }
-        summary = `${previous || 'non renseigné'} → ${next || 'non renseigné'}`;
+        const text = `${previous || 'non renseigné'} → ${next || 'non renseigné'}`;
+        if (text) summaryParts.push(text);
+      }
+      const parentComment = typeof row?.parent_comment === 'string' ? row.parent_comment.trim() : '';
+      if (parentComment) {
+        summaryParts.push(`Commentaire parent: ${parentComment.slice(0, 160)}`);
       }
       const comment = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
       if (comment) {
-        const limited = comment.slice(0, 200);
-        summary = summary ? `${summary}; Commentaire: ${limited}` : `Commentaire: ${limited}`;
+        summaryParts.push(`Retour IA: ${comment.slice(0, 160)}`);
       }
-      summary = summary ? summary.slice(0, 400) : '';
+      const summary = summaryParts.join(' ; ').slice(0, 400);
       const prefix = `${index + 1}. ${label}`;
       const body = summary || 'mise à jour enregistrée';
       return date ? `${prefix} (${date}) : ${body}` : `${prefix}: ${body}`;
     });
+}
+
+function formatParentUpdateFacts(updateType, rawContent) {
+  let parsed = parseUpdateContentForPrompt(rawContent);
+  if (!parsed || typeof parsed !== 'object') parsed = {};
+  const lines = [];
+  if (updateType === 'parent_context') {
+    if (typeof parsed.summary === 'string' && parsed.summary.trim()) {
+      lines.push(parsed.summary.trim());
+    }
+    const context = (parsed.snapshot && typeof parsed.snapshot === 'object'
+      ? parsed.snapshot.context
+      : null) || (parsed.context && typeof parsed.context === 'object' ? parsed.context : {});
+    const contextKeys = ['parental_emotion', 'parental_stress', 'parental_fatigue', 'parental_employment', 'marital_status', 'number_of_children'];
+    contextKeys.forEach((key) => {
+      if (!Object.prototype.hasOwnProperty.call(context, key)) return;
+      const formatted = formatParentContextValue(key, context[key]);
+      if (formatted) {
+        const keyLabel = PARENT_CONTEXT_FIELD_LABELS[key] || key.replace(/_/g, ' ');
+        lines.push(`${keyLabel}: ${formatted}`);
+      }
+    });
+    if (Array.isArray(parsed.changes)) {
+      parsed.changes.slice(0, 6).forEach((change) => {
+        if (!change || !change.field) return;
+        const field = String(change.field);
+        const before = formatParentContextValue(field, change.previous);
+        const after = formatParentContextValue(field, change.next);
+        const changeLabel = PARENT_CONTEXT_FIELD_LABELS[field] || field.replace(/_/g, ' ');
+        lines.push(`${changeLabel}: ${before || 'non renseigné'} → ${after || 'non renseigné'}`);
+      });
+    }
+  } else {
+    const before = formatParentContextValue(updateType, parsed.previous ?? parsed.before ?? parsed.old ?? '');
+    const after = formatParentContextValue(updateType, parsed.next ?? parsed.after ?? parsed.new ?? '');
+    if (before || after) {
+      lines.push(`${before || 'non renseigné'} → ${after || 'non renseigné'}`);
+    }
+  }
+  if (!lines.length) {
+    const fallback = formatUpdateDataForPrompt(parsed);
+    if (fallback) lines.push(fallback);
+  }
+  return lines.join(' ; ').slice(0, 600);
+}
+
+function enforceWordLimit(text, maxWords = 80) {
+  if (!text) return '';
+  const words = text.trim().split(/\s+/);
+  if (words.length <= maxWords) return text.trim();
+  return `${words.slice(0, maxWords).join(' ')}…`;
+}
+
+function normalizeForComparison(text) {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function areTextsTooSimilar(a, b) {
+  if (!a || !b) return false;
+  const normA = normalizeForComparison(a);
+  const normB = normalizeForComparison(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  if (normB.length >= 20 && normA.includes(normB)) return true;
+  return false;
+}
+
+function fallbackParentAiComment() {
+  return 'Merci pour votre partage. Prenez le temps de souffler, reconnaissez vos besoins et n’hésitez pas à solliciter un proche ou un professionnel si vous en ressentez le besoin. Vous faites de votre mieux pour votre famille.';
 }
 
 function sanitizeUpdatePayload(value, depth = 0) {
