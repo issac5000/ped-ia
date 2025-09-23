@@ -6118,9 +6118,11 @@ const TIMELINE_MILESTONES = [
       ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
       : '');
     if (!uid && !code) throw new Error('Profil introuvable');
-    const payload = { type: 'family-bilan' };
-    if (uid) payload.profileId = uid;
-    else payload.code_unique = code;
+    const payload = {
+      type: 'family-bilan',
+      profileId: uid ? String(uid).trim() : null,
+      code_unique: code ? String(code).trim() : null,
+    };
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
