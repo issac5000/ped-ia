@@ -683,6 +683,54 @@ const TIMELINE_MILESTONES = [
             .filter(Boolean);
           const primaryRow = rows.find((row) => row && row.is_primary);
           if (primaryRow?.id != null) working.primaryId = primaryRow.id;
+          try {
+            const profileRes = await anonParentRequest('profile', {});
+            const profileRow = profileRes?.profile || null;
+            if (profileRow) {
+              const pseudo = profileRow.full_name || working.user.pseudo || '';
+              const parentContext = normalizeParentContext(profileRow, working.user);
+              working.user = {
+                ...working.user,
+                pseudo,
+                role: profileRow.parent_role || working.user.role || 'maman',
+                ...parentContext,
+              };
+              working.privacy = {
+                ...working.privacy,
+                showStats:
+                  profileRow.show_children_count != null
+                    ? !!profileRow.show_children_count
+                    : working.privacy.showStats,
+              };
+              const nextProfile = { ...(activeProfile || {}), id: profileRow.id || activeProfile?.id };
+              if (Object.prototype.hasOwnProperty.call(profileRow, 'full_name')) {
+                nextProfile.full_name = profileRow.full_name || pseudo;
+              } else {
+                nextProfile.full_name = pseudo;
+              }
+              if (Object.prototype.hasOwnProperty.call(profileRow, 'parent_role')) {
+                nextProfile.parent_role = profileRow.parent_role;
+              }
+              if (Object.prototype.hasOwnProperty.call(profileRow, 'show_children_count')) {
+                nextProfile.show_children_count = profileRow.show_children_count;
+              }
+              if (Object.prototype.hasOwnProperty.call(profileRow, 'code_unique')) {
+                nextProfile.code_unique = profileRow.code_unique;
+              }
+              PARENT_FIELD_DEFS.forEach((def) => {
+                if (Object.prototype.hasOwnProperty.call(profileRow, def.column)) {
+                  nextProfile[def.column] = profileRow[def.column];
+                }
+              });
+              if (Object.prototype.hasOwnProperty.call(profileRow, 'context_parental')) {
+                nextProfile.context_parental = profileRow.context_parental;
+              }
+              nextProfile.isAnonymous = true;
+              setActiveProfile(nextProfile);
+            }
+          } catch (anonProfileErr) {
+            console.warn('anonParentRequest profile failed', anonProfileErr);
+          }
         } else {
           const uid = getActiveProfileId();
           if (uid) {
@@ -893,6 +941,29 @@ const TIMELINE_MILESTONES = [
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
     const response = await fetch('/api/anon/children', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text().catch(() => '');
+    let json = null;
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!response.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
+      throw err;
+    }
+    return json || {};
+  }
+
+  async function anonParentRequest(action, payload = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) throw new Error('Code unique manquant');
+    const body = { action, code, ...payload };
+    const response = await fetch('/api/anon/parent-updates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -4048,28 +4119,95 @@ const TIMELINE_MILESTONES = [
       parentContextChanges.forEach((change) => parentUpdateEntries.push(change));
 
       const parentDbPayload = parentContextToDbPayload(parentContext);
+      const shouldLogSnapshot = parentUpdateEntries.length || hasParentComment;
+
+      const prepareParentSnapshot = async (profileId) => {
+        if (!profileId || !shouldLogSnapshot) return null;
+        try {
+          const snapshotResult = buildParentContextSnapshotInsert({
+            profileId,
+            previousUser,
+            previousContext,
+            nextUser,
+            nextContext: parentContext,
+            changes: parentUpdateEntries,
+            comment: parentComment,
+          });
+          if (!snapshotResult?.row) return null;
+          const { row: snapshotRow, sanitizedComment, updateContent } = snapshotResult;
+          const hasParentNote = !!sanitizedComment;
+          const hasStructuredChanges = Array.isArray(updateContent?.changes)
+            ? updateContent.changes.length > 0
+            : false;
+          const shouldRequestAi = hasParentNote || hasStructuredChanges;
+          let aiFeedback = '';
+          if (shouldRequestAi) {
+            try {
+              aiFeedback = await generateParentUpdateAiComment({
+                updateType: snapshotRow.update_type,
+                updateContent,
+                parentComment: sanitizedComment || '',
+              });
+            } catch (aiErr) {
+              console.warn('generateParentUpdateAiComment failed', aiErr);
+            }
+          }
+          const rowForInsert = { ...snapshotRow };
+          if (aiFeedback) {
+            rowForInsert.ai_commentaire = aiFeedback;
+            const baseContent = (updateContent && typeof updateContent === 'object')
+              ? updateContent
+              : (() => {
+                  try { return JSON.parse(rowForInsert.update_content || '{}'); }
+                  catch { return {}; }
+                })();
+            const updatedContent = { ...baseContent, ai_commentaire: aiFeedback };
+            if (!hasParentNote) updatedContent.comment_origin = 'ai';
+            rowForInsert.update_content = JSON.stringify(updatedContent);
+          }
+          return {
+            snapshotRow: rowForInsert,
+            sanitizedComment,
+            updateContent,
+            hasParentNote,
+          };
+        } catch (err) {
+          console.warn('prepareParentSnapshot failed', err);
+          return null;
+        }
+      };
+
+      let remoteProfileResponse = null;
 
       if (useRemote()) {
         if (isAnonProfile()) {
-          const code = activeProfile?.code_unique;
-          if (code) {
-            await fetch('/api/profiles/update-anon', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                code,
-                fullName: pseudo,
-                role,
-                showChildrenCount: showStats,
-                maritalStatus: parentContext.maritalStatus,
-                numberOfChildren: parentContext.numberOfChildren,
-                parentalEmployment: parentContext.parentalEmployment,
-                parentalEmotion: parentContext.parentalEmotion,
-                parentalStress: parentContext.parentalStress,
-                parentalFatigue: parentContext.parentalFatigue,
-                contextParental: parentDbPayload.context_parental,
-              }),
-            });
+          const profileId = activeProfile?.id;
+          const snapshotInfo = await prepareParentSnapshot(profileId);
+          if (snapshotInfo?.hasParentNote) shouldResetComment = true;
+          const payloadBody = {
+            profileUpdate: {
+              fullName: pseudo,
+              role,
+              showChildrenCount: showStats,
+              maritalStatus: parentContext.maritalStatus,
+              numberOfChildren: parentContext.numberOfChildren,
+              parentalEmployment: parentContext.parentalEmployment,
+              parentalEmotion: parentContext.parentalEmotion,
+              parentalStress: parentContext.parentalStress,
+              parentalFatigue: parentContext.parentalFatigue,
+              contextParental: parentDbPayload.context_parental,
+            },
+          };
+          if (snapshotInfo?.snapshotRow) {
+            payloadBody.parentUpdate = snapshotInfo.snapshotRow;
+          }
+          try {
+            const response = await anonParentRequest('update-profile', payloadBody);
+            remoteProfileResponse = response?.profile || null;
+            if (snapshotInfo?.snapshotRow) shouldRefreshFamily = true;
+          } catch (anonErr) {
+            console.warn('anonParentRequest update-profile failed', anonErr);
+            throw anonErr;
           }
         } else {
           const uid = getActiveProfileId();
@@ -4081,72 +4219,35 @@ const TIMELINE_MILESTONES = [
               ...parentDbPayload,
             };
             await supabase.from('profiles').update(updatePayload).eq('id', uid);
-            const shouldLogSnapshot = parentUpdateEntries.length || hasParentComment;
-            if (shouldLogSnapshot) {
+            const snapshotInfo = await prepareParentSnapshot(uid);
+            if (snapshotInfo?.snapshotRow) {
               try {
-                const snapshotResult = buildParentContextSnapshotInsert({
-                  profileId: uid,
-                  previousUser,
-                  previousContext,
-                  nextUser,
-                  nextContext: parentContext,
-                  changes: parentUpdateEntries,
-                  comment: parentComment,
-                });
-                if (snapshotResult?.row) {
-                  const { row: snapshotRow, sanitizedComment, updateContent } = snapshotResult;
-                  const hasParentNote = !!sanitizedComment;
-                  const hasStructuredChanges = Array.isArray(updateContent?.changes)
-                    ? updateContent.changes.length > 0
-                    : false;
-                  const shouldRequestAi = hasParentNote || hasStructuredChanges;
-                  let aiFeedback = '';
-                  if (shouldRequestAi) {
-                    try {
-                      aiFeedback = await generateParentUpdateAiComment({
-                        updateType: snapshotRow.update_type,
-                        updateContent,
-                        parentComment: sanitizedComment || '',
-                      });
-                    } catch (aiErr) {
-                      console.warn('generateParentUpdateAiComment failed', aiErr);
-                    }
-                  }
-                  if (aiFeedback) {
-                    snapshotRow.ai_commentaire = aiFeedback;
-                    const baseContent = (updateContent && typeof updateContent === 'object')
-                      ? updateContent
-                      : (() => {
-                          try {
-                            return JSON.parse(snapshotRow.update_content || '{}');
-                          } catch {
-                            return {};
-                          }
-                        })();
-                    const updatedContent = { ...baseContent, ai_commentaire: aiFeedback };
-                    if (!hasParentNote) updatedContent.comment_origin = 'ai';
-                    snapshotRow.update_content = JSON.stringify(updatedContent);
-                  }
-                  await supabase.from('parent_updates').insert(snapshotRow);
-                  if (hasParentNote) shouldResetComment = true;
-                  shouldRefreshFamily = true;
-                }
+                await supabase.from('parent_updates').insert(snapshotInfo.snapshotRow);
+                if (snapshotInfo.hasParentNote) shouldResetComment = true;
+                shouldRefreshFamily = true;
               } catch (logErr) {
                 console.warn('parent_updates insert failed', logErr);
               }
             }
           }
         }
-        const nextProfile = {
-          ...activeProfile,
-          full_name: pseudo,
-          parent_role: role,
-          show_children_count: showStats,
-        };
+        const nextProfile = { ...activeProfile };
+        const sourceProfile = remoteProfileResponse || {};
+        nextProfile.full_name = sourceProfile.full_name ?? pseudo;
+        nextProfile.parent_role = sourceProfile.parent_role ?? role;
+        nextProfile.show_children_count = Object.prototype.hasOwnProperty.call(sourceProfile, 'show_children_count')
+          ? sourceProfile.show_children_count
+          : showStats;
         PARENT_FIELD_DEFS.forEach((def) => {
-          nextProfile[def.column] = parentDbPayload[def.column];
+          if (Object.prototype.hasOwnProperty.call(sourceProfile, def.column)) {
+            nextProfile[def.column] = sourceProfile[def.column];
+          } else {
+            nextProfile[def.column] = parentDbPayload[def.column];
+          }
         });
-        nextProfile.context_parental = parentDbPayload.context_parental;
+        nextProfile.context_parental = Object.prototype.hasOwnProperty.call(sourceProfile, 'context_parental')
+          ? sourceProfile.context_parental
+          : parentDbPayload.context_parental;
         setActiveProfile(nextProfile);
       } else {
         const nextProfile = {
@@ -4431,16 +4532,18 @@ const TIMELINE_MILESTONES = [
     try {
       if (useRemote()) {
         if (isAnonProfile()) {
-          const code = activeProfile?.code_unique;
-          if (code) {
-            await fetch('/api/profiles/update-anon', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                code,
-                showChildrenCount: checked,
-              }),
+          try {
+            const response = await anonParentRequest('update-profile', {
+              profileUpdate: { showChildrenCount: checked },
             });
+            if (response?.profile && Object.prototype.hasOwnProperty.call(response.profile, 'show_children_count')) {
+              setActiveProfile({
+                ...activeProfile,
+                show_children_count: response.profile.show_children_count,
+              });
+            }
+          } catch (anonErr) {
+            throw anonErr;
           }
         } else {
           const uid = getActiveProfileId();
@@ -5834,12 +5937,57 @@ const TIMELINE_MILESTONES = [
           }
         }
       }
+      let parentUpdates = [];
+      try {
+        const updatesRes = await anonParentRequest('list', { limit: PARENT_UPDATES_LIMIT });
+        if (Array.isArray(updatesRes.parentUpdates)) {
+          parentUpdates = updatesRes.parentUpdates;
+        }
+        const profileRow = updatesRes?.profile || null;
+        if (profileRow) {
+          const normalizedCtx = normalizeParentContext(profileRow, parentContext);
+          parentContext.maritalStatus = normalizedCtx.maritalStatus;
+          parentContext.numberOfChildren = normalizedCtx.numberOfChildren;
+          parentContext.parentalEmployment = normalizedCtx.parentalEmployment;
+          parentContext.parentalEmotion = normalizedCtx.parentalEmotion;
+          parentContext.parentalStress = normalizedCtx.parentalStress;
+          parentContext.parentalFatigue = normalizedCtx.parentalFatigue;
+          parentInfo.pseudo = profileRow.full_name || parentInfo.pseudo;
+          parentInfo.role = profileRow.parent_role || parentInfo.role;
+          const nextProfile = { ...(activeProfile || {}) };
+          if (profileRow.id) nextProfile.id = profileRow.id;
+          if (Object.prototype.hasOwnProperty.call(profileRow, 'full_name')) {
+            nextProfile.full_name = profileRow.full_name || parentInfo.pseudo;
+          }
+          if (Object.prototype.hasOwnProperty.call(profileRow, 'parent_role')) {
+            nextProfile.parent_role = profileRow.parent_role;
+          }
+          if (Object.prototype.hasOwnProperty.call(profileRow, 'show_children_count')) {
+            nextProfile.show_children_count = profileRow.show_children_count;
+          }
+          if (Object.prototype.hasOwnProperty.call(profileRow, 'code_unique')) {
+            nextProfile.code_unique = profileRow.code_unique;
+          }
+          PARENT_FIELD_DEFS.forEach((def) => {
+            if (Object.prototype.hasOwnProperty.call(profileRow, def.column)) {
+              nextProfile[def.column] = profileRow[def.column];
+            }
+          });
+          if (Object.prototype.hasOwnProperty.call(profileRow, 'context_parental')) {
+            nextProfile.context_parental = profileRow.context_parental;
+          }
+          nextProfile.isAnonymous = true;
+          setActiveProfile(nextProfile);
+        }
+      } catch (err) {
+        console.warn('fetchFamilyOverview anon parent list failed', err);
+      }
       return {
         parentContext,
         parentInfo,
         children,
         familyContext: null,
-        parentUpdates: [],
+        parentUpdates,
       };
     }
     const state = dashboardState.family;
