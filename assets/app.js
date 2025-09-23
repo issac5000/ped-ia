@@ -4884,32 +4884,87 @@ const TIMELINE_MILESTONES = [
           : 'Date inconnue';
         const iso = hasValidDate ? created.toISOString() : '';
         let details = '';
-        let parentNoteHtml = '';
+        let parentCommentText = '';
+        let parsedContent = null;
         try {
           const parsed = JSON.parse(u.update_content || '');
-          const summaryText = parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {});
-          if (summaryText) details = escapeHtml(summaryText);
-          const parentNote = typeof parsed.userComment === 'string' ? parsed.userComment.trim() : '';
-          if (parentNote) {
-            const formattedNote = escapeHtml(parentNote).replace(/\n/g, '<br>');
-            parentNoteHtml = `
-              <div class="timeline-parent-note">
-                <span class="timeline-parent-note__label">Commentaire parent</span>
-                <div class="timeline-parent-note__text">${formattedNote}</div>
-              </div>
-            `.trim();
-            if (!details) details = 'Commentaire ajouté au profil.';
+          if (parsed && typeof parsed === 'object') {
+            parsedContent = parsed;
+            const summaryText = parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {});
+            if (summaryText) details = escapeHtml(summaryText);
+            const parentNote = typeof parsed.userComment === 'string' ? parsed.userComment.trim() : '';
+            if (parentNote) {
+              parentCommentText = parentNote;
+              if (!summaryText) details = 'Commentaire ajouté au profil.';
+            }
+          } else if (typeof parsed === 'string') {
+            parsedContent = { raw: parsed };
+            if (parsed) details = escapeHtml(parsed);
           }
         } catch {
           details = escapeHtml(u.update_content || '');
         }
+        if (!details) details = 'Mise à jour enregistrée.';
+        const renderParentNote = (label, text) => `
+              <div class="timeline-parent-note">
+                <span class="timeline-parent-note__label">${escapeHtml(label)}</span>
+                <div class="timeline-parent-note__text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+              </div>
+        `.trim();
+        const renderAiNote = (label, text) => `
+              <div class="timeline-ai-note">
+                <span class="timeline-ai-note__label">${escapeHtml(label)}</span>
+                <div class="timeline-ai-note__text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+              </div>
+        `.trim();
+        const storedAiCandidates = [u.ai_commentaire, u.ai_comment]
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter(Boolean);
+        const storedAiComment = storedAiCandidates[0] || '';
+        const parsedAiComment = (() => {
+          if (!parsedContent || typeof parsedContent !== 'object') return '';
+          const candidates = [];
+          const direct = parsedContent.ai_commentaire ?? parsedContent.aiCommentaire ?? parsedContent.comment;
+          if (typeof direct === 'string') candidates.push(direct.trim());
+          if (parsedContent.snapshot && typeof parsedContent.snapshot === 'object') {
+            const snapComment = parsedContent.snapshot.ai_commentaire ?? parsedContent.snapshot.aiCommentaire;
+            if (typeof snapComment === 'string') candidates.push(snapComment.trim());
+          }
+          return candidates.find((value) => value) || '';
+        })();
+        const aiComment = parsedAiComment && parsedAiComment.length > storedAiComment.length
+          ? parsedAiComment
+          : storedAiComment;
+        const originCandidates = [
+          typeof u.comment_origin === 'string' ? u.comment_origin : '',
+          typeof parsedContent?.comment_origin === 'string' ? parsedContent.comment_origin : '',
+          typeof parsedContent?.commentOrigin === 'string' ? parsedContent.commentOrigin : '',
+        ];
+        const originKey = originCandidates
+          .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+          .find((value) => value) || '';
+        const commentBlocks = [];
+        if (parentCommentText) {
+          commentBlocks.push(renderParentNote('Commentaire parent', parentCommentText));
+        }
+        if (aiComment) {
+          const labelFromOrigin = originKey === 'coach'
+            ? 'Commentaire coach'
+            : originKey === 'pro'
+              ? 'Commentaire professionnel'
+              : originKey && originKey !== 'ai' && originKey !== 'parent'
+                ? `Commentaire ${originKey}`
+                : 'Réponse de Ped’IA';
+          if (!parentCommentText && (!originKey || originKey === 'parent')) {
+            commentBlocks.push(renderParentNote('Commentaire parent', aiComment));
+          } else if (originKey && originKey !== 'ai' && originKey !== 'parent') {
+            commentBlocks.push(renderParentNote(labelFromOrigin, aiComment));
+          } else {
+            commentBlocks.push(renderAiNote('Réponse de Ped’IA', aiComment));
+          }
+        }
+        const commentsHtml = commentBlocks.join('');
         const typeBadge = u.update_type ? `<span class="timeline-tag">${escapeHtml(u.update_type)}</span>` : '';
-        const commentText = typeof u.ai_commentaire === 'string' && u.ai_commentaire
-          ? u.ai_commentaire
-          : (typeof u.ai_comment === 'string' ? u.ai_comment : '');
-        const comment = commentText
-          ? `<div class="timeline-comment"><strong><em>${escapeHtml(commentText)}</em></strong></div>`
-          : '';
         return `
           <article class="timeline-item" role="listitem">
             <div class="timeline-marker" aria-hidden="true"></div>
@@ -4919,8 +4974,7 @@ const TIMELINE_MILESTONES = [
                 ${typeBadge}
               </div>
               <div class="timeline-summary">${details}</div>
-              ${parentNoteHtml}
-              ${comment}
+              ${commentsHtml}
             </div>
           </article>
         `;
