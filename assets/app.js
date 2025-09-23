@@ -597,6 +597,10 @@ const TIMELINE_MILESTONES = [
       });
       if (!res.ok) return '';
       const data = await res.json();
+      if (data?.status === 'unavailable') {
+        showNotification({ title: 'IA indisponible', text: data.message || 'Fonction IA désactivée.' });
+        return '';
+      }
       let text = sanitizeParentAiFeedback(data?.comment ?? data?.text ?? '');
       if (!text) return '';
       return text;
@@ -988,26 +992,31 @@ const TIMELINE_MILESTONES = [
     return json || {};
   }
 
-  async function anonMessagesRequest(code_unique) {
-    const ok = await ensureSupabaseClient();
-    if (!ok || !supabase) return [];
-    if (code_unique == null || code_unique === '') return [];
+  async function anonMessagesRequest(code_unique, { since = null } = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = typeof code_unique === 'string' ? code_unique.trim().toUpperCase() : '';
+    if (!code) return { messages: [], senders: {} };
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('receiver_code', code_unique)
-        .eq('is_read', false)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Erreur lors de la récupération des messages anonymes:', error);
-        return [];
+      const body = { action: 'recent-activity', code };
+      if (since) body.since = since;
+      const response = await fetch('/api/anon/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text().catch(() => '');
+      const payload = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        const err = new Error(payload?.error || 'Service indisponible');
+        if (payload?.details) err.details = payload.details;
+        throw err;
       }
-      return data || [];
+      const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+      const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
+      return { messages, senders };
     } catch (err) {
-      console.error('Erreur lors de la récupération des messages anonymes:', err);
-      return [];
+      console.error('anonMessagesRequest failed', err);
+      return { messages: [], senders: {} };
     }
   }
 
@@ -1032,6 +1041,32 @@ const TIMELINE_MILESTONES = [
       throw err;
     }
     return json || {};
+  }
+
+  async function fetchAnonProfileByCode(rawCode) {
+    const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+    if (!code) throw new Error('Code unique manquant');
+    const response = await fetch('/api/anon/parent-updates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'profile', code })
+    });
+    const text = await response.text().catch(() => '');
+    let payload = null;
+    if (text) {
+      try { payload = JSON.parse(text); }
+      catch { payload = null; }
+    }
+    if (!response.ok) {
+      const err = new Error(payload?.error || 'Connexion impossible pour le moment.');
+      if (payload?.details) err.details = payload.details;
+      throw err;
+    }
+    const profile = payload?.profile || null;
+    if (!profile || !profile.id) {
+      throw new Error('Profil introuvable pour ce code.');
+    }
+    return profile;
   }
 
   function buildMeasurementPayloads(entries) {
@@ -1650,15 +1685,16 @@ const TIMELINE_MILESTONES = [
     const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
     const sinceRep = getNotifLastSince('reply') || sinceDefault;
     try {
-      const res = await anonMessagesRequest(code);
-      const messages = Array.isArray(res) ? res : [];
-      for (const m of messages) {
+      const sinceMsg = getNotifLastSince('msg') || sinceDefault;
+      const { messages, senders } = await anonMessagesRequest(code, { since: sinceMsg });
+      const list = Array.isArray(messages) ? messages : [];
+      for (const m of list) {
         if (!m || m.id == null) continue;
         const senderRaw = m.sender_id ?? m.senderId ?? m.sender_code ?? m.senderCode;
         if (senderRaw == null) continue;
         const fromId = String(senderRaw);
         const notifId = `msg:${m.id}`;
-        const fromName = m.sender_name ?? m.senderName ?? m.sender_full_name ?? m.senderFullName ?? 'Un parent';
+        const fromName = senders?.[fromId] || m.sender_name || m.senderName || m.sender_full_name || m.senderFullName || 'Un parent';
         const wasNew = addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
         if (wasNew) {
           showNotification({
@@ -2570,6 +2606,20 @@ const TIMELINE_MILESTONES = [
               : (profile.context_parental ?? null))
           : (previous.context_parental ?? null),
       };
+      activeProfile.full_name = typeof activeProfile.full_name === 'string' ? activeProfile.full_name : '';
+      activeProfile.parent_role = activeProfile.parent_role ?? '';
+      activeProfile.isAnonymous = !!activeProfile.isAnonymous;
+      if (activeProfile.context_parental && typeof activeProfile.context_parental !== 'object') {
+        activeProfile.context_parental = null;
+      }
+      activeProfile.avatar_url = activeProfile.avatar_url ?? null;
+      activeProfile.avatar = activeProfile.avatar_url;
+      activeProfile.contexte = activeProfile.context_parental;
+      if (activeProfile.show_children_count == null) {
+        activeProfile.show_children_count = false;
+      } else {
+        activeProfile.show_children_count = !!activeProfile.show_children_count;
+      }
     } else {
       activeProfile = null;
     }
@@ -2648,7 +2698,21 @@ const TIMELINE_MILESTONES = [
   // Garder le pseudo local synchronisé avec le profil Supabase
   async function syncUserFromSupabase() {
     try {
-      if (!supabase) return;
+      if (isAnonProfile()) {
+        const res = await anonParentRequest('profile', {});
+        const profileRow = res?.profile || null;
+        if (profileRow) {
+          setActiveProfile({ ...profileRow, isAnonymous: true });
+          const current = store.get(K.user) || {};
+          const pseudo = profileRow.full_name || current.pseudo || '';
+          if (pseudo !== current.pseudo) {
+            store.set(K.user, { ...current, pseudo });
+          }
+        }
+        return;
+      }
+      const ok = await ensureSupabaseClient();
+      if (!ok || !supabase) return;
       const uid = authSession?.user?.id || getActiveProfileId();
       if (!uid) return;
       const { data: prof, error } = await supabase
@@ -2756,33 +2820,13 @@ const TIMELINE_MILESTONES = [
       return;
     }
     if (status) status.textContent = '';
-    const ok = await ensureSupabaseClient();
-    if (!ok) {
-      if (status) { status.classList.add('error'); status.textContent = 'Service indisponible pour le moment.'; }
-      return;
-    }
     try {
       if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, code_unique, full_name, user_id')
-        .eq('code_unique', code)
-        .single();
-      if (error) {
-        if (status && (error.code === 'PGRST116' || (error.message || '').includes('Row not found'))) {
-          status.classList.add('error'); status.textContent = 'Code invalide.';
-          return;
-        }
-        throw error;
-      }
-      if (!data) {
-        if (status) { status.classList.add('error'); status.textContent = 'Code invalide.'; }
-        return;
-      }
-      setActiveProfile({ ...data, isAnonymous: !data.user_id });
+      const profile = await fetchAnonProfileByCode(code);
+      setActiveProfile({ ...profile, isAnonymous: true });
       authSession = null;
       const current = store.get(K.user) || {};
-      const pseudo = data.full_name || '';
+      const pseudo = profile.full_name || current.pseudo || '';
       if (pseudo !== current.pseudo) {
         store.set(K.user, { ...current, pseudo });
       }
@@ -2791,7 +2835,17 @@ const TIMELINE_MILESTONES = [
       location.hash = '#/dashboard';
     } catch (e) {
       console.error('loginWithCode failed', e);
-      if (status) { status.classList.add('error'); status.textContent = 'Connexion impossible pour le moment.'; }
+      if (status) {
+        status.classList.add('error');
+        const msg = (e && typeof e.message === 'string') ? e.message : '';
+        if (/code/i.test(msg) && /introuvable|invalid/i.test(msg)) {
+          status.textContent = 'Code invalide.';
+        } else if (/code/i.test(msg) && /manquant/i.test(msg)) {
+          status.textContent = 'Saisis ton code unique pour continuer.';
+        } else {
+          status.textContent = 'Connexion impossible pour le moment.';
+        }
+      }
     } finally {
       if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
     }
@@ -3197,7 +3251,8 @@ const TIMELINE_MILESTONES = [
           if (outRecipes) outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
         } catch (err) {
           if (aiPageState.instance !== runId || !isRouteAttached()) return;
-          if (outRecipes) outRecipes.innerHTML = '<div class="muted">Serveur IA indisponible.</div>';
+          const msg = err instanceof Error && err.message ? err.message : 'Serveur IA indisponible.';
+          if (outRecipes) outRecipes.innerHTML = `<div class="muted">${escapeHtml(msg)}</div>`;
         } finally {
           if (aiPageState.instance === runId) {
             if (sRecipes) sRecipes.textContent = '';
@@ -3245,7 +3300,8 @@ const TIMELINE_MILESTONES = [
           if (outStory) outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
         } catch (err) {
           if (aiPageState.instance !== runId || !isRouteAttached()) return;
-          if (outStory) outStory.innerHTML = '<div class="muted">Serveur IA indisponible.</div>';
+          const msg = err instanceof Error && err.message ? err.message : 'Serveur IA indisponible.';
+          if (outStory) outStory.innerHTML = `<div class="muted">${escapeHtml(msg)}</div>`;
         } finally {
           if (aiPageState.instance === runId) {
             if (sStory) sStory.textContent = '';
@@ -5021,9 +5077,14 @@ const TIMELINE_MILESTONES = [
 
       const reportMessage = document.createElement('div');
       reportMessage.className = 'muted';
-      reportMessage.textContent = useRemote()
-        ? 'Cliquez sur « Bilan complet » pour générer un rapport synthétique.'
-        : 'Connectez-vous pour générer un rapport complet.';
+      if (growthStatus?.notice?.message) {
+        reportMessage.textContent = growthStatus.notice.message;
+        reportMessage.classList.add('warning');
+      } else {
+        reportMessage.textContent = useRemote()
+          ? 'Cliquez sur « Bilan complet » pour générer un rapport synthétique.'
+          : 'Connectez-vous pour générer un rapport complet.';
+      }
       reportMessage.setAttribute('role', 'status');
       reportMessage.setAttribute('aria-live', 'polite');
 
@@ -6256,6 +6317,12 @@ const TIMELINE_MILESTONES = [
       const message = (data && typeof data.error === 'string') ? data.error : 'Échec de génération du bilan familial.';
       throw new Error(message);
     }
+    if (data?.status === 'unavailable') {
+      const message = typeof data.message === 'string' && data.message
+        ? data.message
+        : 'Fonction IA désactivée.';
+      throw new Error(message);
+    }
     return data;
   }
 
@@ -7087,7 +7154,11 @@ const TIMELINE_MILESTONES = [
     if (s.wakeDuration) parts.push(`${s.wakeDuration}`);
     return parts.join(' • ') || '—';
   }
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+  function escapeHtml(value){
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+  }
 
   function build1000DaysTimeline(child, ageDays) {
     const safeName = escapeHtml(child?.firstName || 'votre enfant');
@@ -7607,6 +7678,10 @@ const TIMELINE_MILESTONES = [
       });
       if (!res.ok) return { summary: '', comment: '' };
       const j = await res.json();
+      if (j?.status === 'unavailable') {
+        showNotification({ title: 'IA indisponible', text: j.message || 'Fonction IA désactivée.' });
+        return { summary: '', comment: '' };
+      }
       return {
         summary: typeof j.summary === 'string' ? j.summary.trim().slice(0, 500) : '',
         comment: typeof j.comment === 'string' ? j.comment.trim().slice(0, 2000) : '',
@@ -8206,18 +8281,23 @@ const TIMELINE_MILESTONES = [
   }
 
   async function fetchGrowthStatusRows(childId) {
-    if (!useRemote() || !childId) return [];
+    const unavailableNotice = {
+      status: 'unavailable',
+      message: 'Impossible de récupérer les repères OMS pour le moment. Réessayez plus tard ou contactez le support.'
+    };
+    if (!useRemote() || !childId) return { rows: [], notice: null };
     if (isAnonProfile()) {
       try {
         const res = await anonChildRequest('growth-status', { childId, limit: 20 });
         const rows = Array.isArray(res?.rows) ? res.rows : [];
-        return rows;
+        const notice = res?.notice && typeof res.notice === 'object' ? res.notice : null;
+        return { rows, notice };
       } catch (err) {
         console.warn('anon growth-status fetch failed', err);
-        return [];
+        return { rows: [], notice: unavailableNotice };
       }
     }
-    if (!supabase) return [];
+    if (!supabase) return { rows: [], notice: null };
     const orderAttempts = [
       { column: 'measured_at', options: { ascending: false, nullsFirst: false } },
       { column: 'recorded_at', options: { ascending: false, nullsFirst: false } },
@@ -8240,7 +8320,8 @@ const TIMELINE_MILESTONES = [
           lastError = error;
           continue;
         }
-        return Array.isArray(data) ? data : [];
+        const rows = Array.isArray(data) ? data : [];
+        return { rows, notice: null };
       } catch (err) {
         lastError = err;
       }
@@ -8248,7 +8329,7 @@ const TIMELINE_MILESTONES = [
     if (lastError) {
       console.warn('growth status fetch failed', lastError);
     }
-    return [];
+    return { rows: [], notice: unavailableNotice };
   }
 
   function invalidateGrowthStatus(childId) {
@@ -8271,13 +8352,18 @@ const TIMELINE_MILESTONES = [
     }
     const promise = (async () => {
       try {
-        const rows = await fetchGrowthStatusRows(childId);
+        const { rows, notice } = await fetchGrowthStatusRows(childId);
         const helper = createGrowthStatusHelper(key, rows);
+        if (notice) helper.notice = notice;
         growthStatusState.cache.set(key, helper);
         return helper;
       } catch (err) {
         console.warn('renderGrowthStatus error', err);
         const helper = createGrowthStatusHelper(key, []);
+        helper.notice = {
+          status: 'unavailable',
+          message: 'Impossible de récupérer les repères OMS pour le moment.'
+        };
         growthStatusState.cache.set(key, helper);
         return helper;
       } finally {
@@ -8327,6 +8413,10 @@ const TIMELINE_MILESTONES = [
 
   function updateReportHighlights(container, growthStatus) {
     if (!container) return;
+    if (growthStatus?.notice?.message) {
+      container.innerHTML = `<div class="empty-state muted">${escapeHtml(growthStatus.notice.message)}</div>`;
+      return;
+    }
     const helper = growthStatus || createGrowthStatusHelper('', []);
     const anomalies = helper.getAnomalies(3);
     const entries = anomalies.length ? anomalies : helper.entries.slice(0, 2);
@@ -8478,6 +8568,9 @@ const TIMELINE_MILESTONES = [
       catch { throw new Error(raw || 'AI backend error'); }
     }
     let data; try { data = JSON.parse(raw); } catch { data = { text: raw }; }
+    if (data?.status === 'unavailable') {
+      throw new Error(data.message || 'Fonction IA désactivée.');
+    }
     return data.text || 'Aucune réponse.';
   }
 
@@ -8488,6 +8581,9 @@ const TIMELINE_MILESTONES = [
     });
     if (!res.ok) throw new Error('AI backend error');
     const data = await res.json();
+    if (data?.status === 'unavailable') {
+      throw new Error(data.message || 'Fonction IA désactivée.');
+    }
     return data.text || '';
   }
 
@@ -8498,6 +8594,9 @@ const TIMELINE_MILESTONES = [
     });
     if (!res.ok) throw new Error('AI backend error');
     const data = await res.json();
+    if (data?.status === 'unavailable') {
+      throw new Error(data.message || 'Fonction IA désactivée.');
+    }
     return data.text || '';
   }
 

@@ -66,6 +66,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const API_KEY = process.env.OPENAI_API_KEY || '';
 const GOOGLE_KEY = process.env.GOOGLE_API_KEY || '';
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image-preview';
+const AI_UNAVAILABLE_RESPONSE = { status: 'unavailable', message: 'Fonction IA désactivée' };
 
 let cachedSupabaseEnv = null;
 
@@ -206,7 +207,7 @@ function createHttpError(status, message, details) {
  * Les historiques sont tronqués et filtrés côté serveur pour éviter les débordements.
  */
 async function aiAdvice(body) {
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  if (!API_KEY) return AI_UNAVAILABLE_RESPONSE;
   const question = String(body.question || '').slice(0, 2000);
   const child = safeChildSummary(body.child);
   const history = Array.isArray(body.history) ? body.history.slice(-20) : [];
@@ -241,7 +242,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
  * Génère des idées de recettes adaptées à l’âge et au contexte nutritionnel de l’enfant.
  */
 async function aiRecipes(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  if (!API_KEY) return AI_UNAVAILABLE_RESPONSE;
   const child = safeChildSummary(body.child);
   const prefs = String(body.prefs || '').slice(0, 400);
   const system = `Tu es Ped’IA, assistant nutrition 0–7 ans.
@@ -265,7 +266,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
  * Crée une histoire personnalisée (durée configurable, ton apaisant ou énergique).
  */
 async function aiStory(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  if (!API_KEY) return AI_UNAVAILABLE_RESPONSE;
   const child = safeChildSummary(body.child);
   const theme = String(body.theme || '').slice(0, 200);
   const duration = Math.max(1, Math.min(10, Number(body.duration || 3)));
@@ -291,7 +292,7 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
  * Produit un commentaire bref, objectif et empathique pour les journaux d’évolution.
  */
 async function aiComment(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  if (!API_KEY) return AI_UNAVAILABLE_RESPONSE;
   const content = String(body.content || '').slice(0, 2000);
   const system = `Tu es Ped’IA, un assistant parental bienveillant ET objectif. Analyse la mise à jour fournie et rédige un commentaire clair et bref (maximum 50 mots).
 - Souligne les progrès lorsqu’ils sont présents.
@@ -373,7 +374,7 @@ function fallbackParentAiComment(){
 }
 
 async function aiParentUpdate(body){
-  if (!API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  if (!API_KEY) return AI_UNAVAILABLE_RESPONSE;
   const updateType = typeof body.updateType === 'string'
     ? body.updateType.trim().slice(0, 64)
     : typeof body.update_type === 'string'
@@ -536,6 +537,7 @@ const server = createServer(async (req, res) => {
       }
       return send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json; charset=utf-8' });
     } catch (e) {
+      console.error('[api/server] /api/ai handler error', e);
       return send(res, 500, JSON.stringify({ error: 'IA indisponible', details: String(e.message || e) }), { 'Content-Type': 'application/json' });
     }
   }

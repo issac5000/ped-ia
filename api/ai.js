@@ -60,6 +60,18 @@ const PARENT_CONTEXT_VALUE_LABELS = {
   },
 };
 
+const AI_UNAVAILABLE_RESPONSE = { status: 'unavailable', message: 'Fonction IA désactivée' };
+
+function respondAiUnavailable(res) {
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  } catch (err) {
+    console.warn('[ai] unable to set headers for unavailable response', err);
+  }
+  return res.status(200).send(JSON.stringify(AI_UNAVAILABLE_RESPONSE));
+}
+
 // Fonction serverless unique : /api/ai (regroupe story, advice, comment, recipes)
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -81,7 +93,7 @@ export default async function handler(req, res) {
     switch (type) {
       case 'story': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
         const child = safeChildSummary(body.child);
         const theme = String(body.theme || '').slice(0, 200);
         const duration = Math.max(1, Math.min(10, Number(body.duration || 3)));
@@ -108,7 +120,7 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
       }
       case 'advice': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
 
         const question = String(body.question || '').slice(0, 2000);
         const child = safeChildSummary(body.child);
@@ -149,7 +161,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
       }
       case 'comment': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
         const content = String(body.content || '').slice(0, 2000);
         const system = `Tu es Ped’IA, un assistant bienveillant pour parents.
   Ta mission est de rédiger un commentaire bref et clair (max 80 mots) sur la mise à jour donnée. 
@@ -187,7 +199,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
       }
       case 'parent-update': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
         const updateType = typeof body.updateType === 'string'
           ? body.updateType.trim().slice(0, 64)
           : typeof body.update_type === 'string'
@@ -247,7 +259,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
       }
       case 'child-update': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
         const updateType = String(body.updateType || '').slice(0, 64);
         const updateForPrompt = sanitizeUpdatePayload(body.update);
         const parentComment = typeof body.parentComment === 'string' ? body.parentComment.trim().slice(0, 600) : '';
@@ -358,7 +370,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
       }
       case 'family-bilan': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
         const profileIdCandidates = [
           typeof body.profileId === 'string' ? body.profileId.trim() : '',
           typeof body.profile_id === 'string' ? body.profile_id.trim() : '',
@@ -540,7 +552,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
       }
       case 'child-full-report': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
 
         const childIdCandidates = [
           typeof body.childId === 'string' ? body.childId.trim() : '',
@@ -692,7 +704,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
       }
       case 'recipes': {
         const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+        if (!apiKey) return respondAiUnavailable(res);
         const child = safeChildSummary(body.child);
         const prefs = String(body.prefs || '').slice(0, 400);
 
@@ -719,6 +731,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
         return res.status(400).json({ error: 'Type non reconnu' });
     }
   } catch (e){
+    console.error('[api/ai] handler error', e);
     return res.status(500).json({ error: 'IA indisponible', details: String(e?.message || e) });
   }
 }
