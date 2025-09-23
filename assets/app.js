@@ -178,6 +178,10 @@ const TIMELINE_MILESTONES = [
     set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
     del(k) { localStorage.removeItem(k); },
   };
+  const growthStatusState = {
+    cache: new Map(),
+    pending: new Map(),
+  };
   const routes = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
@@ -4871,12 +4875,16 @@ const TIMELINE_MILESTONES = [
     // Ajouter le bloc d’historique des mises à jour
     try {
       const updates = await getChildUpdates(safeChild.id);
+      const growthStatus = await renderGrowthStatus(safeChild.id).catch((err) => {
+        console.warn('renderGrowthStatus failed', err);
+        return null;
+      });
       if (rid !== renderDashboard._rid) return;
       const hist = document.createElement('div');
       hist.className = 'card stack';
       hist.id = 'dashboard-history';
       hist.style.marginTop = '20px';
-      const timelineHtml = updates.map(u => {
+      const timelineHtml = updates.map((u) => {
         const created = new Date(u.created_at);
         const hasValidDate = !Number.isNaN(created.getTime());
         const when = hasValidDate
@@ -4885,10 +4893,20 @@ const TIMELINE_MILESTONES = [
         const iso = hasValidDate ? created.toISOString() : '';
         let details = '';
         let parentNoteHtml = '';
-        try {
-          const parsed = JSON.parse(u.update_content || '');
-          const summaryText = parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {});
-          if (summaryText) details = escapeHtml(summaryText);
+        let growthHtml = '';
+        let parsed = null;
+        if (typeof u.update_content === 'string' && u.update_content.trim()) {
+          try { parsed = JSON.parse(u.update_content); } catch (err) { parsed = null; }
+        } else if (u.update_content && typeof u.update_content === 'object') {
+          parsed = u.update_content;
+        }
+        if (typeof parsed === 'string') {
+          details = escapeHtml(parsed);
+        } else if (parsed && typeof parsed === 'object') {
+          try {
+            const summaryText = parsed.summary || summarizeUpdate(parsed.prev || {}, parsed.next || {});
+            if (summaryText) details = escapeHtml(summaryText);
+          } catch {}
           const parentNote = typeof parsed.userComment === 'string' ? parsed.userComment.trim() : '';
           if (parentNote) {
             const formattedNote = escapeHtml(parentNote).replace(/\n/g, '<br>');
@@ -4900,8 +4918,22 @@ const TIMELINE_MILESTONES = [
             `.trim();
             if (!details) details = 'Commentaire ajouté au profil.';
           }
-        } catch {
-          details = escapeHtml(u.update_content || '');
+          if (growthStatus) {
+            const growthInputs = extractGrowthInputsFromUpdate(parsed);
+            if (growthInputs.hasMeasurements) {
+              const entry = growthStatus.matchUpdate(u, growthInputs);
+              if (entry) growthHtml = growthStatus.renderHtml(entry, growthInputs);
+            }
+          }
+        } else if (u.update_content) {
+          details = escapeHtml(String(u.update_content));
+        }
+        if (!growthHtml && growthStatus) {
+          const inferredInputs = extractGrowthInputsFromUpdate(parsed);
+          if (inferredInputs.hasMeasurements) {
+            const entry = growthStatus.matchUpdate(u, inferredInputs);
+            if (entry) growthHtml = growthStatus.renderHtml(entry, inferredInputs);
+          }
         }
         const typeBadge = u.update_type ? `<span class="timeline-tag">${escapeHtml(u.update_type)}</span>` : '';
         const commentText = typeof u.ai_commentaire === 'string' && u.ai_commentaire
@@ -4923,6 +4955,7 @@ const TIMELINE_MILESTONES = [
               </div>
               <div class="timeline-summary">${details}</div>
               ${parentNoteHtml}
+              ${growthHtml}
               ${comment}
             </div>
           </article>
@@ -4990,9 +5023,17 @@ const TIMELINE_MILESTONES = [
       reportMessage.className = 'muted';
       reportMessage.textContent = useRemote()
         ? 'Cliquez sur « Bilan complet » pour générer un rapport synthétique.'
-        : 'Connectez-vous pour générer un bilan complet.';
+        : 'Connectez-vous pour générer un rapport complet.';
       reportMessage.setAttribute('role', 'status');
       reportMessage.setAttribute('aria-live', 'polite');
+
+      const reportHighlights = document.createElement('div');
+      reportHighlights.className = 'report-highlights';
+      const highlightsId = `report-highlights-${safeChild.id || 'local'}`;
+      reportHighlights.id = highlightsId;
+      if (growthStatus) {
+        try { updateReportHighlights(reportHighlights, growthStatus); } catch (err) { console.warn('updateReportHighlights failed', err); }
+      }
 
       const reportContent = document.createElement('div');
       reportContent.className = 'timeline-report-content';
@@ -5013,6 +5054,7 @@ const TIMELINE_MILESTONES = [
       reportBtn.setAttribute('aria-controls', reportContentId);
 
       reportContainer.appendChild(reportMessage);
+      reportContainer.appendChild(reportHighlights);
       reportContainer.appendChild(reportContent);
       hist.appendChild(reportContainer);
 
@@ -5031,7 +5073,7 @@ const TIMELINE_MILESTONES = [
         reportContent.hidden = true;
         reportContent.textContent = '';
         try {
-          const report = await fetchChildFullReport(safeChild.id);
+          const report = await fetchChildFullReport(safeChild.id, { growthStatus });
           reportMessage.textContent = 'Bilan généré ci-dessous.';
           reportContent.textContent = report;
           reportContent.hidden = false;
@@ -5677,6 +5719,7 @@ const TIMELINE_MILESTONES = [
       parentalStress: formatParentContextValue('parental_stress', parentContext.parentalStress),
       parentalFatigue: formatParentContextValue('parental_fatigue', parentContext.parentalFatigue),
     };
+    const growthAlerts = Array.isArray(data.growthAlerts) ? data.growthAlerts : [];
     const contextRows = [
       { label: 'Pseudo', value: parentInfo.pseudo || '—' },
       { label: 'Rôle affiché', value: parentInfo.role || '—' },
@@ -5817,11 +5860,13 @@ const TIMELINE_MILESTONES = [
       }
     }
     const parentUpdatesSection = buildParentUpdatesSectionHtml(data.parentUpdates || []);
+    const growthAlertsSection = renderFamilyGrowthAlertsCard(growthAlerts, children);
     return `
       <div class="family-dashboard">
         ${heroCard}
         <div class="family-columns">
           <div class="family-main">
+            ${growthAlertsSection}
             ${parentUpdatesSection}
             <div class="card stack family-bilan-card">
               <div class="card-header family-bilan-header">
@@ -5943,6 +5988,7 @@ const TIMELINE_MILESTONES = [
         children,
         familyContext: null,
         parentUpdates: [],
+        growthAlerts: [],
       };
     }
     if (isAnonProfile()) {
@@ -6061,12 +6107,19 @@ const TIMELINE_MILESTONES = [
           } catch (err) {
             console.warn('fetchFamilyOverview anon parent list failed', err);
           }
+          let growthAlerts = [];
+          try {
+            growthAlerts = await collectGrowthAlerts(children);
+          } catch (err) {
+            console.warn('collectGrowthAlerts anon failed', err);
+          }
           const result = {
             parentContext,
             parentInfo,
             children,
             familyContext,
             parentUpdates,
+            growthAlerts,
           };
           state.data = result;
           state.lastFetchedAt = Date.now();
@@ -6140,12 +6193,19 @@ const TIMELINE_MILESTONES = [
           : [];
         const familyRow = Array.isArray(familyRes.data) ? (familyRes.data[0] || null) : (familyRes.data || null);
         const parentUpdates = Array.isArray(parentUpdatesRes.data) ? parentUpdatesRes.data : [];
+        let growthAlerts = [];
+        try {
+          growthAlerts = await collectGrowthAlerts(children);
+        } catch (err) {
+          console.warn('collectGrowthAlerts failed', err);
+        }
         return {
           parentContext,
           parentInfo,
           children,
           familyContext: familyRow,
           parentUpdates,
+          growthAlerts,
         };
       } finally {
         state.loading = false;
@@ -7374,6 +7434,7 @@ const TIMELINE_MILESTONES = [
         throw fallbackErr;
       }
     }
+    invalidateGrowthStatus(childId);
     scheduleFamilyContextRefresh();
   }
 
@@ -7439,14 +7500,35 @@ const TIMELINE_MILESTONES = [
     }
   }
 
-  async function fetchChildFullReport(childId) {
+  async function fetchChildFullReport(childId, { growthStatus: providedGrowthStatus = null } = {}) {
     if (!childId) throw new Error('Profil enfant introuvable.');
     if (!useRemote()) throw new Error('Connectez-vous pour générer un bilan complet.');
+    let growthStatusForPayload = providedGrowthStatus;
+    if (!growthStatusForPayload) {
+      try {
+        growthStatusForPayload = await renderGrowthStatus(childId);
+      } catch (err) {
+        console.warn('fetchChildFullReport growth status fallback failed', err);
+      }
+    }
     try {
+      const payload = { childId, child_id: childId };
+      if (growthStatusForPayload) {
+        try {
+          const statusEntries = growthStatusForPayload.toPromptPayload(10);
+          if (statusEntries.length) {
+            payload.growthStatus = statusEntries;
+            const summaryText = growthStatusForPayload.describeLatestSummary();
+            if (summaryText) payload.growthStatusSummary = summaryText;
+          }
+        } catch (err) {
+          console.warn('Unable to attach growthStatus to child-full-report payload', err);
+        }
+      }
       const res = await fetch('/api/ai?type=child-full-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ childId, child_id: childId })
+        body: JSON.stringify(payload)
       });
       const text = await res.text();
       let data = null;
@@ -7490,6 +7572,26 @@ const TIMELINE_MILESTONES = [
         parentComment: typeof contentObj?.userComment === 'string' ? contentObj.userComment : '',
         historySummaries: Array.isArray(historySummaries) ? historySummaries.slice(0, 10) : [],
       };
+      if (updateType === 'measure') {
+        try {
+          const growthStatus = await renderGrowthStatus(childId);
+          const growthInputs = extractGrowthInputsFromUpdate(contentObj);
+          if (growthStatus && growthInputs.hasMeasurements) {
+            const matched = growthStatus.matchUpdate(null, growthInputs);
+            if (matched) {
+              const serialized = growthStatus.serializeEntry(matched);
+              if (serialized) {
+                contentObj.growthStatus = serialized;
+                contentObj.growthStatusSummary = growthStatus.describeEntry(matched, { short: false });
+                payload.growthStatus = growthStatus.toPromptPayload(5, matched);
+                payload.growthStatusSummary = contentObj.growthStatusSummary;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('generateAiSummaryAndComment growth status enrich failed', err);
+        }
+      }
       if (activeProfile?.id) {
         payload.profileId = String(activeProfile.id);
         payload.profile_id = String(activeProfile.id);
@@ -7840,6 +7942,516 @@ const TIMELINE_MILESTONES = [
     const l = document.createElementNS('http://www.w3.org/2000/svg','line');
     l.setAttribute('x1',x1); l.setAttribute('y1',y1); l.setAttribute('x2',x2); l.setAttribute('y2',y2);
     l.setAttribute('stroke',stroke); return l;
+  }
+
+  function parseFiniteNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function formatMeasurement(value, unit, decimals = 1) {
+    if (!Number.isFinite(value)) return '';
+    const safeDecimals = Math.max(0, Math.min(3, Number(decimals) || 0));
+    const formatted = value.toLocaleString('fr-FR', {
+      minimumFractionDigits: safeDecimals,
+      maximumFractionDigits: safeDecimals,
+    });
+    return `${formatted} ${unit}`.trim();
+  }
+
+  function formatPercentDiff(value) {
+    if (!Number.isFinite(value)) return '';
+    const formatted = Math.abs(value).toLocaleString('fr-FR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+    });
+    const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+    return `${sign}${formatted} %`;
+  }
+
+  function cleanStatusText(status) {
+    if (!status) return '';
+    const str = String(status).trim();
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  function statusIsAlert(status) {
+    if (!status) return false;
+    const normalized = String(status).toLowerCase();
+    if (normalized.includes('normal')) return false;
+    if (normalized.includes('ok')) return false;
+    if (normalized.includes('dans la norme')) return false;
+    return true;
+  }
+
+  function buildGrowthCompositeKey(month, height, weight) {
+    const parts = [];
+    parts.push(Number.isFinite(month) ? String(Math.round(month)) : 'x');
+    parts.push(Number.isFinite(height) ? height.toFixed(1) : 'x');
+    parts.push(Number.isFinite(weight) ? weight.toFixed(2) : 'x');
+    return parts.join(':');
+  }
+
+  function normalizeDateInput(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
+  }
+
+  function renderGrowthLine(label, valueText, rangeText, statusText, diffText) {
+    const chunks = [];
+    if (valueText) chunks.push(`<span class="timeline-growth-status__value">${escapeHtml(valueText)}</span>`);
+    if (rangeText) chunks.push(`<span class="timeline-growth-status__range">${escapeHtml(rangeText)}</span>`);
+    if (statusText) chunks.push(`<span class="timeline-growth-status__status">${escapeHtml(cleanStatusText(statusText))}</span>`);
+    if (diffText) chunks.push(`<span class="timeline-growth-status__diff">${escapeHtml(diffText)}</span>`);
+    if (!chunks.length) return '';
+    const alertClass = statusIsAlert(statusText) ? ' is-alert' : ' is-ok';
+    return `
+      <div class="timeline-growth-status__item${alertClass}">
+        <span class="timeline-growth-status__label">${escapeHtml(label)}</span>
+        ${chunks.join('')}
+      </div>
+    `;
+  }
+
+  function normalizeGrowthStatusRow(row, childId) {
+    if (!row || typeof row !== 'object') return null;
+    const entry = {
+      childId,
+      updateId: row.child_update_id ?? row.update_id ?? row.updateId ?? null,
+      measurementId: row.measurement_id ?? row.measurementId ?? null,
+      month: parseFiniteNumber(row.month ?? row.age_month ?? row.age_months),
+      height: parseFiniteNumber(row.height_cm ?? row.height),
+      weight: parseFiniteNumber(row.weight_kg ?? row.weight),
+      heightRange: {
+        p3: parseFiniteNumber(row.height_p3 ?? row.p3_height ?? row.height_p03),
+        p97: parseFiniteNumber(row.height_p97 ?? row.p97_height ?? row.height_p97_cm),
+        median: parseFiniteNumber(row.height_median ?? row.height_p50 ?? row.median_height),
+      },
+      weightRange: {
+        p3: parseFiniteNumber(row.weight_p3 ?? row.p3_weight ?? row.weight_p03),
+        p97: parseFiniteNumber(row.weight_p97 ?? row.p97_weight ?? row.weight_p97_kg),
+        median: parseFiniteNumber(row.weight_median ?? row.weight_p50 ?? row.median_weight),
+      },
+      heightDiffPct: parseFiniteNumber(row.height_diff_pct ?? row.diff_height_pct ?? row.height_diff_percent),
+      weightDiffPct: parseFiniteNumber(row.weight_diff_pct ?? row.diff_weight_pct ?? row.weight_diff_percent),
+      statusHeight: cleanStatusText(row.status_height ?? row.height_status ?? row.statusHeight ?? ''),
+      statusWeight: cleanStatusText(row.status_weight ?? row.weight_status ?? row.statusWeight ?? ''),
+      statusGlobal: cleanStatusText(row.status_global ?? row.statusGlobal ?? ''),
+      measuredAt: normalizeDateInput(row.measured_at ?? row.recorded_at ?? row.created_at ?? row.updated_at ?? row.measuredAt),
+      raw: row,
+    };
+    entry.sortIndex = entry.measuredAt ? new Date(entry.measuredAt).getTime() : 0;
+    entry.comboKey = buildGrowthCompositeKey(entry.month, entry.height, entry.weight);
+    return entry;
+  }
+
+  function createGrowthStatusHelper(childId, rows) {
+    const normalized = Array.isArray(rows)
+      ? rows.map((row) => normalizeGrowthStatusRow(row, childId)).filter(Boolean)
+      : [];
+    normalized.sort((a, b) => (b.sortIndex - a.sortIndex));
+    const map = new Map();
+    const unique = [];
+    const seen = new Set();
+    normalized.forEach((entry) => {
+      const signature = [entry.measuredAt || '', entry.comboKey || '', entry.updateId ?? '', entry.measurementId ?? ''].join('|');
+      if (seen.has(signature)) return;
+      seen.add(signature);
+      unique.push(entry);
+      if (entry.updateId != null) map.set(`update:${entry.updateId}`, entry);
+      if (entry.measurementId != null) map.set(`measurement:${entry.measurementId}`, entry);
+      if (entry.comboKey) map.set(`combo:${entry.comboKey}`, entry);
+      if (entry.measuredAt) map.set(`date:${entry.measuredAt}`, entry);
+    });
+    const helper = {
+      childId,
+      entries: unique,
+      matchUpdate(updateRow, growthInputs = {}) {
+        const keys = [];
+        if (updateRow && typeof updateRow === 'object') {
+          const updateId = updateRow.id ?? updateRow.update_id ?? updateRow.child_update_id;
+          if (updateId != null) keys.push(`update:${updateId}`);
+        }
+        if (growthInputs && typeof growthInputs === 'object') {
+          const measurementId = growthInputs.measurementId ?? growthInputs.measurement_id;
+          if (measurementId != null) keys.push(`measurement:${measurementId}`);
+          const month = Number.isFinite(growthInputs.month) ? Number(growthInputs.month) : null;
+          const height = Number.isFinite(growthInputs.height) ? Number(growthInputs.height) : null;
+          const weight = Number.isFinite(growthInputs.weight) ? Number(growthInputs.weight) : null;
+          if (month != null && (height != null || weight != null)) {
+            keys.push(`combo:${buildGrowthCompositeKey(month, height, weight)}`);
+          }
+          if (growthInputs.measuredAt) {
+            const iso = normalizeDateInput(growthInputs.measuredAt);
+            if (iso) keys.push(`date:${iso}`);
+          }
+        }
+        for (const key of keys) {
+          if (!key) continue;
+          const entry = map.get(key);
+          if (entry) return entry;
+        }
+        return unique[0] || null;
+      },
+      renderHtml(entry) {
+        if (!entry) return '';
+        const lines = [];
+        if (Number.isFinite(entry.height)) {
+          const range = entry.heightRange.p3 != null && entry.heightRange.p97 != null
+            ? `OMS P3–P97 : ${formatMeasurement(entry.heightRange.p3, 'cm')} – ${formatMeasurement(entry.heightRange.p97, 'cm')}`
+            : '';
+          const diff = formatPercentDiff(entry.heightDiffPct);
+          lines.push(renderGrowthLine('Taille', formatMeasurement(entry.height, 'cm'), range, entry.statusHeight, diff));
+        }
+        if (Number.isFinite(entry.weight)) {
+          const range = entry.weightRange.p3 != null && entry.weightRange.p97 != null
+            ? `OMS P3–P97 : ${formatMeasurement(entry.weightRange.p3, 'kg', 2)} – ${formatMeasurement(entry.weightRange.p97, 'kg', 2)}`
+            : '';
+          const diff = formatPercentDiff(entry.weightDiffPct);
+          lines.push(renderGrowthLine('Poids', formatMeasurement(entry.weight, 'kg', 2), range, entry.statusWeight, diff));
+        }
+        const metaParts = [];
+        if (Number.isFinite(entry.month)) {
+          metaParts.push(`Âge: ${Number(entry.month).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} mois`);
+        }
+        if (entry.measuredAt) {
+          const d = new Date(entry.measuredAt);
+          if (!Number.isNaN(d.getTime())) {
+            metaParts.push(`Mesure du ${d.toLocaleDateString('fr-FR', { dateStyle: 'medium' })}`);
+          }
+        }
+        const metaHtml = metaParts.length
+          ? `<div class="timeline-growth-status__meta">${metaParts.map((part) => escapeHtml(part)).join(' • ')}</div>`
+          : '';
+        const globalHtml = entry.statusGlobal
+          ? `<div class="timeline-growth-status__global${statusIsAlert(entry.statusGlobal) ? ' is-alert' : ' is-ok'}">${escapeHtml(cleanStatusText(entry.statusGlobal))}</div>`
+          : '';
+        if (!lines.length && !globalHtml && !metaHtml) return '';
+        return `<div class="timeline-growth-status">${metaHtml}${lines.join('')}${globalHtml}</div>`;
+      },
+      describeEntry(entry, { short = false } = {}) {
+        if (!entry) return '';
+        const parts = [];
+        if (Number.isFinite(entry.height)) {
+          const components = [];
+          if (entry.statusHeight) components.push(cleanStatusText(entry.statusHeight));
+          const diff = formatPercentDiff(entry.heightDiffPct);
+          if (diff) components.push(`écart ${diff}`);
+          if (!short && entry.heightRange.p3 != null && entry.heightRange.p97 != null) {
+            components.push(`attendu ${formatMeasurement(entry.heightRange.p3, 'cm')} – ${formatMeasurement(entry.heightRange.p97, 'cm')}`);
+          }
+          const valueText = formatMeasurement(entry.height, 'cm');
+          const summary = components.length ? `${valueText} (${components.join(', ')})` : valueText;
+          if (summary) parts.push(`Taille ${summary}`.trim());
+        }
+        if (Number.isFinite(entry.weight)) {
+          const components = [];
+          if (entry.statusWeight) components.push(cleanStatusText(entry.statusWeight));
+          const diff = formatPercentDiff(entry.weightDiffPct);
+          if (diff) components.push(`écart ${diff}`);
+          if (!short && entry.weightRange.p3 != null && entry.weightRange.p97 != null) {
+            components.push(`attendu ${formatMeasurement(entry.weightRange.p3, 'kg', 2)} – ${formatMeasurement(entry.weightRange.p97, 'kg', 2)}`);
+          }
+          const valueText = formatMeasurement(entry.weight, 'kg', 2);
+          const summary = components.length ? `${valueText} (${components.join(', ')})` : valueText;
+          if (summary) parts.push(`Poids ${summary}`.trim());
+        }
+        if (!short && entry.statusGlobal) parts.push(cleanStatusText(entry.statusGlobal));
+        if (!parts.length && entry.statusGlobal) return cleanStatusText(entry.statusGlobal);
+        return parts.join(short ? ' / ' : ' • ');
+      },
+      serializeEntry(entry) {
+        if (!entry) return null;
+        return {
+          month: Number.isFinite(entry.month) ? entry.month : null,
+          measured_at: entry.measuredAt || null,
+          height_cm: Number.isFinite(entry.height) ? entry.height : null,
+          weight_kg: Number.isFinite(entry.weight) ? entry.weight : null,
+          status_height: entry.statusHeight || null,
+          status_weight: entry.statusWeight || null,
+          status_global: entry.statusGlobal || null,
+          height_diff_pct: Number.isFinite(entry.heightDiffPct) ? entry.heightDiffPct : null,
+          weight_diff_pct: Number.isFinite(entry.weightDiffPct) ? entry.weightDiffPct : null,
+          height_p3: Number.isFinite(entry.heightRange.p3) ? entry.heightRange.p3 : null,
+          height_p97: Number.isFinite(entry.heightRange.p97) ? entry.heightRange.p97 : null,
+          height_median: Number.isFinite(entry.heightRange.median) ? entry.heightRange.median : null,
+          weight_p3: Number.isFinite(entry.weightRange.p3) ? entry.weightRange.p3 : null,
+          weight_p97: Number.isFinite(entry.weightRange.p97) ? entry.weightRange.p97 : null,
+          weight_median: Number.isFinite(entry.weightRange.median) ? entry.weightRange.median : null,
+        };
+      },
+      toPromptPayload(limit = 5, primaryEntry = null) {
+        const items = [];
+        if (primaryEntry) items.push(primaryEntry);
+        for (const entry of unique) {
+          if (!items.includes(entry)) items.push(entry);
+        }
+        return items.slice(0, Math.max(1, limit)).map((entry) => helper.serializeEntry(entry)).filter(Boolean);
+      },
+      getAnomalies(limit = 5) {
+        return unique
+          .filter((entry) => statusIsAlert(entry.statusGlobal) || statusIsAlert(entry.statusHeight) || statusIsAlert(entry.statusWeight))
+          .slice(0, Math.max(1, limit));
+      },
+      describeLatestSummary() {
+        const first = unique[0];
+        if (!first) return '';
+        return helper.describeEntry(first, { short: false }) || '';
+      },
+    };
+    return helper;
+  }
+
+  async function fetchGrowthStatusRows(childId) {
+    if (!useRemote() || !childId) return [];
+    if (isAnonProfile()) {
+      try {
+        const res = await anonChildRequest('growth-status', { childId, limit: 20 });
+        const rows = Array.isArray(res?.rows) ? res.rows : [];
+        return rows;
+      } catch (err) {
+        console.warn('anon growth-status fetch failed', err);
+        return [];
+      }
+    }
+    if (!supabase) return [];
+    const orderAttempts = [
+      { column: 'measured_at', options: { ascending: false, nullsFirst: false } },
+      { column: 'recorded_at', options: { ascending: false, nullsFirst: false } },
+      { column: 'created_at', options: { ascending: false, nullsFirst: false } },
+      { column: null },
+    ];
+    let lastError = null;
+    for (const attempt of orderAttempts) {
+      try {
+        let query = supabase
+          .from('child_growth_with_status')
+          .select('*')
+          .eq('child_id', childId)
+          .limit(20);
+        if (attempt?.column) {
+          query = query.order(attempt.column, attempt.options || {});
+        }
+        const { data, error } = await query;
+        if (error) {
+          lastError = error;
+          continue;
+        }
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (lastError) {
+      console.warn('growth status fetch failed', lastError);
+    }
+    return [];
+  }
+
+  function invalidateGrowthStatus(childId) {
+    const key = childId != null ? String(childId) : '';
+    if (!key) return;
+    growthStatusState.cache.delete(key);
+    growthStatusState.pending.delete(key);
+  }
+
+  async function renderGrowthStatus(childId) {
+    const key = childId != null ? String(childId) : '';
+    if (!key || !useRemote()) {
+      return createGrowthStatusHelper(key, []);
+    }
+    if (growthStatusState.cache.has(key)) {
+      return growthStatusState.cache.get(key);
+    }
+    if (growthStatusState.pending.has(key)) {
+      return growthStatusState.pending.get(key);
+    }
+    const promise = (async () => {
+      try {
+        const rows = await fetchGrowthStatusRows(childId);
+        const helper = createGrowthStatusHelper(key, rows);
+        growthStatusState.cache.set(key, helper);
+        return helper;
+      } catch (err) {
+        console.warn('renderGrowthStatus error', err);
+        const helper = createGrowthStatusHelper(key, []);
+        growthStatusState.cache.set(key, helper);
+        return helper;
+      } finally {
+        growthStatusState.pending.delete(key);
+      }
+    })();
+    growthStatusState.pending.set(key, promise);
+    return promise;
+  }
+
+  function extractGrowthInputsFromUpdate(parsed) {
+    const result = {
+      month: null,
+      height: null,
+      weight: null,
+      measurementId: null,
+      measuredAt: null,
+      hasMeasurements: false,
+    };
+    if (!parsed || typeof parsed !== 'object') return result;
+    const sources = [parsed];
+    if (parsed.growthInputs && typeof parsed.growthInputs === 'object') sources.push(parsed.growthInputs);
+    if (parsed.growth && typeof parsed.growth === 'object') sources.push(parsed.growth);
+    if (parsed.next && typeof parsed.next === 'object') {
+      if (parsed.next.growth && typeof parsed.next.growth === 'object') sources.push(parsed.next.growth);
+    }
+    if (parsed.snapshot && typeof parsed.snapshot === 'object') {
+      if (parsed.snapshot.growth && typeof parsed.snapshot.growth === 'object') sources.push(parsed.snapshot.growth);
+    }
+    for (const source of sources) {
+      if (!source || typeof source !== 'object') continue;
+      if (result.measurementId == null && source.measurementId != null) result.measurementId = source.measurementId;
+      if (result.measurementId == null && source.measurement_id != null) result.measurementId = source.measurement_id;
+      if (!Number.isFinite(result.month) && Number.isFinite(Number(source.month))) result.month = Number(source.month);
+      if (!Number.isFinite(result.height) && Number.isFinite(Number(source.height ?? source.heightCm ?? source.height_cm))) {
+        result.height = Number(source.height ?? source.heightCm ?? source.height_cm);
+      }
+      if (!Number.isFinite(result.weight) && Number.isFinite(Number(source.weight ?? source.weightKg ?? source.weight_kg))) {
+        result.weight = Number(source.weight ?? source.weightKg ?? source.weight_kg);
+      }
+      if (!result.measuredAt && source.measuredAt) result.measuredAt = source.measuredAt;
+      if (!result.measuredAt && source.measured_at) result.measuredAt = source.measured_at;
+    }
+    result.hasMeasurements = Number.isFinite(result.height) || Number.isFinite(result.weight);
+    return result;
+  }
+
+  function updateReportHighlights(container, growthStatus) {
+    if (!container) return;
+    const helper = growthStatus || createGrowthStatusHelper('', []);
+    const anomalies = helper.getAnomalies(3);
+    const entries = anomalies.length ? anomalies : helper.entries.slice(0, 2);
+    const listHtml = entries.length
+      ? `<ul class="report-highlight-card__list">${entries.map((entry) => `<li>${escapeHtml(helper.describeEntry(entry, { short: true }))}</li>`).join('')}</ul>`
+      : '<p class="report-highlight-card__text">Aucune mesure récente disponible.</p>';
+    const icon = anomalies.length ? '⚠️' : '✅';
+    const intro = anomalies.length
+      ? 'Analyse OMS : une vigilance s’impose sur les dernières mesures.'
+      : 'Analyse OMS : les dernières mesures sont dans la norme.';
+    const defaultCards = [
+      { icon: '🛌', title: 'Sommeil', text: 'Ajoutez vos observations sommeil pour détecter d’éventuelles perturbations.' },
+      { icon: '🍽️', title: 'Alimentation', text: 'Renseignez les changements alimentaires pour enrichir le bilan.' },
+      { icon: '💬', title: 'Bien-être familial', text: 'Pensez à consigner votre état émotionnel dans le carnet familial.' },
+    ];
+    container.innerHTML = `
+      <div class="report-highlight-card ${anomalies.length ? 'is-alert' : 'is-ok'}">
+        <div class="report-highlight-card__header">
+          <span class="report-highlight-card__icon">${icon}</span>
+          <h4>Croissance</h4>
+        </div>
+        <p class="report-highlight-card__text">${escapeHtml(intro)}</p>
+        ${listHtml}
+      </div>
+      ${defaultCards.map((card) => `
+        <div class="report-highlight-card is-muted">
+          <div class="report-highlight-card__header">
+            <span class="report-highlight-card__icon">${card.icon}</span>
+            <h4>${escapeHtml(card.title)}</h4>
+          </div>
+          <p class="report-highlight-card__text">${escapeHtml(card.text)}</p>
+        </div>
+      `).join('')}
+    `;
+  }
+
+  async function collectGrowthAlerts(children = []) {
+    if (!useRemote()) return [];
+    const list = Array.isArray(children) ? children.filter((child) => child && child.id != null) : [];
+    if (!list.length) return [];
+    const results = await Promise.all(list.map(async (child) => {
+      try {
+        const helper = await renderGrowthStatus(child.id);
+        const anomalies = helper.getAnomalies(2);
+        const latest = helper.entries[0] || null;
+        const baseEntries = anomalies.length ? anomalies : (latest ? [latest] : []);
+        const summaries = baseEntries.map((entry) => helper.describeEntry(entry, { short: true })).filter(Boolean);
+        return {
+          childId: child.id,
+          childName: child.firstName || child.name || 'Enfant',
+          hasAnomaly: anomalies.length > 0,
+          summaries,
+          latestEntry: latest,
+        };
+      } catch (err) {
+        console.warn('collectGrowthAlerts child error', err);
+        return {
+          childId: child.id,
+          childName: child.firstName || child.name || 'Enfant',
+          hasAnomaly: false,
+          summaries: [],
+          latestEntry: null,
+        };
+      }
+    }));
+    return results;
+  }
+
+  function renderFamilyGrowthAlertsCard(alerts = [], children = []) {
+    if (!useRemote()) return '';
+    const list = Array.isArray(alerts) ? alerts.filter(Boolean) : [];
+    if (!list.length) {
+      const hasChildren = Array.isArray(children) && children.length > 0;
+      const emptyText = hasChildren
+        ? 'Mesures insuffisantes pour analyser la croissance.'
+        : 'Ajoutez un profil enfant pour suivre la croissance.';
+      return `
+        <div class="card stack family-growth-alerts">
+          <div class="card-header">
+            <h3>Anomalies de croissance</h3>
+            <p class="page-subtitle">Synthèse des mesures OMS.</p>
+          </div>
+          <div class="empty-state muted">${escapeHtml(emptyText)}</div>
+        </div>
+      `;
+    }
+    const items = list.map((entry) => {
+      const name = escapeHtml(entry.childName || 'Enfant');
+      const icon = entry.hasAnomaly ? '⚠️' : '✅';
+      const text = entry.summaries && entry.summaries.length
+        ? entry.summaries.map((line) => escapeHtml(line)).join('<br>')
+        : 'Aucune anomalie détectée sur les dernières mesures.';
+      let meta = '';
+      if (entry.latestEntry?.measuredAt) {
+        const d = new Date(entry.latestEntry.measuredAt);
+        if (!Number.isNaN(d.getTime())) {
+          meta = `<span class="family-growth-alerts__meta">${escapeHtml(d.toLocaleDateString('fr-FR', { dateStyle: 'medium' }))}</span>`;
+        }
+      }
+      const statusClass = entry.hasAnomaly ? 'is-alert' : 'is-ok';
+      return `
+        <li class="family-growth-alerts__item ${statusClass}">
+          <div class="family-growth-alerts__head">
+            <span class="family-growth-alerts__icon">${icon}</span>
+            <strong class="family-growth-alerts__name">${name}</strong>
+            ${meta}
+          </div>
+          <p class="family-growth-alerts__text">${text}</p>
+        </li>
+      `;
+    }).join('');
+    const hasAlert = list.some((entry) => entry.hasAnomaly);
+    const footer = hasAlert
+      ? '<p class="family-growth-alerts__hint">⚠️ Parlez-en à votre professionnel de santé si les écarts se confirment.</p>'
+      : '<p class="family-growth-alerts__hint">✅ RAS : la croissance suit les repères OMS récents.</p>';
+    return `
+      <div class="card stack family-growth-alerts">
+        <div class="card-header">
+          <h3>Anomalies de croissance</h3>
+          <p class="page-subtitle">Synthèse automatique des 20 dernières mesures.</p>
+        </div>
+        <ul class="family-growth-alerts__list">${items}</ul>
+        ${footer}
+      </div>
+    `;
   }
 
   // Initialisation
