@@ -7347,7 +7347,7 @@ const TIMELINE_MILESTONES = [
       return;
     }
     const historySummaries = await fetchChildUpdateSummaries(childId);
-    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(updateType, normalizedContent, historySummaries);
+    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(childId, updateType, normalizedContent, historySummaries);
     const payload = { child_id: childId, update_type: updateType, update_content: content };
     if (aiSummary) payload.ai_summary = aiSummary;
     if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
@@ -7476,15 +7476,24 @@ const TIMELINE_MILESTONES = [
     }
   }
 
-  async function generateAiSummaryAndComment(updateType, contentObj, historySummaries) {
+  async function generateAiSummaryAndComment(childId, updateType, contentObj, historySummaries) {
     try {
       const payload = {
         type: 'child-update',
+        childId,
+        child_id: childId,
         updateType,
         update: contentObj,
         parentComment: typeof contentObj?.userComment === 'string' ? contentObj.userComment : '',
         historySummaries: Array.isArray(historySummaries) ? historySummaries.slice(0, 10) : [],
       };
+      if (activeProfile?.id) {
+        payload.profileId = String(activeProfile.id);
+        payload.profile_id = String(activeProfile.id);
+      }
+      if (activeProfile?.code_unique) {
+        payload.code_unique = String(activeProfile.code_unique).trim().toUpperCase();
+      }
       payload.parentContext = buildParentContextForPrompt();
       const res = await fetch('/api/ai', {
         method: 'POST',

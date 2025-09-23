@@ -257,15 +257,40 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
               .filter(Boolean)
               .slice(0, 10)
           : [];
+        const childIdCandidates = [
+          typeof body.childId === 'string' ? body.childId.trim() : '',
+          typeof body.child_id === 'string' ? body.child_id.trim() : '',
+        ];
+        const childId = childIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        const profileCandidates = [
+          typeof body.profileId === 'string' ? body.profileId.trim() : '',
+          typeof body.profile_id === 'string' ? body.profile_id.trim() : '',
+        ];
+        const profileId = profileCandidates.find(Boolean)?.slice(0, 128) || '';
+        const codeCandidates = [
+          typeof body.code_unique === 'string' ? body.code_unique : '',
+          typeof body.code === 'string' ? body.code : '',
+        ];
+        const rawCode = codeCandidates.find(Boolean) || '';
+        const codeUnique = rawCode ? String(rawCode).trim().toUpperCase().slice(0, 64) : '';
+        const growthData = await fetchGrowthDataForPrompt({
+          childId,
+          profileId,
+          codeUnique,
+          measurementLimit: 3,
+          teethLimit: 3,
+        });
+        const growthSection = formatGrowthSectionForPrompt(growthData);
         const parentContext = sanitizeParentContextInput(body.parentContext);
         const parentContextLines = parentContextToPromptLines(parentContext);
         const updateText = JSON.stringify({ type: updateType || 'update', data: updateForPrompt }).slice(0, 4000);
         const summaryMessages = [
-          { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent)." },
+          { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent + données de croissance)." },
           { role: 'user', content: [
             updateType ? `Type de mise à jour: ${updateType}` : '',
             `Mise à jour (JSON): ${updateText || 'Aucune'}`,
-            `Commentaire du parent: ${parentComment || 'Aucun'}`
+            `Commentaire du parent: ${parentComment || 'Aucun'}`,
+            `Section Croissance:\n${growthSection}`
           ].filter(Boolean).join('\n\n') }
         ];
         let summary = '';
@@ -293,13 +318,14 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           ? historySummaries.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')
           : 'Aucun historique disponible';
         const commentMessages = [
-          { role: 'system', content: "Tu es Ped’IA, assistant parental bienveillant. Rédige un commentaire personnalisé (80 mots max) basé uniquement sur la nouvelle mise à jour, le commentaire parent et les résumés factuels fournis. Prends en compte le contexte parental (stress, fatigue, émotions) pour adapter ton empathie et tes conseils. Ne réutilise jamais d’anciens commentaires IA." },
+          { role: 'system', content: "Tu es Ped’IA, assistant parental bienveillant. Rédige un commentaire personnalisé (80 mots max) basé uniquement sur la nouvelle mise à jour, le commentaire parent, les données de croissance fournies et les résumés factuels. Prends en compte le contexte parental (stress, fatigue, émotions) pour adapter ton empathie et tes conseils. Ne réutilise jamais d’anciens commentaires IA." },
           { role: 'user', content: [
             updateType ? `Type de mise à jour: ${updateType}` : '',
             `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
             summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
             `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
             `Commentaire du parent: ${parentComment || 'Aucun'}`,
+            `Croissance récente:\n${growthSection}`,
             parentContextLines.length
               ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
               : 'Contexte parental actuel: non précisé.'
@@ -527,13 +553,32 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           return res.status(400).json({ error: 'childId required' });
         }
 
+        const profileIdCandidates = [
+          typeof body.profileId === 'string' ? body.profileId.trim() : '',
+          typeof body.profile_id === 'string' ? body.profile_id.trim() : '',
+          typeof req?.query?.profileId === 'string' ? req.query.profileId.trim() : '',
+          typeof req?.query?.profile_id === 'string' ? req.query.profile_id.trim() : '',
+        ];
+        const profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        const codeCandidates = [
+          typeof body.code_unique === 'string' ? body.code_unique : '',
+          typeof body.code === 'string' ? body.code : '',
+          typeof req?.query?.code_unique === 'string' ? req.query.code_unique : '',
+          typeof req?.query?.code === 'string' ? req.query.code : '',
+        ];
+        const rawCode = codeCandidates.find(Boolean) || '';
+        const codeUnique = rawCode ? String(rawCode).trim().toUpperCase().slice(0, 64) : '';
+
+        let supaConfig = null;
+        let supabaseHeaders = null;
         let updateRows = [];
         try {
-          const { supaUrl, serviceKey } = getServiceConfig();
-          const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+          supaConfig = getServiceConfig();
+          const { supaUrl, serviceKey } = supaConfig;
+          supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
           const data = await supabaseRequest(
             `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary&child_id=eq.${encodeURIComponent(childId)}&order=created_at.asc`,
-            { headers }
+            { headers: supabaseHeaders }
           );
           updateRows = Array.isArray(data) ? data : [];
         } catch (err) {
@@ -553,6 +598,17 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
             details: detailString,
           });
         }
+
+        const growthData = await fetchGrowthDataForPrompt({
+          childId,
+          profileId,
+          codeUnique,
+          measurementLimit: 3,
+          teethLimit: 3,
+          supaUrl: supaConfig?.supaUrl,
+          headers: supabaseHeaders,
+        });
+        const growthSection = formatGrowthSectionForPrompt(growthData);
 
         const formatted = [];
         for (const row of updateRows) {
@@ -597,8 +653,12 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           return lines.join('\n');
         }).join('\n\n');
 
-        const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « Pas de données disponibles ». Sois synthétique, factuel et accessible.`;
-        const userPrompt = `Nombre de mises à jour: ${formatted.length}.\n\nDonnées réelles des mises à jour (ordre chronologique, de la plus ancienne à la plus récente):\n\n${updatesText}`;
+        const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « Pas de données disponibles ». Valorise les données de croissance fournies pour analyser taille, poids et dents par rapport à l’âge de l’enfant. Sois synthétique, factuel et accessible.`;
+        const userPrompt = [
+          `Nombre de mises à jour: ${formatted.length}.`,
+          `Section Croissance:\n${growthSection}`,
+          `Données réelles des mises à jour (ordre chronologique, de la plus ancienne à la plus récente):\n\n${updatesText}`,
+        ].join('\n\n');
 
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -831,6 +891,160 @@ function formatParentUpdatesForPrompt(updates = []) {
       const body = summary || 'mise à jour enregistrée';
       return date ? `${prefix} (${date}) : ${body}` : `${prefix}: ${body}`;
     });
+}
+
+async function fetchGrowthDataForPrompt({
+  childId,
+  profileId = '',
+  codeUnique = '',
+  measurementLimit = 3,
+  teethLimit = 3,
+  supaUrl,
+  headers,
+} = {}) {
+  if (!childId) {
+    return { measurements: [], teeth: [] };
+  }
+  let effectiveUrl = typeof supaUrl === 'string' && supaUrl ? supaUrl : '';
+  let effectiveHeaders = headers && typeof headers === 'object' ? headers : null;
+  if (!effectiveUrl || !effectiveHeaders) {
+    try {
+      const config = getServiceConfig();
+      effectiveUrl = config.supaUrl;
+      effectiveHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
+    } catch (err) {
+      console.warn('[api/ai] unable to resolve Supabase config for growth data', err);
+      return { measurements: [], teeth: [] };
+    }
+  }
+  let resolvedProfileId = typeof profileId === 'string' ? profileId.trim().slice(0, 128) : '';
+  const normalizedCode = codeUnique ? String(codeUnique).trim().toUpperCase().slice(0, 64) : '';
+  if (!resolvedProfileId && normalizedCode) {
+    try {
+      const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: effectiveUrl, headers: effectiveHeaders });
+      if (resolved) resolvedProfileId = resolved;
+    } catch (err) {
+      const status = err instanceof HttpError ? err.status : null;
+      const detail = err?.details || err?.message || '';
+      console.warn('[api/ai] growth profile resolution failed', { codeUnique: normalizedCode || null, status, detail });
+    }
+  }
+  if (resolvedProfileId) {
+    try {
+      const check = await supabaseRequest(
+        `${effectiveUrl}/rest/v1/children?select=id&user_id=eq.${encodeURIComponent(resolvedProfileId)}&id=eq.${encodeURIComponent(childId)}&limit=1`,
+        { headers: effectiveHeaders }
+      );
+      const row = Array.isArray(check) ? check[0] : check;
+      if (!row) {
+        console.warn('[api/ai] growth data skipped: child not linked to profile', { childId, resolvedProfileId });
+        return { measurements: [], teeth: [] };
+      }
+    } catch (err) {
+      const status = err instanceof HttpError ? err.status : null;
+      const details = err?.details || err?.message || err;
+      console.warn('[api/ai] growth child/profile validation failed', { childId, resolvedProfileId, status, details });
+      if (status && status >= 400 && status < 500) {
+        return { measurements: [], teeth: [] };
+      }
+    }
+  }
+  return fetchGrowthTables(effectiveUrl, effectiveHeaders, childId, { measurementLimit, teethLimit });
+}
+
+async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit = 3, teethLimit = 3 } = {}) {
+  if (!supaUrl || !headers || !childId) {
+    return { measurements: [], teeth: [] };
+  }
+  const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
+  const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
+  const measurementUrl = `${supaUrl}/rest/v1/growth_measurements?select=month,height_cm,weight_kg,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc&order=created_at.desc&limit=${limitedMeasurements}`;
+  const teethUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc&order=created_at.desc&limit=${limitedTeeth}`;
+  const [measurementRows, teethRows] = await Promise.all([
+    supabaseRequest(measurementUrl, { headers }).catch((err) => {
+      console.warn('[api/ai] growth measurements fetch failed', err);
+      return [];
+    }),
+    supabaseRequest(teethUrl, { headers }).catch((err) => {
+      console.warn('[api/ai] growth teeth fetch failed', err);
+      return [];
+    }),
+  ]);
+  const measurements = Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [];
+  const teeth = Array.isArray(teethRows) ? teethRows.filter(Boolean) : [];
+  return { measurements, teeth };
+}
+
+function formatGrowthSectionForPrompt(growthData) {
+  const measurementLines = formatGrowthMeasurementsForPrompt(growthData?.measurements);
+  const lines = [];
+  if (measurementLines.length) {
+    lines.push('Mesures taille/poids récentes:');
+    measurementLines.forEach((line) => {
+      lines.push(`- ${line}`);
+    });
+  } else {
+    lines.push('Mesures taille/poids: Pas de données disponibles');
+  }
+  const teethLine = formatGrowthTeethForPrompt(growthData?.teeth);
+  if (teethLine) {
+    lines.push(`Dents: ${teethLine}`);
+  } else {
+    lines.push('Dents: Pas de données disponibles');
+  }
+  return lines.join('\n').slice(0, 600);
+}
+
+function formatGrowthMeasurementsForPrompt(measurements = []) {
+  if (!Array.isArray(measurements) || !measurements.length) return [];
+  return measurements
+    .map((entry) => formatGrowthMeasurementEntry(entry))
+    .filter(Boolean);
+}
+
+function formatGrowthMeasurementEntry(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  const parts = [];
+  const heightText = formatGrowthNumber(entry.height_cm, { unit: 'cm', decimals: 1 });
+  if (heightText) parts.push(`taille ${heightText}`);
+  const weightText = formatGrowthNumber(entry.weight_kg, { unit: 'kg', decimals: 2 });
+  if (weightText) parts.push(`poids ${weightText}`);
+  if (!parts.length) return '';
+  const period = formatGrowthPeriod(entry);
+  return period ? `${period}: ${parts.join(' ; ')}` : parts.join(' ; ');
+}
+
+function formatGrowthTeethForPrompt(teethEntries = []) {
+  if (!Array.isArray(teethEntries) || !teethEntries.length) return '';
+  const latest = teethEntries[0];
+  if (!latest || typeof latest !== 'object') return '';
+  const rawCount = latest.count ?? latest.teeth ?? latest.value;
+  const number = Number(rawCount);
+  if (!Number.isFinite(number) || number < 0) return '';
+  const count = Math.max(0, Math.round(number));
+  const label = `${count} dent${count > 1 ? 's' : ''}`;
+  const period = formatGrowthPeriod(latest);
+  return period ? `${label} (${period})` : label;
+}
+
+function formatGrowthPeriod(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  const month = Number(entry.month);
+  if (Number.isFinite(month) && month >= 0) {
+    return `mois ${month}`;
+  }
+  const recorded = typeof entry.recorded_at === 'string' ? entry.recorded_at : '';
+  const created = typeof entry.created_at === 'string' ? entry.created_at : '';
+  return formatDateForPrompt(recorded) || formatDateForPrompt(created) || '';
+}
+
+function formatGrowthNumber(value, { unit = '', decimals = 1 } = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  const factor = 10 ** Math.max(0, Math.min(6, Math.floor(decimals)));
+  const rounded = Math.round(num * factor) / factor;
+  const text = Number.isInteger(rounded) ? String(rounded) : String(rounded.toFixed(decimals)).replace(/\.0+$/, '');
+  return unit ? `${text} ${unit}` : text;
 }
 
 function formatParentUpdateFacts(updateType, rawContent) {
