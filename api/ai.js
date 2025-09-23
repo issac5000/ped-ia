@@ -325,12 +325,44 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           typeof req?.query?.profileId === 'string' ? req.query.profileId.trim() : '',
           typeof req?.query?.profile_id === 'string' ? req.query.profile_id.trim() : '',
         ];
-        const profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
-        if (!profileId) {
-          return res.status(400).json({ error: 'profileId required' });
-        }
+        let profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        const codeCandidates = [
+          typeof body.code_unique === 'string' ? body.code_unique : '',
+          typeof body.code === 'string' ? body.code : '',
+          typeof req?.query?.code_unique === 'string' ? req.query.code_unique : '',
+          typeof req?.query?.code === 'string' ? req.query.code : '',
+        ];
+        const rawCode = codeCandidates.find(Boolean) || '';
+        const codeUnique = rawCode ? String(rawCode).trim().toUpperCase().slice(0, 64) : '';
         const { supaUrl, serviceKey } = getServiceConfig();
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+        if (!profileId && codeUnique) {
+          try {
+            const lookup = await supabaseRequest(
+              `${supaUrl}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
+              { headers }
+            );
+            const row = Array.isArray(lookup) ? lookup[0] : lookup;
+            if (row?.id) {
+              profileId = String(row.id).trim().slice(0, 128);
+            } else {
+              return res.status(404).json({ error: 'Code invalide' });
+            }
+          } catch (err) {
+            const status = err instanceof HttpError && err.status ? err.status : 500;
+            const details = err?.details || err?.message || '';
+            if (status >= 500) {
+              return res.status(status).json({ error: 'Impossible de valider le code', details });
+            }
+            return res.status(status).json({ error: 'Code invalide' });
+          }
+        }
+        if (!profileId) {
+          if (codeUnique) {
+            return res.status(404).json({ error: 'Code invalide' });
+          }
+          return res.status(400).json({ error: 'profileId or code_unique required' });
+        }
         let profileRow = null;
         let childrenRows = [];
         let childUpdates = [];

@@ -217,6 +217,7 @@ const TIMELINE_MILESTONES = [
 
   const dashboardState = {
     viewMode: 'child',
+    profileId: null,
     family: {
       data: null,
       error: null,
@@ -2566,6 +2567,7 @@ const TIMELINE_MILESTONES = [
     } else {
       activeProfile = null;
     }
+    dashboardState.profileId = activeProfile?.id || null;
     if (activeProfile && activeProfile.isAnonymous && activeProfile.code_unique) {
       store.set(K.session, {
         type: 'anon',
@@ -5849,8 +5851,11 @@ const TIMELINE_MILESTONES = [
       }
       refreshBtn.addEventListener('click', async () => {
         if (refreshBtn.dataset.busy === '1') return;
-        const profileId = getActiveProfileId();
-        if (!profileId) {
+        const profileId = dashboardState.profileId || getActiveProfileId();
+        const anonCode = isAnonProfile()
+          ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
+          : '';
+        if (!profileId && !anonCode) {
           showNotification({
             title: 'Profil introuvable',
             text: 'Connectez-vous pour rafraîchir le bilan familial.',
@@ -5860,7 +5865,7 @@ const TIMELINE_MILESTONES = [
         const originalText = refreshBtn.textContent || 'Rafraîchir';
         setBusyState(true, 'Rafraîchissement…');
         try {
-          const result = await runFamilyContextRegeneration(profileId, { refreshDashboard: true, skipIfRunning: false });
+          const result = await runFamilyContextRegeneration(profileId || null, { refreshDashboard: true, skipIfRunning: false });
           if (result) {
             showNotification({ title: 'Bilan familial mis à jour', text: 'Un nouveau bilan est disponible.' });
           }
@@ -6107,13 +6112,19 @@ const TIMELINE_MILESTONES = [
     }
   }
 
-  async function regenerateFamilyContext(profileId) {
-    const uid = profileId || getActiveProfileId();
-    if (!uid) throw new Error('Profil introuvable');
+  async function regenerateFamilyContext(profileId, codeOverride = '') {
+    const uid = profileId || dashboardState.profileId || getActiveProfileId();
+    const code = codeOverride || (isAnonProfile()
+      ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
+      : '');
+    if (!uid && !code) throw new Error('Profil introuvable');
+    const payload = { type: 'family-bilan' };
+    if (uid) payload.profileId = uid;
+    else payload.code_unique = code;
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'family-bilan', profileId: uid }),
+      body: JSON.stringify(payload),
     });
     const text = await res.text().catch(() => '');
     let data = {};
@@ -6128,10 +6139,14 @@ const TIMELINE_MILESTONES = [
   }
 
   async function runFamilyContextRegeneration(profileId, { refreshDashboard = true, skipIfRunning = false } = {}) {
-    if (!useRemote() || isAnonProfile()) return null;
+    const anon = isAnonProfile();
+    if (!anon && !useRemote()) return null;
     const state = dashboardState.family;
-    const targetProfileId = profileId || getActiveProfileId();
-    if (!targetProfileId) throw new Error('Profil introuvable');
+    const targetProfileId = profileId || dashboardState.profileId || getActiveProfileId();
+    const anonCode = anon && activeProfile?.code_unique
+      ? String(activeProfile.code_unique).trim().toUpperCase()
+      : '';
+    if (!targetProfileId && !anonCode) throw new Error('Profil introuvable');
     if (state.regenerationPromise) {
       if (skipIfRunning) {
         state.pendingRefresh = true;
@@ -6140,14 +6155,14 @@ const TIMELINE_MILESTONES = [
       try {
         await state.regenerationPromise;
       } catch {}
-      return runFamilyContextRegeneration(targetProfileId, { refreshDashboard, skipIfRunning });
+      return runFamilyContextRegeneration(targetProfileId || null, { refreshDashboard, skipIfRunning });
     }
     state.pendingRefresh = false;
     state.regenerating = true;
     state.error = null;
     const promise = (async () => {
       try {
-        const result = await regenerateFamilyContext(targetProfileId);
+        const result = await regenerateFamilyContext(targetProfileId || null, anonCode);
         const bilan = typeof result?.bilan === 'string' ? result.bilan : '';
         const generatedAt = result?.lastGeneratedAt || new Date().toISOString();
         const previousData = state.data && typeof state.data === 'object' ? state.data : {};
@@ -6176,7 +6191,7 @@ const TIMELINE_MILESTONES = [
           const shouldRunAgain = state.pendingRefresh;
           state.pendingRefresh = false;
           if (shouldRunAgain) {
-            runFamilyContextRegeneration(targetProfileId, { refreshDashboard, skipIfRunning: true }).catch((err) => {
+            runFamilyContextRegeneration(targetProfileId || null, { refreshDashboard, skipIfRunning: true }).catch((err) => {
               console.warn('family context regeneration retry failed', err);
             });
           }
@@ -6189,9 +6204,12 @@ const TIMELINE_MILESTONES = [
 
   async function scheduleFamilyContextRefresh() {
     try {
-      const profileId = getActiveProfileId();
-      if (!profileId) return;
-      await runFamilyContextRegeneration(profileId, { refreshDashboard: true, skipIfRunning: true });
+      const profileId = dashboardState.profileId || getActiveProfileId();
+      const anonCode = isAnonProfile()
+        ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
+        : '';
+      if (!profileId && !anonCode) return;
+      await runFamilyContextRegeneration(profileId || null, { refreshDashboard: true, skipIfRunning: true });
     } catch (err) {
       console.warn('scheduleFamilyContextRefresh failed', err);
     }
