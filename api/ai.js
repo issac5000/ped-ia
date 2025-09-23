@@ -420,6 +420,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         let profileRow = null;
         let childrenRows = [];
         let childUpdates = [];
+        let childSummaryRows = [];
         let parentUpdates = [];
         try {
           const [profileData, childrenData] = await Promise.all([
@@ -443,6 +444,21 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         } else {
           console.warn('[family-bilan] profile not found in Supabase', { profileId });
           return res.status(404).json({ error: 'No profile data', profileId });
+        }
+        try {
+          const summaries = await supabaseRequest(
+            `${supaUrl}/rest/v1/family_children_summaries?select=first_name,last_summary&profile_id=eq.${encodeURIComponent(profileId)}`,
+            { headers }
+          );
+          childSummaryRows = Array.isArray(summaries) ? summaries.filter(Boolean) : [];
+        } catch (err) {
+          const status = err instanceof HttpError && err.status ? err.status : 500;
+          const details = err?.details || err?.message || '';
+          console.error('[family-bilan] unable to fetch child summaries', { profileId, status, details });
+          return res.status(status).json({ error: 'Unable to fetch child summaries', details });
+        }
+        if (!childSummaryRows.length) {
+          console.warn('[family-bilan] child summaries view empty', { profileId, childrenCount: childrenRows.length });
         }
         const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
         if (childIds.length) {
@@ -469,6 +485,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const parentContext = sanitizeParentContextInput(profileRow);
         const parentContextLines = parentContextToPromptLines(parentContext);
         const childContextText = formatChildrenForPrompt(childrenRows);
+        const childSummariesText = formatChildSummariesForFamilyPrompt(childrenRows, childSummaryRows);
         const childUpdatesText = formatChildUpdatesForFamilyPrompt(childUpdates, childrenRows);
         const parentUpdatesText = formatParentUpdatesForPrompt(parentUpdates);
         console.log('[family-bilan] preparing OpenAI payload', {
@@ -482,6 +499,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           parentContextLines.length
             ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
             : 'Contexte parental actuel: non précisé.',
+          `Contexte secondaire : résumés enfants:\n${childSummariesText}`,
           childUpdatesText.length
             ? `Évolutions enfant (du plus récent au plus ancien):\n${childUpdatesText.join('\n')}`
             : 'Évolutions enfant: aucune donnée exploitable.',
@@ -826,6 +844,66 @@ function formatChildrenForPrompt(children = []) {
     if (child?.dob) parts.push(`naissance: ${formatDateForPrompt(child.dob) || child.dob}`);
     return parts.join(' – ');
   }).join('\n');
+}
+
+function formatChildSummariesForFamilyPrompt(children = [], summaries = []) {
+  const fallback = 'Aucun résumé IA disponible pour cet enfant.';
+  const normalize = (value) => {
+    if (!value) return '';
+    return String(value).trim().toLowerCase();
+  };
+  const sanitizeName = (value) => {
+    if (!value) return 'Enfant';
+    return String(value).trim().slice(0, 120) || 'Enfant';
+  };
+  const sanitizeSummary = (value) => {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    return trimmed.slice(0, 360);
+  };
+  const childrenArray = Array.isArray(children) ? children.filter(Boolean) : [];
+  const summaryEntries = Array.isArray(summaries)
+    ? summaries
+        .filter(Boolean)
+        .map((row, index) => ({
+          index,
+          key: normalize(row?.first_name),
+          name: sanitizeName(row?.first_name),
+          summary: sanitizeSummary(row?.last_summary),
+        }))
+    : [];
+  const used = new Set();
+
+  if (!childrenArray.length) {
+    if (!summaryEntries.length) {
+      return fallback;
+    }
+    return summaryEntries
+      .map((entry) => `- ${entry.name} : ${entry.summary || fallback}`)
+      .join('\n')
+      .slice(0, 2000);
+  }
+
+  const lines = childrenArray.map((child) => {
+    const displayName = sanitizeName(child?.first_name);
+    const key = normalize(child?.first_name);
+    let matched = null;
+    if (key) {
+      matched = summaryEntries.find((entry) => entry.key === key && !used.has(entry.index)) || null;
+    }
+    if (matched) {
+      used.add(matched.index);
+    }
+    const summaryText = matched && matched.summary ? matched.summary : fallback;
+    return `- ${displayName} : ${summaryText}`;
+  });
+
+  if (!lines.length) {
+    return fallback;
+  }
+
+  return lines.join('\n').slice(0, 2000);
 }
 
 function formatChildUpdatesForFamilyPrompt(updates = [], children = []) {
