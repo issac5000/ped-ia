@@ -254,6 +254,8 @@ const TIMELINE_MILESTONES = [
       temps_partiel: 'Temps partiel',
       horaires_decales: 'Horaires décalés / Nuit',
       sans_emploi: 'Sans emploi / Entre deux',
+      maman_foyer: 'Maman au foyer',
+      papa_foyer: 'Papa au foyer',
       autre: 'Autre',
     },
     parental_emotion: {
