@@ -393,8 +393,6 @@ const TIMELINE_MILESTONES = [
     return str.slice(0, max);
   }
 
-  const PARENT_AI_COMMENT_WORD_LIMIT = 80;
-
   function sanitizeParentComment(value) {
     if (value == null) return '';
     const str = String(value).trim();
@@ -407,13 +405,6 @@ const TIMELINE_MILESTONES = [
     const str = String(value).trim();
     if (!str) return '';
     return str.slice(0, 2000);
-  }
-
-  function truncateWords(text, maxWords = 80) {
-    if (!text) return '';
-    const words = text.trim().split(/\s+/);
-    if (words.length <= maxWords) return text.trim();
-    return `${words.slice(0, maxWords).join(' ')}…`;
   }
 
   function buildParentSnapshot(userInfo = {}, context = {}) {
@@ -601,7 +592,6 @@ const TIMELINE_MILESTONES = [
       const data = await res.json();
       let text = sanitizeParentAiFeedback(data?.comment ?? data?.text ?? '');
       if (!text) return '';
-      text = truncateWords(text, PARENT_AI_COMMENT_WORD_LIMIT);
       return text;
     } catch (err) {
       console.warn('generateParentUpdateAiComment request failed', err);
