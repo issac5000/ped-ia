@@ -4908,7 +4908,10 @@ const TIMELINE_MILESTONES = [
           ? u.ai_commentaire
           : (typeof u.ai_comment === 'string' ? u.ai_comment : '');
         const comment = commentText
-          ? `<div class="timeline-comment"><strong><em>${escapeHtml(commentText)}</em></strong></div>`
+          ? `<div class="timeline-ai-note">
+              <span class="timeline-ai-note__label">Réponse de Ped’IA</span>
+              <div class="timeline-ai-note__text">${escapeHtml(commentText).replace(/\n/g, '<br>')}</div>
+            </div>`
           : '';
         return `
           <article class="timeline-item" role="listitem">
