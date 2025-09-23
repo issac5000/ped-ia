@@ -5396,13 +5396,26 @@ const TIMELINE_MILESTONES = [
     const commentText = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
     let commentHtml = '';
     if (commentText) {
-      const origin = parsed.commentOrigin === 'ai' ? 'Commentaire IA' : 'Commentaire parent';
-      commentHtml = `
-        <div class="timeline-parent-note">
-          <span class="timeline-parent-note__label">${escapeHtml(origin)}</span>
-          <div class="timeline-parent-note__text">${escapeHtml(commentText).replace(/\n/g, '<br>')}</div>
-        </div>
-      `;
+      if (parsed.commentOrigin === 'ai') {
+        commentHtml = `
+          <div class="timeline-comment">
+            <strong><em>${escapeHtml(commentText)}</em></strong>
+          </div>
+        `;
+      } else {
+        const originKey = (parsed.commentOrigin || 'parent').toLowerCase();
+        const originLabel = originKey === 'coach'
+          ? 'Commentaire coach'
+          : originKey === 'pro'
+            ? 'Commentaire professionnel'
+            : 'Commentaire parent';
+        commentHtml = `
+          <div class="timeline-parent-note">
+            <span class="timeline-parent-note__label">${escapeHtml(originLabel)}</span>
+            <div class="timeline-parent-note__text">${escapeHtml(commentText).replace(/\n/g, '<br>')}</div>
+          </div>
+        `;
+      }
     }
     return `
       <li class="parent-update-item">
@@ -5445,19 +5458,27 @@ const TIMELINE_MILESTONES = [
   function buildFamilyDashboardHtml(data = {}) {
     const parentInfo = data.parentInfo || {};
     const parentContext = { ...DEFAULT_PARENT_CONTEXT, ...(data.parentContext || {}) };
+    const formattedContext = {
+      maritalStatus: formatParentContextValue('marital_status', parentContext.maritalStatus),
+      numberOfChildren: formatParentContextValue('number_of_children', parentContext.numberOfChildren),
+      parentalEmployment: formatParentContextValue('parental_employment', parentContext.parentalEmployment),
+      parentalEmotion: formatParentContextValue('parental_emotion', parentContext.parentalEmotion),
+      parentalStress: formatParentContextValue('parental_stress', parentContext.parentalStress),
+      parentalFatigue: formatParentContextValue('parental_fatigue', parentContext.parentalFatigue),
+    };
     const contextRows = [
       { label: 'Pseudo', value: parentInfo.pseudo || '—' },
       { label: 'Rôle affiché', value: parentInfo.role || '—' },
-      { label: 'Statut marital', value: formatParentContextValue('marital_status', parentContext.maritalStatus) },
-      { label: 'Nombre d’enfants', value: formatParentContextValue('number_of_children', parentContext.numberOfChildren) },
-      { label: 'Situation professionnelle', value: formatParentContextValue('parental_employment', parentContext.parentalEmployment) },
-      { label: 'État émotionnel', value: formatParentContextValue('parental_emotion', parentContext.parentalEmotion) },
-      { label: 'Niveau de stress', value: formatParentContextValue('parental_stress', parentContext.parentalStress) },
-      { label: 'Niveau de fatigue', value: formatParentContextValue('parental_fatigue', parentContext.parentalFatigue) },
+      { label: 'Statut marital', value: formattedContext.maritalStatus },
+      { label: 'Nombre d’enfants', value: formattedContext.numberOfChildren },
+      { label: 'Situation professionnelle', value: formattedContext.parentalEmployment },
+      { label: 'État émotionnel', value: formattedContext.parentalEmotion },
+      { label: 'Niveau de stress', value: formattedContext.parentalStress },
+      { label: 'Niveau de fatigue', value: formattedContext.parentalFatigue },
     ];
     const contextList = `
       <ul class="family-context-list">
-        ${contextRows.map(row => `
+        ${contextRows.map((row) => `
           <li>
             <span>${escapeHtml(row.label)}</span>
             <strong>${escapeHtml(row.value)}</strong>
@@ -5465,17 +5486,114 @@ const TIMELINE_MILESTONES = [
         `).join('')}
       </ul>
     `;
+    const moodEntries = [
+      { label: 'Émotion', value: formattedContext.parentalEmotion },
+      { label: 'Stress', value: formattedContext.parentalStress },
+      { label: 'Fatigue', value: formattedContext.parentalFatigue },
+    ].filter((entry) => entry.value && entry.value !== '—');
+    const moodChips = moodEntries.length
+      ? `
+        <div class="family-hero-chips">
+          ${moodEntries.map((entry) => `
+            <span class="chip chip-soft">
+              <span class="chip-label">${escapeHtml(entry.label)}</span>
+              <span class="chip-value">${escapeHtml(entry.value)}</span>
+            </span>
+          `).join('')}
+        </div>
+      `
+      : '';
+    const statEntries = [
+      { label: 'Statut marital', value: formattedContext.maritalStatus },
+      { label: 'Situation professionnelle', value: formattedContext.parentalEmployment },
+      { label: 'Nombre d’enfants', value: formattedContext.numberOfChildren },
+    ].filter((entry) => entry.value && entry.value !== '—');
+    const heroStats = statEntries.length
+      ? `
+        <div class="family-hero-stats">
+          ${statEntries.map((entry) => `
+            <div class="family-hero-stat">
+              <span class="family-hero-stat-label">${escapeHtml(entry.label)}</span>
+              <strong class="family-hero-stat-value">${escapeHtml(entry.value)}</strong>
+            </div>
+          `).join('')}
+        </div>
+      `
+      : '';
+    const parentDisplayName = parentInfo.pseudo || 'Parent principal';
+    const avatarInitial = parentDisplayName ? parentDisplayName.slice(0, 1).toUpperCase() : 'P';
     const children = Array.isArray(data.children) ? data.children : [];
+    const inferredChildrenLabel = children.length
+      ? `${children.length} enfant${children.length > 1 ? 's' : ''}`
+      : '';
+    const heroSubtitleParts = [];
+    if (parentInfo.role) heroSubtitleParts.push(parentInfo.role);
+    if (formattedContext.numberOfChildren && formattedContext.numberOfChildren !== '—') heroSubtitleParts.push(formattedContext.numberOfChildren);
+    else if (inferredChildrenLabel) heroSubtitleParts.push(inferredChildrenLabel);
+    if (formattedContext.maritalStatus && formattedContext.maritalStatus !== '—') heroSubtitleParts.push(formattedContext.maritalStatus);
+    const heroSubtitle = heroSubtitleParts.length ? heroSubtitleParts.join(' • ') : 'Profil familial';
     const childrenList = children.length
       ? `<ul class="family-children-list">${children.map((child) => {
           const name = escapeHtml(child.firstName || 'Enfant');
-          const details = [child.sex || '—', child.ageText || (child.dob ? formatAge(child.dob) : 'Âge inconnu')]
-            .filter(Boolean)
-            .map((v) => escapeHtml(v))
-            .join(' • ');
-          return `<li><strong>${name}</strong><span>${details}</span></li>`;
+          const initial = (child.firstName || 'E').slice(0, 1).toUpperCase();
+          const metaParts = [];
+          if (child.sex) metaParts.push(child.sex);
+          if (child.ageText) metaParts.push(child.ageText);
+          else if (child.dob) metaParts.push(formatAge(child.dob));
+          const metaHtml = metaParts.length
+            ? `<p class="family-child-meta">${metaParts.map((value) => escapeHtml(value)).join(' • ')}</p>`
+            : '';
+          let dobHtml = '';
+          if (child.dob) {
+            const dobDate = new Date(child.dob);
+            if (!Number.isNaN(dobDate.getTime())) {
+              const dobLabel = dobDate.toLocaleDateString('fr-FR', { dateStyle: 'long' });
+              dobHtml = `<p class="family-child-dob muted">Né·e le ${escapeHtml(dobLabel)}</p>`;
+            }
+          }
+          return `
+            <li class="family-child-card">
+              <div class="family-child-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
+              <div class="family-child-body">
+                <strong>${name}</strong>
+                ${metaHtml}
+                ${dobHtml}
+              </div>
+            </li>
+          `;
         }).join('')}</ul>`
-      : '<p class="muted">Aucun enfant associé pour le moment.</p>';
+      : '<div class="empty-state muted">Aucun enfant associé pour le moment.</div>';
+    const heroCard = `
+      <div class="card stack family-hero-card">
+        <div class="family-hero-header">
+          <div class="family-avatar" aria-hidden="true">${escapeHtml(avatarInitial)}</div>
+          <div class="family-hero-heading">
+            <h2>${escapeHtml(parentDisplayName)}</h2>
+            <p class="muted">${escapeHtml(heroSubtitle)}</p>
+          </div>
+        </div>
+        ${moodChips}
+        ${heroStats}
+      </div>
+    `;
+    const contextCard = `
+      <div class="card stack family-context-card">
+        <div class="card-header">
+          <h3>Contexte parental</h3>
+          <p class="page-subtitle">Synthèse des informations partagées.</p>
+        </div>
+        ${contextList}
+      </div>
+    `;
+    const childrenCard = `
+      <div class="card stack family-children-card">
+        <div class="card-header">
+          <h3>Enfants associés (${children.length})</h3>
+          <p class="page-subtitle">Aperçu des profils suivis.</p>
+        </div>
+        ${childrenList}
+      </div>
+    `;
     const bilanRaw = typeof data.familyContext?.ai_bilan === 'string' ? data.familyContext.ai_bilan.trim() : '';
     const bilanText = bilanRaw
       ? `<div class="family-bilan-text"><p>${escapeHtml(bilanRaw).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p></div>`
@@ -5484,29 +5602,30 @@ const TIMELINE_MILESTONES = [
     if (data.familyContext?.last_generated_at) {
       const date = new Date(data.familyContext.last_generated_at);
       if (!Number.isNaN(date.getTime())) {
-        generatedInfo = `<p class="muted">Dernière génération : ${escapeHtml(date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }))}</p>`;
+        generatedInfo = `<p class="family-bilan-meta muted">Dernière génération : ${escapeHtml(date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }))}</p>`;
       }
     }
     const parentUpdatesSection = buildParentUpdatesSectionHtml(data.parentUpdates || []);
     return `
-      <div class="grid-2">
-        <div class="card stack">
-          <h3>Contexte parental</h3>
-          ${contextList}
+      <div class="family-dashboard">
+        ${heroCard}
+        <div class="family-columns">
+          <div class="family-main">
+            ${parentUpdatesSection}
+            <div class="card stack family-bilan-card">
+              <div class="card-header family-bilan-header">
+                <h3>Bilan familial IA</h3>
+                <button type="button" class="btn btn-secondary" id="btn-refresh-family-bilan">Rafraîchir</button>
+              </div>
+              ${bilanText}
+              ${generatedInfo}
+            </div>
+          </div>
+          <aside class="family-side">
+            ${contextCard}
+            ${childrenCard}
+          </aside>
         </div>
-        <div class="card stack">
-          <h3>Enfants associés (${children.length})</h3>
-          ${childrenList}
-        </div>
-      </div>
-      ${parentUpdatesSection}
-      <div class="card stack family-bilan-card">
-        <div class="card-header family-bilan-header">
-          <h3>Bilan familial IA</h3>
-          <button type="button" class="btn btn-secondary" id="btn-refresh-family-bilan">Rafraîchir</button>
-        </div>
-        ${bilanText}
-        ${generatedInfo}
       </div>
     `;
   }
