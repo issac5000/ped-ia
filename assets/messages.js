@@ -73,10 +73,10 @@ async function ensureSupabase(){
 async function fetchAnonProfileByCode(rawCode) {
   const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
   if (!code) throw new Error('Code unique manquant.');
-  const response = await fetch('/api/anon/parent-updates', {
+  const response = await fetch('/api/profiles/by-code', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'profile', code })
+    body: JSON.stringify({ code })
   });
   const text = await response.text().catch(() => '');
   let payload = null;
@@ -84,13 +84,17 @@ async function fetchAnonProfileByCode(rawCode) {
     try { payload = JSON.parse(text); } catch { payload = null; }
   }
   if (!response.ok) {
-    const err = new Error(payload?.error || 'Connexion impossible pour le moment.');
+    const serverMessage = payload?.error || '';
+    if (response.status === 404 || /code/i.test(serverMessage)) {
+      throw new Error('Code non reconnu');
+    }
+    const err = new Error(serverMessage || 'Connexion impossible pour le moment.');
     if (payload?.details) err.details = payload.details;
     throw err;
   }
   const profile = payload?.profile || null;
   if (!profile || !profile.id) {
-    throw new Error('Code introuvable.');
+    throw new Error('Code non reconnu');
   }
   return profile;
 }
@@ -217,8 +221,10 @@ async function loginWithCode(){
     if (status) {
       status.classList.add('error');
       const msg = e instanceof Error && e.message ? e.message : 'Connexion impossible pour le moment.';
-      if (/introuvable|invalide/i.test(msg)) {
-        status.textContent = 'Code invalide.';
+      if (/code\s+non\s+reconnu/i.test(msg) || msg === 'Code non reconnu') {
+        status.textContent = 'Code non reconnu.';
+      } else if (/code/i.test(msg) && /manquant/i.test(msg)) {
+        status.textContent = 'Saisis ton code unique pour continuer.';
       } else {
         status.textContent = msg;
       }

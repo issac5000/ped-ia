@@ -950,7 +950,7 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, ...payload };
+    const body = { action, code, payload };
     const response = await fetch('/api/anon/children', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -973,8 +973,31 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, ...payload };
+    const body = { action, code, payload };
     const response = await fetch('/api/anon/parent-updates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text().catch(() => '');
+    let json = null;
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!response.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
+      throw err;
+    }
+    return json || {};
+  }
+
+  async function anonFamilyRequest(action, payload = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) throw new Error('Code unique manquant');
+    const body = { action, code, payload };
+    const response = await fetch('/api/anon/family', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1046,25 +1069,28 @@ const TIMELINE_MILESTONES = [
   async function fetchAnonProfileByCode(rawCode) {
     const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
     if (!code) throw new Error('Code unique manquant');
-    const response = await fetch('/api/anon/parent-updates', {
+    const response = await fetch('/api/profiles/by-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'profile', code })
+      body: JSON.stringify({ code })
     });
     const text = await response.text().catch(() => '');
     let payload = null;
     if (text) {
-      try { payload = JSON.parse(text); }
-      catch { payload = null; }
+      try { payload = JSON.parse(text); } catch { payload = null; }
     }
     if (!response.ok) {
-      const err = new Error(payload?.error || 'Connexion impossible pour le moment.');
+      const serverMessage = payload?.error || '';
+      if (response.status === 404 || /code/i.test(serverMessage)) {
+        throw new Error('Code non reconnu');
+      }
+      const err = new Error(serverMessage || 'Connexion impossible pour le moment.');
       if (payload?.details) err.details = payload.details;
       throw err;
     }
     const profile = payload?.profile || null;
     if (!profile || !profile.id) {
-      throw new Error('Profil introuvable pour ce code.');
+      throw new Error('Code non reconnu');
     }
     return profile;
   }
@@ -2838,8 +2864,8 @@ const TIMELINE_MILESTONES = [
       if (status) {
         status.classList.add('error');
         const msg = (e && typeof e.message === 'string') ? e.message : '';
-        if (/code/i.test(msg) && /introuvable|invalid/i.test(msg)) {
-          status.textContent = 'Code invalide.';
+        if (/code\s+non\s+reconnu/i.test(msg) || msg === 'Code non reconnu') {
+          status.textContent = 'Code non reconnu.';
         } else if (/code/i.test(msg) && /manquant/i.test(msg)) {
           status.textContent = 'Saisis ton code unique pour continuer.';
         } else {
@@ -6087,13 +6113,28 @@ const TIMELINE_MILESTONES = [
               ageText,
             };
           };
-          let children = [];
+          let overviewRes = null;
           try {
-            const res = await anonChildRequest('list', {});
-            const rows = Array.isArray(res.children) ? res.children : [];
-            children = rows.map((row) => normalizeChild(row)).filter(Boolean);
+            overviewRes = await anonFamilyRequest('overview', {
+              updatesLimit: PARENT_UPDATES_LIMIT,
+              includeChildren: true,
+              includeParentUpdates: true,
+              includeFamilyContext: true,
+            });
           } catch (err) {
-            console.warn('fetchFamilyOverview anon child list failed', err);
+            console.warn('fetchFamilyOverview anon overview failed', err);
+            overviewRes = null;
+          }
+          const childRows = Array.isArray(overviewRes?.children) ? overviewRes.children : [];
+          let children = childRows.map((row) => normalizeChild(row)).filter(Boolean);
+          if (!children.length && !overviewRes) {
+            try {
+              const res = await anonChildRequest('list', {});
+              const rows = Array.isArray(res.children) ? res.children : [];
+              children = rows.map((row) => normalizeChild(row)).filter(Boolean);
+            } catch (err) {
+              console.warn('fetchFamilyOverview anon child list failed', err);
+            }
           }
           if (!children.length) {
             const fallbackSources = [
@@ -6107,66 +6148,81 @@ const TIMELINE_MILESTONES = [
               }
             }
           }
-          let parentUpdates = [];
-          let familyContext = state.data?.familyContext || null;
-          try {
-            const updatesRes = await anonParentRequest('list', { limit: PARENT_UPDATES_LIMIT });
-            if (Array.isArray(updatesRes.parentUpdates)) {
-              parentUpdates = updatesRes.parentUpdates;
+          let parentUpdates = Array.isArray(overviewRes?.parentUpdates) ? overviewRes.parentUpdates : [];
+          let familyContext = (() => {
+            if (overviewRes?.familyContext && typeof overviewRes.familyContext === 'object') {
+              return overviewRes.familyContext;
             }
-            const profileRow = updatesRes?.profile || null;
-            if (profileRow) {
-              const normalizedCtx = normalizeParentContext(profileRow, parentContext);
-              parentContext.maritalStatus = normalizedCtx.maritalStatus;
-              parentContext.numberOfChildren = normalizedCtx.numberOfChildren;
-              parentContext.parentalEmployment = normalizedCtx.parentalEmployment;
-              parentContext.parentalEmotion = normalizedCtx.parentalEmotion;
-              parentContext.parentalStress = normalizedCtx.parentalStress;
-              parentContext.parentalFatigue = normalizedCtx.parentalFatigue;
-              parentInfo.pseudo = profileRow.full_name || parentInfo.pseudo;
-              parentInfo.role = profileRow.parent_role || parentInfo.role;
-              const nextProfile = { ...(activeProfile || {}) };
-              if (profileRow.id) nextProfile.id = profileRow.id;
-              if (Object.prototype.hasOwnProperty.call(profileRow, 'full_name')) {
-                nextProfile.full_name = profileRow.full_name || parentInfo.pseudo;
+            return state.data?.familyContext || null;
+          })();
+          let profileRow = overviewRes?.profile || null;
+          if (!overviewRes) {
+            try {
+              const updatesRes = await anonParentRequest('list', { limit: PARENT_UPDATES_LIMIT });
+              if (Array.isArray(updatesRes.parentUpdates)) {
+                parentUpdates = updatesRes.parentUpdates;
               }
-              if (Object.prototype.hasOwnProperty.call(profileRow, 'parent_role')) {
-                nextProfile.parent_role = profileRow.parent_role;
+              if (updatesRes?.profile) {
+                profileRow = updatesRes.profile;
               }
-              if (Object.prototype.hasOwnProperty.call(profileRow, 'show_children_count')) {
-                nextProfile.show_children_count = profileRow.show_children_count;
+              if (updatesRes?.familyContext && typeof updatesRes.familyContext === 'object') {
+                familyContext = updatesRes.familyContext;
               }
-              if (Object.prototype.hasOwnProperty.call(profileRow, 'code_unique')) {
-                nextProfile.code_unique = profileRow.code_unique;
-              }
-              PARENT_FIELD_DEFS.forEach((def) => {
-                if (Object.prototype.hasOwnProperty.call(profileRow, def.column)) {
-                  nextProfile[def.column] = profileRow[def.column];
-                }
-              });
-              if (Object.prototype.hasOwnProperty.call(profileRow, 'context_parental')) {
-                nextProfile.context_parental = profileRow.context_parental;
-              }
-              nextProfile.isAnonymous = true;
-              setActiveProfile(nextProfile);
+            } catch (err) {
+              console.warn('fetchFamilyOverview anon parent list failed', err);
             }
-            if (updatesRes?.familyContext && typeof updatesRes.familyContext === 'object') {
-              const fc = updatesRes.familyContext;
-              const aiBilan = typeof fc.ai_bilan === 'string' ? fc.ai_bilan : '';
-              const lastGeneratedAt = fc.last_generated_at || fc.lastGeneratedAt || null;
-              const childrenIds = Array.isArray(fc.children_ids)
-                ? fc.children_ids
-                : Array.isArray(fc.childrenIds)
-                  ? fc.childrenIds
-                  : null;
-              familyContext = {
-                ai_bilan: aiBilan,
-                last_generated_at: lastGeneratedAt,
-                children_ids: childrenIds,
-              };
+          }
+          if (profileRow) {
+            const normalizedCtx = normalizeParentContext(profileRow, parentContext);
+            parentContext.maritalStatus = normalizedCtx.maritalStatus;
+            parentContext.numberOfChildren = normalizedCtx.numberOfChildren;
+            parentContext.parentalEmployment = normalizedCtx.parentalEmployment;
+            parentContext.parentalEmotion = normalizedCtx.parentalEmotion;
+            parentContext.parentalStress = normalizedCtx.parentalStress;
+            parentContext.parentalFatigue = normalizedCtx.parentalFatigue;
+            parentInfo.pseudo = profileRow.full_name || parentInfo.pseudo;
+            parentInfo.role = profileRow.parent_role || parentInfo.role;
+            const nextProfile = { ...(activeProfile || {}) };
+            if (profileRow.id) nextProfile.id = profileRow.id;
+            if (Object.prototype.hasOwnProperty.call(profileRow, 'full_name')) {
+              nextProfile.full_name = profileRow.full_name || parentInfo.pseudo;
             }
-          } catch (err) {
-            console.warn('fetchFamilyOverview anon parent list failed', err);
+            if (Object.prototype.hasOwnProperty.call(profileRow, 'parent_role')) {
+              nextProfile.parent_role = profileRow.parent_role;
+            }
+            if (Object.prototype.hasOwnProperty.call(profileRow, 'show_children_count')) {
+              nextProfile.show_children_count = profileRow.show_children_count;
+            }
+            if (Object.prototype.hasOwnProperty.call(profileRow, 'code_unique')) {
+              nextProfile.code_unique = profileRow.code_unique;
+            }
+            PARENT_FIELD_DEFS.forEach((def) => {
+              if (Object.prototype.hasOwnProperty.call(profileRow, def.column)) {
+                nextProfile[def.column] = profileRow[def.column];
+              }
+            });
+            if (Object.prototype.hasOwnProperty.call(profileRow, 'context_parental')) {
+              nextProfile.context_parental = profileRow.context_parental;
+            }
+            nextProfile.isAnonymous = true;
+            setActiveProfile(nextProfile);
+          }
+          if (familyContext && typeof familyContext === 'object') {
+            const fc = familyContext;
+            const aiBilan = typeof fc.ai_bilan === 'string' ? fc.ai_bilan : '';
+            const lastGeneratedAt = fc.last_generated_at || fc.lastGeneratedAt || null;
+            const childrenIds = Array.isArray(fc.children_ids)
+              ? fc.children_ids
+              : Array.isArray(fc.childrenIds)
+                ? fc.childrenIds
+                : null;
+            familyContext = {
+              ai_bilan: aiBilan,
+              last_generated_at: lastGeneratedAt,
+              children_ids: childrenIds,
+            };
+          } else {
+            familyContext = null;
           }
           let growthAlerts = [];
           try {
@@ -8288,7 +8344,7 @@ const TIMELINE_MILESTONES = [
     if (!useRemote() || !childId) return { rows: [], notice: null };
     if (isAnonProfile()) {
       try {
-        const res = await anonChildRequest('growth-status', { childId, limit: 20 });
+        const res = await anonFamilyRequest('growth-status', { childId, limit: 20 });
         const rows = Array.isArray(res?.rows) ? res.rows : [];
         const notice = res?.notice && typeof res.notice === 'object' ? res.notice : null;
         return { rows, notice };
