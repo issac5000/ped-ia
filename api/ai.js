@@ -310,7 +310,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         }
         try {
           const parentRows = await supabaseRequest(
-            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
+            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
             { headers }
           );
           parentUpdates = Array.isArray(parentRows) ? parentRows : [];
@@ -669,25 +669,71 @@ function formatParentUpdatesForPrompt(updates = []) {
     .slice(0, 20)
     .map((row, index) => {
       const type = typeof row?.update_type === 'string' ? row.update_type.trim() : '';
-      const label = PARENT_CONTEXT_FIELD_LABELS[type] || (type ? type.replace(/_/g, ' ') : 'Champ');
+      const label = type === 'parent_context'
+        ? 'Contexte parental'
+        : (PARENT_CONTEXT_FIELD_LABELS[type] || (type ? type.replace(/_/g, ' ') : 'Champ'));
       const date = formatDateForPrompt(row?.created_at);
-      let previous = '';
-      let next = '';
-      if (typeof row?.update_content === 'string') {
-        try {
-          const parsed = JSON.parse(row.update_content);
-          if (parsed && typeof parsed === 'object') {
-            previous = formatParentContextValue(type, parsed.previous ?? parsed.avant ?? parsed.old ?? '');
-            next = formatParentContextValue(type, parsed.next ?? parsed.apres ?? parsed.new ?? '');
+      let summary = '';
+      if (type === 'parent_context') {
+        let parsed = null;
+        if (typeof row?.update_content === 'string') {
+          try { parsed = JSON.parse(row.update_content); } catch { parsed = null; }
+        } else if (row?.update_content && typeof row.update_content === 'object') {
+          parsed = row.update_content;
+        }
+        const lines = [];
+        if (parsed && typeof parsed === 'object') {
+          if (typeof parsed.summary === 'string' && parsed.summary.trim()) {
+            lines.push(parsed.summary.trim());
           }
-        } catch {}
-      } else if (row?.update_content && typeof row.update_content === 'object') {
-        previous = formatParentContextValue(type, row.update_content.previous);
-        next = formatParentContextValue(type, row.update_content.next);
+          const context = parsed.snapshot?.context || parsed.context || {};
+          const contextKeys = ['parental_emotion', 'parental_stress', 'parental_fatigue', 'parental_employment', 'marital_status', 'number_of_children'];
+          contextKeys.forEach((key) => {
+            if (!Object.prototype.hasOwnProperty.call(context, key)) return;
+            const formatted = formatParentContextValue(key, context[key]);
+            if (formatted && formatted !== '—') {
+              const keyLabel = PARENT_CONTEXT_FIELD_LABELS[key] || key.replace(/_/g, ' ');
+              lines.push(`${keyLabel}: ${formatted}`);
+            }
+          });
+          if (Array.isArray(parsed.changes)) {
+            parsed.changes.slice(0, 4).forEach((change) => {
+              if (!change || !change.field) return;
+              const field = String(change.field);
+              const before = formatParentContextValue(field, change.previous);
+              const after = formatParentContextValue(field, change.next);
+              const changeLabel = PARENT_CONTEXT_FIELD_LABELS[field] || field.replace(/_/g, ' ');
+              lines.push(`${changeLabel}: ${before || 'non renseigné'} → ${after || 'non renseigné'}`);
+            });
+          }
+        }
+        summary = lines.join(' ; ');
+      } else {
+        let previous = '';
+        let next = '';
+        if (typeof row?.update_content === 'string') {
+          try {
+            const parsed = JSON.parse(row.update_content);
+            if (parsed && typeof parsed === 'object') {
+              previous = formatParentContextValue(type, parsed.previous ?? parsed.avant ?? parsed.old ?? '');
+              next = formatParentContextValue(type, parsed.next ?? parsed.apres ?? parsed.new ?? '');
+            }
+          } catch {}
+        } else if (row?.update_content && typeof row.update_content === 'object') {
+          previous = formatParentContextValue(type, row.update_content.previous);
+          next = formatParentContextValue(type, row.update_content.next);
+        }
+        summary = `${previous || 'non renseigné'} → ${next || 'non renseigné'}`;
       }
-      const changeText = `${previous || 'non renseigné'} → ${next || 'non renseigné'}`;
+      const comment = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
+      if (comment) {
+        const limited = comment.slice(0, 200);
+        summary = summary ? `${summary}; Commentaire: ${limited}` : `Commentaire: ${limited}`;
+      }
+      summary = summary ? summary.slice(0, 400) : '';
       const prefix = `${index + 1}. ${label}`;
-      return date ? `${prefix} (${date}) : ${changeText}` : `${prefix}: ${changeText}`;
+      const body = summary || 'mise à jour enregistrée';
+      return date ? `${prefix} (${date}) : ${body}` : `${prefix}: ${body}`;
     });
 }
 

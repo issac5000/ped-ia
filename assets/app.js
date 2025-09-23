@@ -273,6 +273,20 @@ const TIMELINE_MILESTONES = [
     },
   };
 
+  const PARENT_CONTEXT_TITLES = {
+    full_name: 'Pseudo',
+    parent_role: 'Rôle affiché',
+    marital_status: 'Statut marital',
+    number_of_children: 'Nombre d’enfants',
+    parental_employment: 'Situation professionnelle',
+    parental_emotion: 'État émotionnel',
+    parental_stress: 'Niveau de stress',
+    parental_fatigue: 'Niveau de fatigue',
+  };
+
+  const PARENT_UPDATE_SNAPSHOT_TYPE = 'parent_context';
+  const PARENT_UPDATES_LIMIT = 12;
+
   const DEFAULT_PARENT_CONTEXT = Object.freeze(PARENT_FIELD_DEFS.reduce((acc, def) => {
     acc[def.key] = def.type === 'number' ? null : '';
     return acc;
@@ -372,25 +386,117 @@ const TIMELINE_MILESTONES = [
     return changes;
   }
 
-  function buildParentUpdateInsert(profileId, change) {
-    const def = PARENT_FIELD_DEFS.find((d) => d.column === change.field);
-    const formatValue = (value) => {
-      if (def?.type === 'number') {
-        if (!Number.isFinite(value)) return null;
-        return Math.max(0, Math.min(20, Number(value)));
-      }
-      if (value == null) return null;
-      const str = String(value).trim();
-      return str ? str.slice(0, 120) : null;
+  function sanitizeParentText(value, max = 120) {
+    if (value == null) return null;
+    const str = String(value).trim();
+    if (!str) return null;
+    return str.slice(0, max);
+  }
+
+  function sanitizeParentComment(value) {
+    if (value == null) return '';
+    const str = String(value).trim();
+    if (!str) return '';
+    return str.slice(0, 2000);
+  }
+
+  function buildParentSnapshot(userInfo = {}, context = {}) {
+    const pseudo = sanitizeParentText(userInfo.pseudo);
+    const role = sanitizeParentText(userInfo.role);
+    const payload = parentContextToDbPayload(context || {});
+    const contextValues = payload?.context_parental && typeof payload.context_parental === 'object'
+      ? payload.context_parental
+      : {};
+    return {
+      pseudo,
+      parent_role: role,
+      context: contextValues,
     };
+  }
+
+  function buildParentChangeDetails(changes = [], previousSnapshot, nextSnapshot) {
+    if (!Array.isArray(changes) || !changes.length) return [];
+    return changes
+      .map((change) => {
+        if (!change || !change.field) return null;
+        const field = String(change.field);
+        let previous = null;
+        let next = null;
+        if (field === 'full_name') {
+          previous = previousSnapshot?.pseudo ?? null;
+          next = nextSnapshot?.pseudo ?? null;
+        } else if (field === 'parent_role') {
+          previous = previousSnapshot?.parent_role ?? null;
+          next = nextSnapshot?.parent_role ?? null;
+        } else {
+          previous = previousSnapshot?.context?.[field] ?? null;
+          next = nextSnapshot?.context?.[field] ?? null;
+        }
+        return {
+          field,
+          previous,
+          next,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function buildParentSnapshotSummary(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return '';
+    const context = snapshot.context && typeof snapshot.context === 'object'
+      ? snapshot.context
+      : {};
+    const summaryKeys = [
+      'parental_emotion',
+      'parental_stress',
+      'parental_fatigue',
+      'parental_employment',
+      'marital_status',
+      'number_of_children',
+    ];
+    const parts = [];
+    summaryKeys.forEach((key) => {
+      if (!Object.prototype.hasOwnProperty.call(context, key)) return;
+      const formatted = formatParentContextValue(key, context[key]);
+      if (formatted && formatted !== '—') {
+        const label = PARENT_CONTEXT_TITLES[key] || key.replace(/_/g, ' ');
+        parts.push(`${label}: ${formatted}`);
+      }
+    });
+    const text = parts.join(' • ');
+    return text.slice(0, 400);
+  }
+
+  function buildParentContextSnapshotInsert({
+    profileId,
+    previousUser = {},
+    previousContext = {},
+    nextUser = {},
+    nextContext = {},
+    changes = [],
+    comment = '',
+  } = {}) {
+    if (!profileId) return null;
+    const sanitizedComment = sanitizeParentComment(comment);
+    const previousSnapshot = buildParentSnapshot(previousUser, previousContext);
+    const nextSnapshot = buildParentSnapshot(nextUser, nextContext);
+    const changeDetails = buildParentChangeDetails(changes, previousSnapshot, nextSnapshot);
+    const hasChanges = changeDetails.length > 0;
+    if (!hasChanges && !sanitizedComment) return null;
+    const summary = buildParentSnapshotSummary(nextSnapshot);
+    const payload = {
+      snapshot: nextSnapshot,
+      source: 'parent',
+    };
+    if (summary) payload.summary = summary;
+    if (hasChanges) payload.changes = changeDetails;
+    if (hasChanges) payload.previous_snapshot = previousSnapshot;
+    if (sanitizedComment) payload.comment_origin = 'parent';
     return {
       profile_id: profileId,
-      update_type: change.field,
-      update_content: JSON.stringify({
-        field: change.field,
-        previous: formatValue(change.previous),
-        next: formatValue(change.next),
-      }),
+      update_type: PARENT_UPDATE_SNAPSHOT_TYPE,
+      update_content: JSON.stringify(payload),
+      ai_commentaire: sanitizedComment || null,
     };
   }
 
@@ -3875,6 +3981,9 @@ const TIMELINE_MILESTONES = [
     form.dataset.busy = '1';
     const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
     if (submitBtn) submitBtn.disabled = true;
+    const commentControl = form.elements.namedItem('parent_comment');
+    let shouldResetComment = false;
+    let shouldRefreshFamily = false;
     try {
       const fd = new FormData(form);
       const pseudo = (fd.get('pseudo') || '').toString().trim();
@@ -3882,6 +3991,8 @@ const TIMELINE_MILESTONES = [
       const showStats = !!fd.get('showStats');
       const allowMessages = !!fd.get('allowMessages');
       const parentContext = readParentContextFromForm(fd);
+      const parentComment = sanitizeParentComment(fd.get('parent_comment'));
+      const hasParentComment = !!parentComment;
       const previousUser = { ...(settingsState.user || {}) };
       const previousContext = normalizeParentContext(previousUser || {});
       const parentContextChanges = diffParentContexts(previousContext, parentContext);
@@ -3933,10 +4044,23 @@ const TIMELINE_MILESTONES = [
               ...parentDbPayload,
             };
             await supabase.from('profiles').update(updatePayload).eq('id', uid);
-            if (parentUpdateEntries.length) {
+            const shouldLogSnapshot = parentUpdateEntries.length || hasParentComment;
+            if (shouldLogSnapshot) {
               try {
-                const inserts = parentUpdateEntries.map((entry) => buildParentUpdateInsert(uid, entry));
-                await supabase.from('parent_updates').insert(inserts);
+                const snapshotInsert = buildParentContextSnapshotInsert({
+                  profileId: uid,
+                  previousUser,
+                  previousContext,
+                  nextUser,
+                  nextContext: parentContext,
+                  changes: parentUpdateEntries,
+                  comment: parentComment,
+                });
+                if (snapshotInsert) {
+                  await supabase.from('parent_updates').insert(snapshotInsert);
+                  if (snapshotInsert.ai_commentaire) shouldResetComment = true;
+                  shouldRefreshFamily = true;
+                }
               } catch (logErr) {
                 console.warn('parent_updates insert failed', logErr);
               }
@@ -3976,7 +4100,11 @@ const TIMELINE_MILESTONES = [
         durationMs: 5000,
       });
 
-      if (useRemote() && !isAnonProfile() && parentUpdateEntries.length) {
+      if (shouldResetComment && commentControl && typeof commentControl === 'object' && 'value' in commentControl) {
+        commentControl.value = '';
+      }
+
+      if (useRemote() && !isAnonProfile() && shouldRefreshFamily) {
         scheduleFamilyContextRefresh();
       }
     } catch (err) {
@@ -5145,6 +5273,175 @@ const TIMELINE_MILESTONES = [
     }
   }
 
+  function labelParentUpdateType(type) {
+    if (!type) return 'Mise à jour';
+    const key = String(type).trim();
+    if (key === PARENT_UPDATE_SNAPSHOT_TYPE) return 'Contexte parental';
+    if (PARENT_CONTEXT_TITLES[key]) return PARENT_CONTEXT_TITLES[key];
+    return key.replace(/_/g, ' ');
+  }
+
+  function formatParentUpdateValue(field, value) {
+    if (!field) {
+      if (value == null) return '—';
+      const str = String(value).trim();
+      return str || '—';
+    }
+    const key = String(field);
+    if (key === 'full_name' || key === 'parent_role') {
+      const str = value == null ? '' : String(value).trim();
+      return str || '—';
+    }
+    return formatParentContextValue(key, value);
+  }
+
+  function formatParentUpdateDetail(change) {
+    if (!change || !change.field) return '';
+    const field = String(change.field);
+    const label = PARENT_CONTEXT_TITLES[field] || labelParentUpdateType(field);
+    const previous = formatParentUpdateValue(field, change.previous);
+    const next = formatParentUpdateValue(field, change.next);
+    if (previous === next) return `${label}: ${next}`;
+    return `${label}: ${previous} → ${next}`;
+  }
+
+  function parseParentUpdateRowContent(row) {
+    const raw = row?.update_content;
+    let parsed = null;
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = raw.trim();
+      }
+    } else if (raw && typeof raw === 'object') {
+      parsed = raw;
+    }
+    let summary = '';
+    let snapshot = null;
+    let context = null;
+    const changes = [];
+    let source = null;
+    let commentOrigin = null;
+    if (typeof parsed === 'string') {
+      summary = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.summary === 'string') summary = parsed.summary.trim();
+      if (parsed.snapshot && typeof parsed.snapshot === 'object') snapshot = parsed.snapshot;
+      if (!context) {
+        if (snapshot?.context && typeof snapshot.context === 'object') context = snapshot.context;
+        else if (parsed.context && typeof parsed.context === 'object') context = parsed.context;
+      }
+      if (Array.isArray(parsed.changes)) {
+        parsed.changes.forEach((entry) => {
+          if (!entry || typeof entry !== 'object') return;
+          const field = entry.field || entry.key || '';
+          const previous = entry.previous ?? entry.before ?? entry.old ?? null;
+          const next = entry.next ?? entry.after ?? entry.new ?? null;
+          if (!field && previous == null && next == null) return;
+          changes.push({ field, previous, next });
+        });
+      } else if (parsed.field) {
+        const field = parsed.field;
+        const previous = parsed.previous ?? parsed.before ?? parsed.old ?? null;
+        const next = parsed.next ?? parsed.after ?? parsed.new ?? null;
+        changes.push({ field, previous, next });
+      }
+      if (typeof parsed.source === 'string') source = parsed.source;
+      if (typeof parsed.comment_origin === 'string') commentOrigin = parsed.comment_origin;
+    }
+    if (!commentOrigin) {
+      if (source === 'ai') commentOrigin = 'ai';
+      else if (source === 'parent') commentOrigin = 'parent';
+    }
+    return {
+      raw: parsed,
+      summary,
+      snapshot,
+      context,
+      changes,
+      source,
+      commentOrigin,
+    };
+  }
+
+  function buildParentUpdatesListItem(row) {
+    if (!row) return '';
+    const parsed = parseParentUpdateRowContent(row);
+    const typeLabel = labelParentUpdateType(row?.update_type);
+    const created = row?.created_at ? new Date(row.created_at) : null;
+    const hasValidDate = created && !Number.isNaN(created.getTime());
+    const timeAttr = hasValidDate ? created.toISOString() : '';
+    const dateLabel = hasValidDate
+      ? created.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
+      : 'Date inconnue';
+    let summary = parsed.summary || '';
+    if (!summary && row?.update_type === PARENT_UPDATE_SNAPSHOT_TYPE) {
+      const snapshot = parsed.snapshot || (parsed.context ? { context: parsed.context } : null);
+      summary = buildParentSnapshotSummary(snapshot);
+    }
+    const detailStrings = parsed.changes.map((change) => formatParentUpdateDetail(change)).filter(Boolean);
+    if (!summary && detailStrings.length) summary = detailStrings[0];
+    if (!summary && typeof parsed.raw === 'string') summary = parsed.raw;
+    if (!summary) summary = 'Mise à jour enregistrée.';
+    let detailsHtml = '';
+    if (detailStrings.length) {
+      const detailsToRender = (!parsed.summary && summary === detailStrings[0])
+        ? detailStrings.slice(1)
+        : detailStrings;
+      if (detailsToRender.length) {
+        detailsHtml = `<ul class="parent-update-details">${detailsToRender.map((detail) => `<li>${escapeHtml(detail)}</li>`).join('')}</ul>`;
+      }
+    }
+    const commentText = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
+    let commentHtml = '';
+    if (commentText) {
+      const origin = parsed.commentOrigin === 'ai' ? 'Commentaire IA' : 'Commentaire parent';
+      commentHtml = `
+        <div class="timeline-parent-note">
+          <span class="timeline-parent-note__label">${escapeHtml(origin)}</span>
+          <div class="timeline-parent-note__text">${escapeHtml(commentText).replace(/\n/g, '<br>')}</div>
+        </div>
+      `;
+    }
+    return `
+      <li class="parent-update-item">
+        <div class="parent-update-meta">
+          <time datetime="${escapeHtml(timeAttr)}">${escapeHtml(dateLabel)}</time>
+          <span class="timeline-tag">${escapeHtml(typeLabel)}</span>
+        </div>
+        <div class="parent-update-summary">${escapeHtml(summary)}</div>
+        ${detailsHtml}
+        ${commentHtml}
+      </li>
+    `;
+  }
+
+  function buildParentUpdatesSectionHtml(updates = []) {
+    const list = Array.isArray(updates) ? updates.filter(Boolean) : [];
+    const header = `
+      <div class="card-header">
+        <h3>Mises à jour parentales</h3>
+        <p class="page-subtitle">Historique du contexte parental et des ressentis.</p>
+      </div>
+    `;
+    if (!list.length) {
+      return `
+        <div class="card stack parent-updates-card">
+          ${header}
+          <div class="empty-state muted">Aucune mise à jour parentale enregistrée pour l’instant.</div>
+        </div>
+      `;
+    }
+    const itemsHtml = list.map((row) => buildParentUpdatesListItem(row)).join('');
+    return `
+      <div class="card stack parent-updates-card">
+        ${header}
+        <ul class="parent-updates-list">${itemsHtml}</ul>
+      </div>
+    `;
+  }
+
   function buildFamilyDashboardHtml(data = {}) {
     const parentInfo = data.parentInfo || {};
     const parentContext = { ...DEFAULT_PARENT_CONTEXT, ...(data.parentContext || {}) };
@@ -5190,6 +5487,7 @@ const TIMELINE_MILESTONES = [
         generatedInfo = `<p class="muted">Dernière génération : ${escapeHtml(date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }))}</p>`;
       }
     }
+    const parentUpdatesSection = buildParentUpdatesSectionHtml(data.parentUpdates || []);
     return `
       <div class="grid-2">
         <div class="card stack">
@@ -5201,6 +5499,7 @@ const TIMELINE_MILESTONES = [
           ${childrenList}
         </div>
       </div>
+      ${parentUpdatesSection}
       <div class="card stack family-bilan-card">
         <div class="card-header family-bilan-header">
           <h3>Bilan familial IA</h3>
@@ -5271,6 +5570,7 @@ const TIMELINE_MILESTONES = [
         },
         children,
         familyContext: null,
+        parentUpdates: [],
       };
     }
     if (isAnonProfile()) {
@@ -5282,6 +5582,7 @@ const TIMELINE_MILESTONES = [
         },
         children: [],
         familyContext: null,
+        parentUpdates: [],
       };
     }
     const state = dashboardState.family;
@@ -5298,7 +5599,7 @@ const TIMELINE_MILESTONES = [
       state.loading = true;
       state.error = null;
       try {
-        const [profileRes, childrenRes, familyRes] = await Promise.all([
+        const [profileRes, childrenRes, familyRes, parentUpdatesRes] = await Promise.all([
           supabase
             .from('profiles')
             .select('full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental')
@@ -5315,10 +5616,17 @@ const TIMELINE_MILESTONES = [
             .eq('profile_id', uid)
             .order('last_generated_at', { ascending: false })
             .limit(1),
+          supabase
+            .from('parent_updates')
+            .select('id,update_type,update_content,ai_commentaire,created_at')
+            .eq('profile_id', uid)
+            .order('created_at', { ascending: false })
+            .limit(PARENT_UPDATES_LIMIT),
         ]);
         if (profileRes.error) throw profileRes.error;
         if (childrenRes.error) throw childrenRes.error;
         if (familyRes.error) throw familyRes.error;
+        if (parentUpdatesRes.error) throw parentUpdatesRes.error;
         const parentContext = normalizeParentContext(profileRes.data || {});
         const storedUser = (() => { try { return store.get(K.user) || {}; } catch { return {}; } })();
         const parentInfo = {
@@ -5335,11 +5643,13 @@ const TIMELINE_MILESTONES = [
             }))
           : [];
         const familyRow = Array.isArray(familyRes.data) ? (familyRes.data[0] || null) : (familyRes.data || null);
+        const parentUpdates = Array.isArray(parentUpdatesRes.data) ? parentUpdatesRes.data : [];
         return {
           parentContext,
           parentInfo,
           children,
           familyContext: familyRow,
+          parentUpdates,
         };
       } finally {
         state.loading = false;
