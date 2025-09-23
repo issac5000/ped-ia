@@ -4104,21 +4104,33 @@ const TIMELINE_MILESTONES = [
                   comment: parentComment,
                 });
                 if (snapshotResult?.row) {
-                  const { row: snapshotRow, sanitizedComment } = snapshotResult;
-                  if (sanitizedComment) {
+                  const { row: snapshotRow, sanitizedComment, updateContent } = snapshotResult;
+                  const hasParentNote = !!sanitizedComment;
+                  const hasStructuredChanges = Array.isArray(updateContent?.changes)
+                    ? updateContent.changes.length > 0
+                    : false;
+                  const shouldRequestAi = hasParentNote || hasStructuredChanges;
+                  let aiFeedback = '';
+                  if (shouldRequestAi) {
                     try {
-                      const aiFeedback = await generateParentUpdateAiComment({
+                      aiFeedback = await generateParentUpdateAiComment({
                         updateType: snapshotRow.update_type,
-                        updateContent: snapshotResult.updateContent,
-                        parentComment: sanitizedComment,
+                        updateContent,
+                        parentComment: sanitizedComment || '',
                       });
-                      if (aiFeedback) snapshotRow.ai_commentaire = aiFeedback;
                     } catch (aiErr) {
                       console.warn('generateParentUpdateAiComment failed', aiErr);
                     }
                   }
+                  if (aiFeedback) {
+                    snapshotRow.ai_commentaire = aiFeedback;
+                    if (!hasParentNote) {
+                      const updatedContent = { ...updateContent, comment_origin: 'ai' };
+                      snapshotRow.update_content = JSON.stringify(updatedContent);
+                    }
+                  }
                   await supabase.from('parent_updates').insert(snapshotRow);
-                  if (sanitizedComment) shouldResetComment = true;
+                  if (hasParentNote) shouldResetComment = true;
                   shouldRefreshFamily = true;
                 }
               } catch (logErr) {
