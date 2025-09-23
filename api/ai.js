@@ -346,20 +346,20 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             if (row?.id) {
               profileId = String(row.id).trim().slice(0, 128);
             } else {
-              return res.status(404).json({ error: 'Code invalide' });
+              return res.status(400).json({ error: 'Invalid code_unique' });
             }
           } catch (err) {
             const status = err instanceof HttpError && err.status ? err.status : 500;
             const details = err?.details || err?.message || '';
             if (status >= 500) {
-              return res.status(status).json({ error: 'Impossible de valider le code', details });
+              return res.status(status).json({ error: 'Impossible de valider le code_unique', details });
             }
-            return res.status(status).json({ error: 'Code invalide' });
+            return res.status(400).json({ error: 'Invalid code_unique' });
           }
         }
         if (!profileId) {
           if (codeUnique) {
-            return res.status(404).json({ error: 'Code invalide' });
+            return res.status(400).json({ error: 'Invalid code_unique' });
           }
           return res.status(400).json({ error: 'profileId or code_unique required' });
         }
