@@ -4114,10 +4114,18 @@ const TIMELINE_MILESTONES = [
                   }
                   if (aiFeedback) {
                     snapshotRow.ai_commentaire = aiFeedback;
-                    if (!hasParentNote) {
-                      const updatedContent = { ...updateContent, comment_origin: 'ai' };
-                      snapshotRow.update_content = JSON.stringify(updatedContent);
-                    }
+                    const baseContent = (updateContent && typeof updateContent === 'object')
+                      ? updateContent
+                      : (() => {
+                          try {
+                            return JSON.parse(snapshotRow.update_content || '{}');
+                          } catch {
+                            return {};
+                          }
+                        })();
+                    const updatedContent = { ...baseContent, ai_commentaire: aiFeedback };
+                    if (!hasParentNote) updatedContent.comment_origin = 'ai';
+                    snapshotRow.update_content = JSON.stringify(updatedContent);
                   }
                   await supabase.from('parent_updates').insert(snapshotRow);
                   if (hasParentNote) shouldResetComment = true;
@@ -5457,6 +5465,21 @@ const TIMELINE_MILESTONES = [
     }
     const storedParentComment = typeof row?.parent_comment === 'string' ? row.parent_comment.trim() : '';
     const storedAiComment = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
+    const parsedAiComment = (() => {
+      const raw = parsed?.raw;
+      if (!raw || typeof raw !== 'object') return '';
+      const candidates = [];
+      if (typeof raw.ai_commentaire === 'string') candidates.push(raw.ai_commentaire.trim());
+      if (typeof raw.aiCommentaire === 'string') candidates.push(raw.aiCommentaire.trim());
+      if (raw.snapshot && typeof raw.snapshot === 'object') {
+        const snapshotComment = raw.snapshot.ai_commentaire ?? raw.snapshot.aiCommentaire;
+        if (typeof snapshotComment === 'string') candidates.push(snapshotComment.trim());
+      }
+      return candidates.find((value) => value) || '';
+    })();
+    const aiComment = parsedAiComment && parsedAiComment.length > storedAiComment.length
+      ? parsedAiComment
+      : storedAiComment;
     const originKey = (parsed.commentOrigin || '').toLowerCase();
     const parentBlocks = [];
     const aiBlocks = [];
@@ -5464,18 +5487,18 @@ const TIMELINE_MILESTONES = [
     if (storedParentComment) {
       parentBlocks.push({ label: 'Commentaire parent', text: storedParentComment });
     }
-    if (storedAiComment) {
+    if (aiComment) {
       if (!storedParentComment && (!originKey || originKey === 'parent')) {
-        parentBlocks.push({ label: 'Commentaire parent', text: storedAiComment });
+        parentBlocks.push({ label: 'Commentaire parent', text: aiComment });
       } else if (originKey && originKey !== 'ai' && originKey !== 'parent') {
         const originLabel = originKey === 'coach'
           ? 'Commentaire coach'
           : originKey === 'pro'
             ? 'Commentaire professionnel'
             : `Commentaire ${originKey}`;
-        otherBlocks.push({ label: originLabel, text: storedAiComment });
+        otherBlocks.push({ label: originLabel, text: aiComment });
       } else {
-        aiBlocks.push({ label: 'Réponse de Ped’IA', text: storedAiComment });
+        aiBlocks.push({ label: 'Réponse de Ped’IA', text: aiComment });
       }
     }
     const renderNote = (label, text) => `
