@@ -1,5 +1,5 @@
-import { loadSupabaseEnv } from './supabase-env-loader.js';
 import { ensureReactGlobals } from './react-shim.js';
+import { getSupabaseClient } from './supabase-client.js';
 
 document.body.classList.remove('no-js');
 try {
@@ -22,7 +22,6 @@ const K = {
 };
 
 let supabase, session, user;
-let supabaseInitPromise = null;
 let myInitial = '';
 let parents = [];
 let lastMessages = new Map();
@@ -61,24 +60,13 @@ function updateHeaderAuth(){
 
 async function ensureSupabase(){
   if (supabase) return true;
-  if (!supabaseInitPromise) {
-    supabaseInitPromise = (async () => {
-      const env = await loadSupabaseEnv();
-      if (!env?.url || !env?.anonKey) throw new Error('Env manquante');
-      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
-      return createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true } });
-    })();
-  }
   try {
-    supabase = await supabaseInitPromise;
-    return true;
+    supabase = await getSupabaseClient();
+    return !!supabase;
   } catch (e) {
     console.error('ensureSupabase failed', e);
     supabase = null;
     return false;
-  } finally {
-    supabaseInitPromise = null;
   }
 }
 

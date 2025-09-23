@@ -1,5 +1,5 @@
-import { loadSupabaseEnv } from './supabase-env-loader.js';
 import { ensureReactGlobals } from './react-shim.js';
+import { getSupabaseClient } from './supabase-client.js';
 
 document.body.classList.remove('no-js');
 try {
@@ -68,12 +68,9 @@ updateHeaderAuth();
 async function signInGoogle(){
   try{
     if(!supabase){
-      const env = await loadSupabaseEnv();
-      if(!env?.url || !env?.anonKey) throw new Error('Env manquante');
-      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
-      supabase = createClient(env.url, env.anonKey, { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
+      supabase = await getSupabaseClient();
     }
+    if(!supabase) throw new Error('Supabase indisponible');
     await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin } });
   }catch(e){ alert('Connexion Google indisponible'); }
 }
@@ -140,16 +137,14 @@ function setupHeader(){
 
 async function initAuth(){
   try{
-    const env = await loadSupabaseEnv();
-    if(env?.url && env?.anonKey){
-      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-      if (typeof createClient !== 'function') throw new Error('Supabase SDK unavailable');
-      supabase = createClient(env.url, env.anonKey, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }});
-      const { data:{ session } } = await supabase.auth.getSession();
-      authSession = session;
-      updateHeaderAuth();
-      supabase.auth.onAuthStateChange((_e, sess)=>{ authSession=sess; updateHeaderAuth(); });
+    if(!supabase){
+      supabase = await getSupabaseClient();
     }
+    if(!supabase) return;
+    const { data:{ session } } = await supabase.auth.getSession();
+    authSession = session;
+    updateHeaderAuth();
+    supabase.auth.onAuthStateChange((_e, sess)=>{ authSession=sess; updateHeaderAuth(); });
   }catch(e){ console.warn('Auth init failed', e); }
 }
 
