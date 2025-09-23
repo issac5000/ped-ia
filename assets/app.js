@@ -1362,9 +1362,9 @@ const TIMELINE_MILESTONES = [
         primaryChildId: DEMO_CHILD_ID,
       });
     }
-  }
+    }
 
-  // Gestion du routage
+    // Gestion du routage
   function setActiveRoute(hash) {
     const requestedPath = normalizeRoutePath(hash);
     const path = routeSections.has(requestedPath) ? requestedPath : '/';
@@ -3805,7 +3805,7 @@ const TIMELINE_MILESTONES = [
         }
       });
     }
-  }
+    }
 
   // Dashboard
   async function renderSettings() {
@@ -5534,8 +5534,8 @@ const TIMELINE_MILESTONES = [
     };
   }
 
-  function buildParentUpdatesListItem(row) {
-    if (!row) return '';
+  function buildParentUpdatesListItem(row, extraClass = '') {
+    if (!row || typeof row !== 'object') return '';
     const parsed = parseParentUpdateRowContent(row);
     const typeLabel = labelParentUpdateType(row?.update_type);
     const created = row?.created_at ? new Date(row.created_at) : null;
@@ -5618,8 +5618,10 @@ const TIMELINE_MILESTONES = [
       ...otherBlocks.map((block) => renderNote(block.label, block.text)),
     ].filter(Boolean);
     const commentHtml = blocksHtml.join('');
+    const itemClasses = ['parent-update-item'];
+    if (extraClass) itemClasses.push(extraClass);
     return `
-      <li class="parent-update-item">
+      <li class="${itemClasses.join(' ')}">
         <div class="parent-update-meta">
           <time datetime="${escapeHtml(timeAttr)}">${escapeHtml(dateLabel)}</time>
           <span class="timeline-tag">${escapeHtml(typeLabel)}</span>
@@ -5647,11 +5649,23 @@ const TIMELINE_MILESTONES = [
         </div>
       `;
     }
-    const itemsHtml = list.map((row) => buildParentUpdatesListItem(row)).join('');
+    const shouldCollapse = list.length > 1;
+    const itemsHtml = list.map((row, index) => {
+      const extraClass = shouldCollapse && index > 0 ? 'hidden js-parent-update-hidden' : '';
+      return buildParentUpdatesListItem(row, extraClass);
+    }).join('');
+    const toggleHtml = shouldCollapse
+      ? `
+        <div class="parent-updates-actions">
+          <button type="button" class="btn btn-secondary parent-updates-toggle" data-state="collapsed" aria-expanded="false">Tout afficher</button>
+        </div>
+      `
+      : '';
     return `
-      <div class="card stack parent-updates-card">
+      <div class="card stack parent-updates-card"${shouldCollapse ? ' data-collapsible="1"' : ''}>
         ${header}
         <ul class="parent-updates-list">${itemsHtml}</ul>
+        ${toggleHtml}
       </div>
     `;
   }
@@ -5862,6 +5876,24 @@ const TIMELINE_MILESTONES = [
           }
         }
       });
+    }
+    const parentUpdatesCard = dom.querySelector('.parent-updates-card');
+    if (parentUpdatesCard) {
+      const toggleBtn = parentUpdatesCard.querySelector('.parent-updates-toggle');
+      if (toggleBtn && !toggleBtn.dataset.bound) {
+        toggleBtn.dataset.bound = '1';
+        toggleBtn.addEventListener('click', () => {
+          const isExpanded = toggleBtn.dataset.state === 'expanded';
+          const hiddenItems = parentUpdatesCard.querySelectorAll('.js-parent-update-hidden');
+          hiddenItems.forEach((item) => {
+            if (isExpanded) item.classList.add('hidden');
+            else item.classList.remove('hidden');
+          });
+          toggleBtn.dataset.state = isExpanded ? 'collapsed' : 'expanded';
+          toggleBtn.setAttribute('aria-expanded', isExpanded ? 'false' : 'true');
+          toggleBtn.textContent = isExpanded ? 'Tout afficher' : 'Réduire';
+        });
+      }
     }
   }
 
