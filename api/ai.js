@@ -338,6 +338,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           typeof req?.query?.profile_id === 'string' ? req.query.profile_id.trim() : '',
         ];
         let profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        const receivedId = profileId;
         const codeCandidates = [
           typeof body.code_unique === 'string' ? body.code_unique : '',
           typeof body.code === 'string' ? body.code : '',
@@ -346,29 +347,35 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         ];
         const rawCode = codeCandidates.find(Boolean) || '';
         const codeUnique = rawCode ? String(rawCode).trim().toUpperCase().slice(0, 64) : '';
+        console.log('[family-bilan] incoming identifiers', {
+          profileIdFromBody: body?.profileId ?? body?.profile_id ?? null,
+          profileIdFromQuery: req?.query?.profileId ?? req?.query?.profile_id ?? null,
+          resolvedProfileId: profileId || null,
+          codeUnique: codeUnique || null,
+        });
         const { supaUrl, serviceKey } = getServiceConfig();
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
         if (!profileId && codeUnique) {
           try {
             const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers });
             if (!resolvedId) {
-              return res.status(400).json({ error: 'Invalid code_unique' });
+              console.warn('[family-bilan] code_unique resolved to no profile', { codeUnique });
+              return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique } });
             }
             profileId = resolvedId;
           } catch (err) {
             const status = err instanceof HttpError && err.status ? err.status : 500;
             const details = err?.details || err?.message || '';
+            console.error('[family-bilan] code_unique resolution error', { codeUnique, status, details });
             if (status >= 500) {
               return res.status(status).json({ error: 'Impossible de valider le code_unique', details });
             }
-            return res.status(400).json({ error: 'Invalid code_unique' });
+            return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique } });
           }
         }
         if (!profileId) {
-          if (codeUnique) {
-            return res.status(400).json({ error: 'Invalid code_unique' });
-          }
-          return res.status(400).json({ error: 'profileId or code_unique required' });
+          console.warn('[family-bilan] missing profile identifier after resolution', { receivedId: receivedId || null, codeUnique: codeUnique || null });
+          return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique: codeUnique || null } });
         }
         let profileRow = null;
         let childrenRows = [];
@@ -391,8 +398,11 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           const status = err instanceof HttpError ? err.status : 500;
           return res.status(status).json({ error: 'Unable to fetch family data', details: err?.details || err?.message || '' });
         }
-        if (!profileRow) {
-          return res.status(404).json({ error: 'Profil introuvable' });
+        if (profileRow) {
+          console.log('[family-bilan] profile resolved', { profileId, childrenCount: childrenRows.length });
+        } else {
+          console.warn('[family-bilan] profile not found in Supabase', { profileId });
+          return res.status(404).json({ error: 'No profile data', profileId });
         }
         const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
         if (childIds.length) {
@@ -421,6 +431,12 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const childContextText = formatChildrenForPrompt(childrenRows);
         const childUpdatesText = formatChildUpdatesForFamilyPrompt(childUpdates, childrenRows);
         const parentUpdatesText = formatParentUpdatesForPrompt(parentUpdates);
+        console.log('[family-bilan] preparing OpenAI payload', {
+          profileId,
+          childrenCount: childrenRows.length,
+          childUpdatesCount: childUpdates.length,
+          parentUpdatesCount: parentUpdates.length,
+        });
         const userPromptSections = [
           `Enfants suivis:\n${childContextText}`,
           parentContextLines.length
@@ -440,22 +456,28 @@ Structure attendue :
 3. Contexte parental (stress, fatigue, émotions)
 4. Recommandations pratiques (3 actions concrètes adaptées)
 Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés parentales et les observations enfants, et propose des pistes concrètes.`;
-        const openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            temperature: 0.35,
-            max_tokens: 900,
-            messages: [
-              { role: 'system', content: system },
-              { role: 'user', content: userPromptSections.join('\n\n') }
-            ]
-          })
-        });
+        let openAiResponse;
+        try {
+          openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              temperature: 0.35,
+              max_tokens: 700,
+              messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: userPromptSections.join('\n\n') }
+              ]
+            })
+          });
+        } catch (err) {
+          console.error('[family-bilan] OpenAI request failed', err);
+          return res.status(502).json({ error: 'OpenAI timeout', details: err?.message || 'Unknown error' });
+        }
         if (!openAiResponse.ok) {
           const errText = await openAiResponse.text();
           return res.status(502).json({ error: 'OpenAI error', details: errText });
