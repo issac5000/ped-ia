@@ -5325,10 +5325,6 @@ const TIMELINE_MILESTONES = [
       setDashboardHtml('<div class="card stack"><p>Connectez-vous pour accéder à la vue famille.</p></div>');
       return;
     }
-    if (isAnonProfile()) {
-      setDashboardHtml('<div class="card stack"><p>La vue famille est disponible pour les comptes connectés.</p></div>');
-      return;
-    }
     try {
       setDashboardHtml('<div class="card stack"><p>Chargement du contexte familial…</p></div>');
       const data = await fetchFamilyOverview();
@@ -5795,13 +5791,53 @@ const TIMELINE_MILESTONES = [
       };
     }
     if (isAnonProfile()) {
+      const parentContext = getEffectiveParentContext();
+      const parentInfo = {
+        pseudo: activeProfile?.full_name || '',
+        role: activeProfile?.parent_role || 'parent',
+      };
+      const normalizeChild = (child) => {
+        if (!child) return null;
+        const id = child.id != null ? child.id : child.childId;
+        if (id == null) return null;
+        const dob = child.dob || child.birthdate || null;
+        const firstName = child.firstName || child.first_name || '';
+        const sex = child.sex || child.gender || '';
+        const ageText = typeof child.ageText === 'string' && child.ageText
+          ? child.ageText
+          : (dob ? formatAge(dob) : '');
+        return {
+          id,
+          firstName,
+          sex,
+          dob,
+          ageText,
+        };
+      };
+      let children = [];
+      try {
+        const res = await anonChildRequest('list', {});
+        const rows = Array.isArray(res.children) ? res.children : [];
+        children = rows.map((row) => normalizeChild(row)).filter(Boolean);
+      } catch (err) {
+        console.warn('fetchFamilyOverview anon child list failed', err);
+      }
+      if (!children.length) {
+        const fallbackSources = [
+          Array.isArray(settingsState.children) ? settingsState.children : [],
+          (() => { try { return store.get(K.children) || []; } catch { return []; } })(),
+        ];
+        for (const source of fallbackSources) {
+          if (Array.isArray(source) && source.length) {
+            children = source.map((child) => normalizeChild(child)).filter(Boolean);
+            if (children.length) break;
+          }
+        }
+      }
       return {
-        parentContext: getEffectiveParentContext(),
-        parentInfo: {
-          pseudo: activeProfile?.full_name || '',
-          role: activeProfile?.parent_role || 'parent',
-        },
-        children: [],
+        parentContext,
+        parentInfo,
+        children,
         familyContext: null,
         parentUpdates: [],
       };
