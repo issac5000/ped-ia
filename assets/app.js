@@ -6113,15 +6113,22 @@ const TIMELINE_MILESTONES = [
   }
 
   async function regenerateFamilyContext(profileId, codeOverride = '') {
-    const uid = profileId || dashboardState.profileId || getActiveProfileId();
-    const code = codeOverride || (isAnonProfile()
-      ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
-      : '');
-    if (!uid && !code) throw new Error('Profil introuvable');
+    const candidateProfileId = profileId || dashboardState.profileId || getActiveProfileId();
+    const normalizedProfileId = candidateProfileId ? String(candidateProfileId).trim() : '';
+    let normalizedCode = '';
+    if (!normalizedProfileId) {
+      const overrideCode = codeOverride ? String(codeOverride).trim() : '';
+      if (overrideCode) {
+        normalizedCode = overrideCode.toUpperCase();
+      } else if (isAnonProfile() && activeProfile?.code_unique) {
+        normalizedCode = String(activeProfile.code_unique).trim().toUpperCase();
+      }
+    }
+    if (!normalizedProfileId && !normalizedCode) throw new Error('Profil introuvable');
     const payload = {
       type: 'family-bilan',
-      profileId: uid ? String(uid).trim() : null,
-      code_unique: code ? String(code).trim() : null,
+      profileId: normalizedProfileId || null,
+      code_unique: normalizedProfileId ? null : (normalizedCode || null),
     };
     const res = await fetch('/api/ai', {
       method: 'POST',
@@ -6164,7 +6171,7 @@ const TIMELINE_MILESTONES = [
     state.error = null;
     const promise = (async () => {
       try {
-        const result = await regenerateFamilyContext(targetProfileId || null, anonCode);
+        const result = await regenerateFamilyContext(targetProfileId || null, targetProfileId ? '' : anonCode);
         const bilan = typeof result?.bilan === 'string' ? result.bilan : '';
         const generatedAt = result?.lastGeneratedAt || new Date().toISOString();
         const previousData = state.data && typeof state.data === 'object' ? state.data : {};
