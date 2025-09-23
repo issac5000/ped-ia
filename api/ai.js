@@ -1,5 +1,17 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
 
+async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
+  if (!codeUnique) return null;
+  const lookup = await supabaseRequest(
+    `${supaUrl}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
+    { headers }
+  );
+  const row = Array.isArray(lookup) ? lookup[0] : lookup;
+  if (!row || row.id == null) return null;
+  const resolved = String(row.id).trim().slice(0, 128);
+  return resolved || null;
+}
+
 const PARENT_CONTEXT_FIELD_LABELS = {
   full_name: 'Pseudo',
   parent_role: 'Rôle affiché',
@@ -338,16 +350,11 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
         if (!profileId && codeUnique) {
           try {
-            const lookup = await supabaseRequest(
-              `${supaUrl}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
-              { headers }
-            );
-            const row = Array.isArray(lookup) ? lookup[0] : lookup;
-            if (row?.id) {
-              profileId = String(row.id).trim().slice(0, 128);
-            } else {
+            const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers });
+            if (!resolvedId) {
               return res.status(400).json({ error: 'Invalid code_unique' });
             }
+            profileId = resolvedId;
           } catch (err) {
             const status = err instanceof HttpError && err.status ? err.status : 500;
             const details = err?.details || err?.message || '';
