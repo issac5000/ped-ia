@@ -1090,6 +1090,14 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   display:grid;
   gap:16px;
 }
+.parent-updates-actions{
+  display:flex;
+  justify-content:center;
+  margin-top:4px;
+}
+.parent-updates-actions .btn{
+  min-width:190px;
+}
 .parent-update-item{
   display:grid;
   gap:8px;
