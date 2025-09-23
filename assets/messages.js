@@ -70,6 +70,31 @@ async function ensureSupabase(){
   }
 }
 
+async function fetchAnonProfileByCode(rawCode) {
+  const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+  if (!code) throw new Error('Code unique manquant.');
+  const response = await fetch('/api/anon/parent-updates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'profile', code })
+  });
+  const text = await response.text().catch(() => '');
+  let payload = null;
+  if (text) {
+    try { payload = JSON.parse(text); } catch { payload = null; }
+  }
+  if (!response.ok) {
+    const err = new Error(payload?.error || 'Connexion impossible pour le moment.');
+    if (payload?.details) err.details = payload.details;
+    throw err;
+  }
+  const profile = payload?.profile || null;
+  if (!profile || !profile.id) {
+    throw new Error('Code introuvable.');
+  }
+  return profile;
+}
+
 function presentLoginGate(){
   const shell = $('#messages-shell');
   if (shell) shell.hidden = true;
@@ -162,39 +187,12 @@ async function loginWithCode(){
     return;
   }
   if (status) status.textContent = '';
-  const ok = await ensureSupabase();
-  if (!ok) {
-    if (status) {
-      status.classList.add('error');
-      status.textContent = 'Service indisponible pour le moment.';
-    }
-    return;
-  }
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, code_unique, full_name, user_id')
-      .eq('code_unique', code)
-      .single();
-    if (error) {
-      if (status && (error.code === 'PGRST116' || (error.message || '').includes('Row not found'))) {
-        status.classList.add('error');
-        status.textContent = 'Code invalide.';
-        return;
-      }
-      throw error;
-    }
-    if (!data) {
-      if (status) {
-        status.classList.add('error');
-        status.textContent = 'Code invalide.';
-      }
-      return;
-    }
-    const fullName = data.full_name || '';
-    const normalizedCode = String(data.code_unique || code).trim().toUpperCase();
-    const profileId = idStr(data.id);
+    const profile = await fetchAnonProfileByCode(code);
+    const fullName = profile.full_name || '';
+    const normalizedCode = String(profile.code_unique || code).trim().toUpperCase();
+    const profileId = idStr(profile.id);
     store.set(K.session, {
       type: 'anon',
       code: normalizedCode,
@@ -218,7 +216,12 @@ async function loginWithCode(){
     console.error('loginWithCode failed', e);
     if (status) {
       status.classList.add('error');
-      status.textContent = 'Connexion impossible pour le moment.';
+      const msg = e instanceof Error && e.message ? e.message : 'Connexion impossible pour le moment.';
+      if (/introuvable|invalide/i.test(msg)) {
+        status.textContent = 'Code invalide.';
+      } else {
+        status.textContent = msg;
+      }
     }
   } finally {
     if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
@@ -442,25 +445,31 @@ function unseen(){ return loadNotifs().filter(x=>!x.seen); }
 function updateBadgeFromStore(){ updateBadges(); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
-async function anonMessagesRequest(code_unique) {
-  const ok = await ensureSupabase();
-  if (!ok || !supabase) return [];
-  if (code_unique == null || code_unique === '') return [];
+async function anonMessagesRequest(code_unique, { since = null } = {}) {
+  if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
+  const code = typeof code_unique === 'string' ? code_unique.trim().toUpperCase() : '';
+  if (!code) return { messages: [], senders: {} };
   try {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('receiver_code', code_unique)
-      .eq('is_read', false)
-      .order('created_at', { ascending: false });
-    if (error) {
-      console.error('Erreur lors de la récupération des messages anonymes:', error);
-      return [];
+    const body = { action: 'recent-activity', code };
+    if (since) body.since = since;
+    const response = await fetch('/api/anon/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text().catch(() => '');
+    const payload = text ? JSON.parse(text) : {};
+    if (!response.ok) {
+      const err = new Error(payload?.error || 'Service indisponible');
+      if (payload?.details) err.details = payload.details;
+      throw err;
     }
-    return data || [];
+    const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+    const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
+    return { messages, senders };
   } catch (err) {
-    console.error('Erreur lors de la récupération des messages anonymes:', err);
-    return [];
+    console.error('anonMessagesRequest failed', err);
+    return { messages: [], senders: {} };
   }
 }
 
@@ -473,14 +482,15 @@ async function fetchAnonMissedNotifications(){
   const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
   const sinceRep = getNotifLastSince('reply') || sinceDefault;
   try {
-    const messages = await anonMessagesRequest(code);
+    const sinceMsg = getNotifLastSince('msg') || sinceDefault;
+    const { messages, senders } = await anonMessagesRequest(code, { since: sinceMsg });
     const list = Array.isArray(messages) ? messages : [];
     for (const m of list) {
       if (!m || m.id == null) continue;
       const senderRaw = m.sender_id ?? m.senderId ?? m.sender_code ?? m.senderCode;
       if (senderRaw == null) continue;
       const fromId = idStr(senderRaw);
-      const fromName = m.sender_name ?? m.senderName ?? m.sender_full_name ?? m.senderFullName ?? 'Un parent';
+      const fromName = senders?.[fromId] || m.sender_name || m.senderName || m.sender_full_name || m.senderFullName || 'Un parent';
       const notifId = `msg:${m.id}`;
       const wasNew = addNotif({ id:notifId, kind:'msg', fromId, fromName, createdAt:m.created_at });
       if (wasNew) {

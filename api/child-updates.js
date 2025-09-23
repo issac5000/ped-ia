@@ -132,6 +132,7 @@ export default async function handler(req, res) {
     } else if (err?.message) {
       details = err.message;
     }
+    console.error('[api/child-updates] handler error', { status, details, error: err });
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(status).json({ error: 'Unable to log child update', details: details || 'Unexpected error' });
   }

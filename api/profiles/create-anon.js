@@ -116,6 +116,7 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(lastError?.status || 500).json({ error: 'Create failed', details: lastError?.details });
   } catch (e) {
+    console.error('[api/profiles/create-anon] handler error', e);
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: 'Server error', details: String(e.message || e) });
   }
