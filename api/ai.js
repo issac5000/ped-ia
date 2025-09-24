@@ -315,18 +315,93 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const growthSummaryFromBody = sanitizeGrowthSummary(
           body.growthStatusSummary ?? body.growth_status_summary ?? ''
         );
-        const growthSummary = sanitizeGrowthSummary(growthSummaryFromEntry || growthSummaryFromBody || '');
-        const includeGrowth = Boolean(growthSummary);
-        const filteredContextParts = includeGrowth
+        const rawGrowthSummary = sanitizeGrowthSummary(growthSummaryFromEntry || growthSummaryFromBody || '');
+        const statusTokens = new Set();
+        const recordStatusesFromEntry = (entry) => {
+          if (!entry || typeof entry !== 'object') return;
+          const statusValues = [
+            entry.status_global ?? entry.statusGlobal,
+            entry.status_height ?? entry.statusHeight,
+            entry.status_weight ?? entry.statusWeight,
+          ];
+          statusValues.forEach((value) => {
+            const text = sanitizeGrowthSummary(value);
+            if (text) statusTokens.add(text);
+          });
+        };
+        recordStatusesFromEntry(latestGrowthData);
+        growthStatusEntries.slice(1, 5).forEach(recordStatusesFromEntry);
+        if (Array.isArray(growthData?.measurements)) {
+          growthData.measurements.slice(0, 5).forEach(recordStatusesFromEntry);
+        }
+        const isStatusNormal = (status) => {
+          if (!status) return false;
+          const normalized = String(status)
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z]/g, '');
+          return normalized === 'normal' || normalized === 'normale';
+        };
+        const hasGrowthAnomalyFromStatus = Array.from(statusTokens).some(
+          (status) => status && !isStatusNormal(status)
+        );
+        const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(rawGrowthSummary);
+        const growthSummary = hasGrowthAnomaly ? rawGrowthSummary : '';
+        const growthTermPatterns = [
+          /(^|[^a-z0-9])croissance([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])growth([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])taille([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])height([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])poids([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])weight([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])dentition([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])dents([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])dent([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])teeth([^a-z0-9]|$)/i,
+          /(^|[^a-z0-9])tooth([^a-z0-9]|$)/i,
+        ];
+        const containsGrowthTerm = (value) => {
+          if (!value) return false;
+          const text = typeof value === 'string' ? value : String(value);
+          return growthTermPatterns.some((pattern) => pattern.test(text));
+        };
+        const hasGrowthTermInData = (value, depth = 0) => {
+          if (depth > 3 || value == null) return false;
+          if (typeof value === 'string' || typeof value === 'number') {
+            return containsGrowthTerm(value);
+          }
+          if (Array.isArray(value)) {
+            return value.some((entry) => hasGrowthTermInData(entry, depth + 1));
+          }
+          if (typeof value === 'object') {
+            return Object.entries(value).some(([key, val]) => {
+              if (containsGrowthTerm(key)) return true;
+              return hasGrowthTermInData(val, depth + 1);
+            });
+          }
+          return false;
+        };
+        const isGrowthRelatedUpdate =
+          growthStatusEntries.length > 0 ||
+          containsGrowthTerm(updateType) ||
+          containsGrowthTerm(parentComment) ||
+          containsGrowthTerm(updateText) ||
+          hasGrowthTermInData(updateForPrompt);
+        const includeGrowth = hasGrowthAnomaly || isGrowthRelatedUpdate;
+        const filteredContextParts = hasGrowthAnomaly && growthSummary
           ? contextParts.filter((entry) => !isSameGrowthSummary(entry, growthSummary))
           : contextParts;
-        const growthPromptLines = buildGrowthPromptLines({ parentComment, latestGrowthData })
-          .filter((line) => !/^\s*Analyse\s+OMS/i.test(line || ''));
+        const growthPromptLines = includeGrowth
+          ? buildGrowthPromptLines({ parentComment, latestGrowthData }).filter(
+              (line) => !/^\s*Analyse\s+OMS/i.test(line || '')
+            )
+          : [];
         const growthSection = includeGrowth ? formatGrowthSectionForPrompt(growthData) : '';
         const summarySections = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Mise à jour (JSON): ${updateText || 'Aucune'}`,
-          includeGrowth ? `Synthèse croissance (OMS): ${growthSummary}` : '',
+          hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
           ...growthPromptLines,
           ...filteredContextParts,
           includeGrowth && growthSection ? `Section Croissance:\n${growthSection}` : ''
@@ -364,7 +439,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
           `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
-          includeGrowth ? `Synthèse croissance (OMS): ${growthSummary}` : '',
+          hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
           ...growthPromptLines,
           ...filteredContextParts,
           includeGrowth && growthSection ? `Croissance récente:\n${growthSection}` : '',
@@ -1065,6 +1140,12 @@ function formatGrowthMeasurementEntry(entry) {
     parts.push(weightLabel);
   }
   if (!parts.length) return '';
+  const uniqueParts = [];
+  for (const part of parts) {
+    if (!uniqueParts.includes(part)) {
+      uniqueParts.push(part);
+    }
+  }
   let period = '';
   if (entry.agemos !== undefined && entry.agemos !== null && entry.agemos !== '') {
     const ageNumber = Number(entry.agemos);
@@ -1082,7 +1163,7 @@ function formatGrowthMeasurementEntry(entry) {
     const createdAt = typeof entry.created_at === 'string' ? entry.created_at : '';
     period = createdAt ? formatDateForPrompt(createdAt) : '';
   }
-  return period ? `${period}: ${parts.join(' ; ')}` : parts.join(' ; ');
+  return period ? `${period}: ${uniqueParts.join(' ; ')}` : uniqueParts.join(' ; ');
 }
 
 function formatGrowthTeethForPrompt(teethEntries = []) {
