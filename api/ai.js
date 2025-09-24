@@ -1,5 +1,4 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
-import { buildGrowthPromptLines, summarizeGrowthStatus } from '../assets/ia.js';
 
 async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
   if (!codeUnique) return null;
@@ -261,8 +260,11 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
       case 'child-update': {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) return respondAiUnavailable(res);
-        const updateType = String(body.updateType || '').slice(0, 64);
-        const updateForPrompt = sanitizeUpdatePayload(body.update);
+        const updateType = String(body.updateType ?? body.update_type ?? '').slice(0, 64);
+        const rawUpdatePayload =
+          body.update ?? body.update_content ?? body.updateContent ?? {};
+        const parsedUpdateContent = parseUpdateContentForPrompt(rawUpdatePayload);
+        const updateForPrompt = sanitizeUpdatePayload(parsedUpdateContent);
         const parentComment = typeof body.parentComment === 'string' ? body.parentComment.trim().slice(0, 600) : '';
         const historySummaries = Array.isArray(body.historySummaries)
           ? body.historySummaries
@@ -286,22 +288,34 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         ];
         const rawCode = codeCandidates.find(Boolean) || '';
         const codeUnique = rawCode ? String(rawCode).trim().toUpperCase().slice(0, 64) : '';
-        const growthData = await fetchGrowthDataForPrompt({
-          childId,
-          profileId,
-          codeUnique,
-          measurementLimit: 3,
-          teethLimit: 3,
-        });
+        let growthData;
+        try {
+          growthData = await fetchGrowthDataForPrompt({
+            childId,
+            profileId,
+            codeUnique,
+            measurementLimit: 3,
+            teethLimit: 3,
+          });
+        } catch (err) {
+          console.error('[ai/child-update] Growth fetch error', { childId, err });
+          growthData = null;
+        }
+        const hasMeasurements = Array.isArray(growthData?.measurements) && growthData.measurements.length > 0;
+        const hasTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
+        let growthSectionBlock = '';
+        if (hasMeasurements || hasTeeth) {
+          const formattedGrowth = formatGrowthSectionForPrompt(growthData);
+          growthSectionBlock = truncateForPrompt(formattedGrowth, 400);
+        } else {
+          console.error('[ai/child-update] No growth data found for child_id:', childId);
+          growthSectionBlock = 'Pas de mesure de croissance enregistrée pour cet enfant.';
+        }
         const parentContext = sanitizeParentContextInput(body.parentContext);
         const parentContextLines = parentContextToPromptLines(parentContext);
         const parentContextBlock = parentContextLines.length
           ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
           : 'Contexte parental actuel: non précisé.';
-        const updateText = JSON.stringify({ type: updateType || 'update', data: updateForPrompt }).slice(0, 4000);
-        const growthStatusEntries = Array.isArray(body.growthStatus)
-          ? body.growthStatus.filter((entry) => entry && typeof entry === 'object')
-          : [];
         const rawContextParts = Array.isArray(body.contextParts)
           ? body.contextParts.map((entry) => {
               if (entry == null) return '';
@@ -310,102 +324,31 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             })
           : [];
         const contextParts = rawContextParts.filter(Boolean).slice(0, 10);
-        const latestGrowthData = growthStatusEntries[0] || null;
-        const growthSummaryFromEntry = summarizeGrowthStatus(latestGrowthData);
-        const growthSummaryFromBody = sanitizeGrowthSummary(
-          body.growthStatusSummary ?? body.growth_status_summary ?? ''
+        const formattedUpdateDetails = truncateForPrompt(
+          formatUpdateDataForPrompt(parsedUpdateContent) ||
+            (() => {
+              try {
+                return JSON.stringify(updateForPrompt);
+              } catch {
+                return '';
+              }
+            })(),
+          400
         );
-        const rawGrowthSummary = sanitizeGrowthSummary(growthSummaryFromEntry || growthSummaryFromBody || '');
-        const statusTokens = new Set();
-        const recordStatusesFromEntry = (entry) => {
-          if (!entry || typeof entry !== 'object') return;
-          const statusValues = [
-            entry.status_global ?? entry.statusGlobal,
-            entry.status_height ?? entry.statusHeight,
-            entry.status_weight ?? entry.statusWeight,
-          ];
-          statusValues.forEach((value) => {
-            const text = sanitizeGrowthSummary(value);
-            if (text) statusTokens.add(text);
-          });
-        };
-        recordStatusesFromEntry(latestGrowthData);
-        growthStatusEntries.slice(1, 5).forEach(recordStatusesFromEntry);
-        if (Array.isArray(growthData?.measurements)) {
-          growthData.measurements.slice(0, 5).forEach(recordStatusesFromEntry);
-        }
-        const isStatusNormal = (status) => {
-          if (!status) return false;
-          const normalized = String(status)
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-z]/g, '');
-          return normalized === 'normal' || normalized === 'normale';
-        };
-        const hasGrowthAnomalyFromStatus = Array.from(statusTokens).some(
-          (status) => status && !isStatusNormal(status)
-        );
-        const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(rawGrowthSummary);
-        const growthSummary = hasGrowthAnomaly ? rawGrowthSummary : '';
-        const growthTermPatterns = [
-          /(^|[^a-z0-9])croissance([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])growth([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])taille([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])height([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])poids([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])weight([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])dentition([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])dents([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])dent([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])teeth([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])tooth([^a-z0-9]|$)/i,
-        ];
-        const containsGrowthTerm = (value) => {
-          if (!value) return false;
-          const text = typeof value === 'string' ? value : String(value);
-          return growthTermPatterns.some((pattern) => pattern.test(text));
-        };
-        const hasGrowthTermInData = (value, depth = 0) => {
-          if (depth > 3 || value == null) return false;
-          if (typeof value === 'string' || typeof value === 'number') {
-            return containsGrowthTerm(value);
-          }
-          if (Array.isArray(value)) {
-            return value.some((entry) => hasGrowthTermInData(entry, depth + 1));
-          }
-          if (typeof value === 'object') {
-            return Object.entries(value).some(([key, val]) => {
-              if (containsGrowthTerm(key)) return true;
-              return hasGrowthTermInData(val, depth + 1);
-            });
-          }
-          return false;
-        };
-        const isGrowthRelatedUpdate =
-          growthStatusEntries.length > 0 ||
-          containsGrowthTerm(updateType) ||
-          containsGrowthTerm(parentComment) ||
-          containsGrowthTerm(updateText) ||
-          hasGrowthTermInData(updateForPrompt);
-        const includeGrowth = hasGrowthAnomaly || isGrowthRelatedUpdate;
-        const filteredContextParts = hasGrowthAnomaly && growthSummary
-          ? contextParts.filter((entry) => !isSameGrowthSummary(entry, growthSummary))
-          : contextParts;
-        const growthPromptLines = includeGrowth
-          ? buildGrowthPromptLines({ parentComment, latestGrowthData }).filter(
-              (line) => !/^\s*Analyse\s+OMS/i.test(line || '')
-            )
-          : [];
-        const growthSection = includeGrowth ? formatGrowthSectionForPrompt(growthData) : '';
-        const summarySections = [
+        const updateSummaryParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
-          `Mise à jour (JSON): ${updateText || 'Aucune'}`,
-          hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
-          ...growthPromptLines,
-          ...filteredContextParts,
-          includeGrowth && growthSection ? `Section Croissance:\n${growthSection}` : ''
+          formattedUpdateDetails ? `Détails: ${formattedUpdateDetails}` : '',
+          parentComment ? `Commentaire parent: ${truncateForPrompt(parentComment, 200)}` : '',
         ].filter(Boolean);
+        const updateSummaryBlock = updateSummaryParts.length
+          ? truncateForPrompt(updateSummaryParts.join(' | '), 400)
+          : 'Aucune donnée de mise à jour fournie.';
+        const promptBaseSections = [updateSummaryBlock];
+        if (growthSectionBlock) {
+          promptBaseSections.push(growthSectionBlock);
+        }
+        const promptBase = promptBaseSections.join('\n---\n');
+        const summarySections = [promptBase];
         const summaryMessages = [
           { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent + données de croissance)." },
           { role: 'user', content: summarySections.join('\n\n') }
@@ -434,15 +377,22 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const historyText = historySummaries.length
           ? historySummaries.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')
           : 'Aucun historique disponible';
+        const updateJsonText = (() => {
+          try {
+            return truncateForPrompt(JSON.stringify({ type: updateType || 'update', data: updateForPrompt }), 400);
+          } catch {
+            return '';
+          }
+        })();
+        const additionalContextParts = contextParts.length
+          ? `Contexte additionnel:\n${contextParts.map((entry) => `- ${entry}`).join('\n')}`
+          : '';
         const commentSections = [
-          updateType ? `Type de mise à jour: ${updateType}` : '',
+          promptBase,
           `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
-          `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
-          hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
-          ...growthPromptLines,
-          ...filteredContextParts,
-          includeGrowth && growthSection ? `Croissance récente:\n${growthSection}` : '',
+          updateJsonText ? `Nouvelle mise à jour détaillée (JSON): ${updateJsonText}` : '',
+          additionalContextParts,
           parentContextBlock
         ].filter(Boolean);
         const commentMessages = [
