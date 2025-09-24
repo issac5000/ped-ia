@@ -6828,6 +6828,63 @@ const TIMELINE_MILESTONES = [
         const label = `Parent de ${count} ${suffix}`;
         return `<span class="author-meta">${escapeHtml(label)}</span>`;
       };
+      const isAiAuthor = (name) => {
+        if (!name) return false;
+        const raw = String(name);
+        const base = typeof raw.normalize === 'function' ? raw.normalize('NFKD') : raw;
+        const normalized = base
+          .toLowerCase()
+          .replace(/[\u2010-\u2015]/g, '-')
+          .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035`´']/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+        return normalized.includes("ped'ia")
+          || normalized.includes('ped ia')
+          || normalized.includes('ped-ia');
+      };
+      const renderThreadEntry = ({
+        authorName,
+        authorMetaHtml,
+        initials,
+        timeLabel,
+        timeIso,
+        contentHtml,
+        messageBtn,
+        label,
+        isAi,
+      }) => {
+        const noteClass = isAi ? 'timeline-ai-note' : 'timeline-parent-note';
+        const labelClass = isAi ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
+        const textClass = isAi ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
+        const safeInitials = escapeHtml(initials || '✦');
+        const safeAuthor = escapeHtml(authorName || 'Anonyme');
+        const safeLabel = escapeHtml(label || (isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`));
+        const timeHtml = timeLabel
+          ? `<time datetime="${escapeHtml(timeIso || '')}">${escapeHtml(timeLabel)}</time>`
+          : '';
+        const actionsHtml = messageBtn
+          ? `<div class="topic-entry__actions">${messageBtn}</div>`
+          : '';
+        return `
+          <article class="topic-entry${isAi ? ' topic-entry--ai' : ''}">
+            <div class="topic-entry__head">
+              <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
+              <div class="topic-entry__meta">
+                <div class="topic-entry__author">
+                  <span class="topic-entry__author-name">${safeAuthor}</span>
+                  ${authorMetaHtml || ''}
+                </div>
+                ${timeHtml}
+              </div>
+              ${actionsHtml}
+            </div>
+            <div class="${noteClass}">
+              <span class="${labelClass}">${safeLabel}</span>
+              <div class="${textClass}">${contentHtml}</div>
+            </div>
+          </article>
+        `;
+      };
       topics.slice().forEach(t => {
         let title = t.title || '';
         let cat = 'Divers';
@@ -6862,6 +6919,18 @@ const TIMELINE_MILESTONES = [
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
         const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
+        const topicIsAi = isAiAuthor(displayAuthor);
+        const topicEntryHtml = renderThreadEntry({
+          authorName: displayAuthor,
+          authorMetaHtml: topicAuthorMetaHtml,
+          initials,
+          timeLabel: createdLabel,
+          timeIso: createdIso,
+          contentHtml: normalizeContent(t.content),
+          messageBtn: '',
+          label: topicIsAi ? 'Message de Ped’IA' : 'Publication initiale',
+          isAi: topicIsAi,
+        });
         const repliesHtml = rs.map(r=>{
           const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
           const normalizedReply = normalizeAuthorMeta(replyMeta);
@@ -6871,31 +6940,32 @@ const TIMELINE_MILESTONES = [
             || 'Anonyme';
           const replyAuthor = formatAuthorName(rawReplyAuthor);
           const replyAuthorMetaHtml = renderAuthorMetaInfo(normalizedReply || replyMeta);
-          const replyAuthorBlock = `
-            <span class="reply-author">
-              <span class="reply-author-name">${escapeHtml(replyAuthor)}</span>
-              ${replyAuthorMetaHtml}
-            </span>
-          `.trim();
           const replyInitials = initialsFrom(rawReplyAuthor);
-          const { label: replyLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
+          const { label: replyTimeLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
           const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
-          const replyTime = replyLabel ? `<time datetime="${replyIso}">${escapeHtml(replyLabel)}</time>` : '';
-          return `
-            <article class="reply">
-              <div class="reply-head">
-                <div class="reply-avatar" aria-hidden="true">${escapeHtml(replyInitials)}</div>
-                <div class="reply-meta">
-                  ${replyAuthorBlock}
-                  ${replyTime}
-                </div>
-                ${replyMessageBtn}
-              </div>
-              <div class="reply-body">${normalizeContent(r.content)}</div>
-            </article>
-          `;
+          const isReplyAi = isAiAuthor(replyAuthor);
+          const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
+          return renderThreadEntry({
+            authorName: replyAuthor,
+            authorMetaHtml: replyAuthorMetaHtml,
+            initials: replyInitials,
+            timeLabel: replyTimeLabel,
+            timeIso: replyIso,
+            contentHtml: normalizeContent(r.content),
+            messageBtn: replyMessageBtn,
+            label: replyLabel,
+            isAi: isReplyAi,
+          });
         }).join('');
-        const repliesBlock = repliesCount ? `<div class="topic-replies">${repliesHtml}</div>` : '<p class="topic-empty">Aucune réponse pour le moment. Lancez la conversation !</p>';
+        const repliesBlock = repliesCount
+          ? repliesHtml
+          : '<p class="topic-empty topic-empty--thread">Aucune réponse pour le moment. Lancez la conversation !</p>';
+        const threadHtml = `
+          <div class="topic-thread">
+            ${topicEntryHtml}
+            ${repliesBlock}
+          </div>
+        `;
         const timeMeta = createdLabel ? `<time datetime="${createdIso}">${escapeHtml(createdLabel)}</time>` : '';
         const pillText = repliesCount ? `${repliesCount} ${repliesCount>1?'réponses':'réponse'}` : 'Nouvelle discussion';
         const pillClass = repliesCount ? 'topic-pill' : 'topic-pill topic-pill--empty';
@@ -6920,8 +6990,7 @@ const TIMELINE_MILESTONES = [
             </div>
           </header>
           <div class="topic-body" data-body="${tid}"${bodyStyle}>
-            <div class="topic-content">${normalizeContent(t.content)}</div>
-            ${repliesBlock}
+            ${threadHtml}
             <form data-id="${tid}" class="form-reply form-grid">
               <label>Réponse<textarea name="content" rows="2" required></textarea></label>
               <div class="topic-form-actions">
