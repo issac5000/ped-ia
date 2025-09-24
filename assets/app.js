@@ -950,8 +950,12 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { code, payload };
-    const qs = new URLSearchParams({ action: `children.${action}` });
+    const actionKey = typeof action === 'string' && action.includes('.')
+      ? action
+      : `children.${action}`;
+    const payloadObject = payload && typeof payload === 'object' ? { ...payload } : {};
+    const body = { code, ...payloadObject };
+    const qs = new URLSearchParams({ action: actionKey });
     const response = await fetch(`/api/anon?${qs.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4581,7 +4585,11 @@ const TIMELINE_MILESTONES = [
       if (noteField) noteField.value = '';
     } catch (err) {
       console.warn('handleChildFormSubmit failed', err);
-      alert('Impossible de mettre à jour le profil enfant.');
+      const fallbackMsg = 'Impossible de mettre à jour le profil enfant.';
+      const apiMsg = err && typeof err.message === 'string' && err.message.trim()
+        ? err.message.trim()
+        : '';
+      alert(apiMsg || fallbackMsg);
       hadError = true;
     } finally {
       delete form.dataset.busy;
@@ -7634,6 +7642,27 @@ const TIMELINE_MILESTONES = [
   async function fetchChildFullReport(childId, { growthStatus: providedGrowthStatus = null } = {}) {
     if (!childId) throw new Error('Profil enfant introuvable.');
     if (!useRemote()) throw new Error('Connectez-vous pour générer un bilan complet.');
+    if (isAnonProfile()) {
+      try {
+        const response = await anonChildRequest('child.bilan', { childId });
+        const summary = typeof response?.summary === 'string' ? response.summary.trim() : '';
+        if (!summary) {
+          throw new Error(response?.error || 'Pas assez de données pour générer un bilan complet.');
+        }
+        return summary;
+      } catch (err) {
+        if (err instanceof Error && err.message) {
+          if (err.message === 'No updates found') {
+            throw new Error('Pas assez de données pour générer un bilan complet.');
+          }
+          if (err.message === 'AI unavailable') {
+            throw new Error('IA indisponible pour le moment. Réessayez plus tard.');
+          }
+          throw err;
+        }
+        throw new Error('Bilan indisponible pour le moment. Réessayez plus tard.');
+      }
+    }
     let growthStatusForPayload = providedGrowthStatus;
     if (!growthStatusForPayload) {
       try {
