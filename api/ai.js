@@ -725,13 +725,14 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
 
         let supaConfig = null;
         let supabaseHeaders = null;
+        const REPORT_UPDATE_LIMIT = 10;
         let updateRows = [];
         try {
           supaConfig = getServiceConfig();
           const { supaUrl, serviceKey } = supaConfig;
           supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
           const data = await supabaseRequest(
-            `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary&child_id=eq.${encodeURIComponent(childId)}&order=created_at.asc`,
+            `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary,ai_commentaire,parent_comment&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${REPORT_UPDATE_LIMIT}`,
             { headers: supabaseHeaders }
           );
           updateRows = Array.isArray(data) ? data : [];
@@ -764,31 +765,45 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         });
         const growthSection = formatGrowthSectionForPrompt(growthData);
 
+        const limitedUpdates = updateRows
+          .filter((row) => row && typeof row === 'object')
+          .slice(0, REPORT_UPDATE_LIMIT);
+
         const formatted = [];
-        for (const row of updateRows) {
-          const aiSummary = typeof row?.ai_summary === 'string' ? row.ai_summary.trim().slice(0, 600) : '';
-          const updateObj = parseUpdateContentForPrompt(row?.update_content);
-          const parentSummary = typeof updateObj?.summary === 'string' ? updateObj.summary.trim().slice(0, 600) : '';
-          const userComment = typeof updateObj?.userComment === 'string' ? updateObj.userComment.trim().slice(0, 600) : '';
-          const snapshotSource = updateObj && typeof updateObj === 'object'
-            ? (updateObj.next && typeof updateObj.next === 'object' ? updateObj.next : updateObj)
-            : {};
-          const sanitizedSnapshot = sanitizeUpdatePayload(snapshotSource);
-          const detailText = formatUpdateDataForPrompt(sanitizedSnapshot).slice(0, 1200);
-          if (aiSummary || parentSummary || userComment || detailText) {
+        for (const row of limitedUpdates) {
+          const aiSummary = truncateForPrompt(row?.ai_summary, 350);
+          const aiCommentaire = truncateForPrompt(row?.ai_commentaire, 350);
+          const parsedContent = parseUpdateContentForPrompt(row?.update_content);
+          const parentSummary = truncateForPrompt(parsedContent?.summary, 350);
+          const parentCommentRaw = typeof row?.parent_comment === 'string' && row.parent_comment.trim()
+            ? row.parent_comment
+            : parsedContent?.userComment;
+          const parentComment = truncateForPrompt(parentCommentRaw, 320);
+
+          let fallbackDetails = '';
+          if (!aiSummary && !parentSummary) {
+            const snapshotSource = parsedContent && typeof parsedContent === 'object'
+              ? (parsedContent.next && typeof parsedContent.next === 'object' ? parsedContent.next : parsedContent)
+              : {};
+            const sanitizedSnapshot = sanitizeUpdatePayload(snapshotSource);
+            fallbackDetails = truncateForPrompt(formatUpdateDataForPrompt(sanitizedSnapshot), 320);
+          }
+
+          if (aiSummary || aiCommentaire || parentSummary || parentComment || fallbackDetails) {
             formatted.push({
               type: typeof row?.update_type === 'string' ? row.update_type.trim().slice(0, 64) : '',
               date: typeof row?.created_at === 'string' ? row.created_at : '',
               aiSummary,
+              aiCommentaire,
               parentSummary,
-              userComment,
-              detailText,
+              parentComment,
+              fallbackDetails,
             });
           }
         }
 
         if (!formatted.length) {
-          return res.status(404).json({ error: 'Pas assez de données pour générer un bilan complet.' });
+          return res.status(200).json({ report: 'Aucun résumé disponible.' });
         }
 
         const updatesText = formatted.map((item, idx) => {
@@ -799,37 +814,53 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           if (item.type) headerParts.push(`type: ${item.type}`);
           lines.push(headerParts.join(' – '));
           if (item.aiSummary) lines.push(`Résumé IA: ${item.aiSummary}`);
+          if (item.aiCommentaire) lines.push(`Commentaire IA: ${item.aiCommentaire}`);
           if (item.parentSummary && item.parentSummary !== item.aiSummary) {
             lines.push(`Résumé parent: ${item.parentSummary}`);
           }
-          if (item.detailText) lines.push(`Données: ${item.detailText}`);
-          if (item.userComment) lines.push(`Commentaire parent: ${item.userComment}`);
+          if (item.parentComment) lines.push(`Commentaire parent: ${item.parentComment}`);
+          if (item.fallbackDetails) lines.push(`Données clés: ${item.fallbackDetails}`);
           return lines.join('\n');
         }).join('\n\n');
 
         const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « À compléter ». Valorise les données de croissance fournies pour analyser taille, poids et dents par rapport à l’âge de l’enfant. Sois synthétique, factuel et accessible.`;
         const userPrompt = [
-          `Nombre de mises à jour: ${formatted.length}.`,
+          `Nombre de mises à jour utilisées: ${formatted.length} (de la plus récente à la plus ancienne).`,
           `Section Croissance:\n${growthSection}`,
-          `Données réelles des mises à jour (ordre chronologique, de la plus ancienne à la plus récente):\n\n${updatesText}`,
+          `Données réelles des mises à jour (ordre décroissant):\n\n${updatesText}`,
         ].join('\n\n');
 
-        const r = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            temperature: 0.3,
-            max_tokens: 900,
-            messages: [
-              { role: 'system', content: system },
-              { role: 'user', content: userPrompt }
-            ]
-          })
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        let r;
+        try {
+          r = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              temperature: 0.3,
+              max_tokens: 900,
+              messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: userPrompt }
+              ]
+            })
+          });
+        } catch (err) {
+          clearTimeout(timeout);
+          if (err?.name === 'AbortError') {
+            console.warn('[child-full-report] OpenAI request aborted (timeout)');
+            return res.status(504).json({ error: 'Timeout AI' });
+          }
+          console.error('[child-full-report] OpenAI request failed', err);
+          return res.status(502).json({ error: 'Erreur IA', details: err?.message || 'Unknown error' });
+        }
+        clearTimeout(timeout);
         if (!r.ok) {
           const t = await r.text();
           return res.status(502).json({ error: 'OpenAI error', details: t });
@@ -1156,8 +1187,9 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   }
   const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
-  const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,height_cm,weight_kg,status_height,status_weight,status_global,month,age_month,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
+  const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,height_cm,weight_kg,status_height,status_weight,status_global,agemos,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
   const measurementRows = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
+    '&order=agemos.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=age_month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=recorded_at.desc.nullslast&order=created_at.desc',
@@ -1273,7 +1305,7 @@ function compareGrowthEntries(first, second) {
 
 function extractGrowthMonth(entry) {
   if (!entry || typeof entry !== 'object') return null;
-  const keys = ['age_month', 'ageMonth', 'month', 'months', 'age_in_months', 'agemos'];
+  const keys = ['agemos', 'age_month', 'ageMonth', 'month', 'months', 'age_in_months'];
   for (const key of keys) {
     if (!Object.prototype.hasOwnProperty.call(entry, key)) continue;
     const value = Number(entry[key]);
@@ -1313,7 +1345,7 @@ function formatGrowthSectionForPrompt(growthData) {
     lines.push(`Dents: ${teethLine}`);
   }
   if (!lines.length) {
-    return 'Aucune mesure de croissance disponible.';
+    return 'Pas de mesure enregistrée';
   }
   return lines.join('\n').slice(0, 600);
 }
@@ -1347,6 +1379,13 @@ function formatGrowthMeasurementEntry(entry) {
     parts.push(weightLabel);
   }
   if (!parts.length) return '';
+  const globalStatus = sanitizeGrowthSummary(entry.status_global);
+  if (globalStatus) {
+    const label = `statut global: ${globalStatus}`;
+    if (!parts.includes(label)) {
+      parts.push(label);
+    }
+  }
   const uniqueParts = [];
   for (const part of parts) {
     if (!uniqueParts.includes(part)) {
@@ -1402,7 +1441,7 @@ function formatGrowthPeriod(entry) {
 
 function formatGrowthAgeForPrompt(entry) {
   if (!entry || typeof entry !== 'object') return '';
-  const keys = ['age_month', 'ageMonth', 'month', 'months', 'age_in_months', 'agemos'];
+  const keys = ['agemos', 'age_month', 'ageMonth', 'month', 'months', 'age_in_months'];
   for (const key of keys) {
     if (!Object.prototype.hasOwnProperty.call(entry, key)) continue;
     const value = entry[key];
@@ -1427,6 +1466,22 @@ function formatGrowthNumber(value, { unit = '', decimals = 1 } = {}) {
   const rounded = Math.round(num * factor) / factor;
   const text = Number.isInteger(rounded) ? String(rounded) : String(rounded.toFixed(decimals)).replace(/\.0+$/, '');
   return unit ? `${text} ${unit}` : text;
+}
+
+function truncateForPrompt(value, maxLength = 350) {
+  if (typeof value !== 'string') {
+    if (value == null) return '';
+    try {
+      const text = String(value);
+      return truncateForPrompt(text, maxLength);
+    } catch {
+      return '';
+    }
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 function formatParentUpdateFacts(updateType, rawContent) {
