@@ -5,7 +5,7 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
-import { createDataProxy } from './data-proxy.js';
+import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -960,7 +960,13 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, ...payload };
+    let normalizedPayload = payload;
+    try {
+      normalizedPayload = normalizeAnonChildPayload(action, payload);
+    } catch (err) {
+      throw err;
+    }
+    const body = { action, code, ...normalizedPayload };
     if (typeof body.code === 'string') {
       body.code = body.code.trim().toUpperCase();
     }
@@ -1106,6 +1112,7 @@ const TIMELINE_MILESTONES = [
 
   anonChildRequest.__anonEndpoint = '/api/anon/children';
   anonChildRequest.__expectsCode = true;
+  anonChildRequest.__normalizePayload = normalizeAnonChildPayload;
   anonParentRequest.__anonEndpoint = '/api/anon/parent-updates';
   anonParentRequest.__expectsCode = true;
   anonFamilyRequest.__anonEndpoint = '/api/anon/family';
@@ -3837,12 +3844,13 @@ const TIMELINE_MILESTONES = [
           milestones: child.milestones,
           is_primary: shouldBePrimary
         };
+        const childPayload = normalizeChildPayloadForSupabase(payload);
         const measurementRecords = buildMeasurementPayloads(child.growth.measurements);
         const teethRecords = buildTeethPayloads(child.growth.teeth);
         const sleepRecords = buildSleepPayloads(child.growth.sleep);
         if (childAccess.isAnon) {
           await childAccess.callAnon('create', {
-            child: payload,
+            child: childPayload,
             growthMeasurements: measurementRecords,
             growthTeeth: teethRecords,
             growthSleep: sleepRecords
@@ -3852,11 +3860,11 @@ const TIMELINE_MILESTONES = [
         if (!supaClient) throw new Error('Supabase client unavailable');
         const { data: insChild, error: errC } = await supaClient
           .from('children')
-          .insert([payload])
+          .insert([childPayload])
           .select('id')
           .single();
         if (errC) throw errC;
-        const childId = insChild.id;
+        const childId = assertValidChildId(insChild.id);
         const msPayload = measurementRecords.map(m => ({ ...m, child_id: childId }));
         if (msPayload.length) {
           await supaClient
@@ -4463,11 +4471,12 @@ const TIMELINE_MILESTONES = [
     try {
       if (useRemote()) {
         const childAccess = dataProxy.children();
+        const remoteChildId = assertValidChildId(childId);
         if (childAccess.isAnon) {
-          await childAccess.callAnon('delete', { childId });
+          await childAccess.callAnon('delete', { childId: remoteChildId });
         } else {
           const supaClient = await childAccess.getClient();
-          await supaClient.from('children').delete().eq('id', childId);
+          await supaClient.from('children').delete().eq('id', remoteChildId);
         }
       } else {
         const localChildren = store.get(K.children, []).filter((child) => String(child.id) !== String(childId));
@@ -4507,6 +4516,7 @@ const TIMELINE_MILESTONES = [
     try {
       const base = settingsState.childrenMap.get(childId);
       if (!base) throw new Error('Profil enfant introuvable');
+      const remoteChildId = assertValidChildId(childId);
       const prevSnapshot = settingsState.snapshots.get(childId) || makeUpdateSnapshot(base);
       const { child: updated, growthInputs, userComment } = buildChildUpdateFromForm(base, form);
       const nextSnapshot = makeUpdateSnapshot(updated);
@@ -4560,7 +4570,7 @@ const TIMELINE_MILESTONES = [
               sleepBedtime: updated.context.sleep.bedtime,
               milestones: updated.milestones,
             };
-            const requestBody = { childId, child: payload };
+            const requestBody = { childId: remoteChildId, child: payload };
             if (measurementRecords.length) requestBody.growthMeasurements = measurementRecords;
             if (teethRecords.length) requestBody.growthTeeth = teethRecords;
             await childAccess.callAnon('update', requestBody);
@@ -4583,12 +4593,13 @@ const TIMELINE_MILESTONES = [
               sleep_bedtime: updated.context.sleep.bedtime,
               milestones: updated.milestones,
             };
-            await supaClient.from('children').update(payload).eq('id', childId);
+            const normalizedPayload = normalizeChildPayloadForSupabase(payload);
+            await supaClient.from('children').update(normalizedPayload).eq('id', remoteChildId);
             if (measurementRecords.length || teethRecords.length) {
               const remoteUpdates = [];
               if (measurementRecords.length) {
                 const upsertMeasurements = measurementRecords.map((rec) => {
-                  const payload = { child_id: childId, month: rec.month };
+                  const payload = { child_id: remoteChildId, month: rec.month };
                   if (Object.prototype.hasOwnProperty.call(rec, 'height_cm')) payload.height_cm = rec.height_cm;
                   if (Object.prototype.hasOwnProperty.call(rec, 'weight_kg')) payload.weight_kg = rec.weight_kg;
                   return payload;
@@ -4599,7 +4610,7 @@ const TIMELINE_MILESTONES = [
               }
               if (teethRecords.length) {
                 const upsertTeeth = teethRecords.map((rec) => ({
-                  child_id: childId,
+                  child_id: remoteChildId,
                   month: rec.month,
                   count: rec.count,
                 }));
@@ -4632,7 +4643,7 @@ const TIMELINE_MILESTONES = [
 
       const logPayload = { prev: prevSnapshot, next: nextSnapshot, summary };
       if (hasComment) logPayload.userComment = commentText;
-      await logChildUpdate(childId, 'profil', logPayload);
+      await logChildUpdate(remoteChildId, 'profil', logPayload);
       if (hasProfileChanges) {
         invalidateSettingsRemoteCache();
         renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
@@ -7563,21 +7574,22 @@ const TIMELINE_MILESTONES = [
 
   async function logChildUpdate(childId, updateType, updateContent) {
     if (!childId || !useRemote()) return;
+    const remoteChildId = assertValidChildId(childId);
     const normalizedContent = normalizeUpdateContentForLog(updateContent);
     const content = JSON.stringify(normalizedContent);
     const childAccess = dataProxy.children();
     if (childAccess.isAnon) {
       await childAccess.callAnon('log-update', {
-        childId,
+        childId: remoteChildId,
         updateType,
         updateContent: content
       });
       return;
     }
     const supaClient = await childAccess.getClient();
-    const historySummaries = await fetchChildUpdateSummaries(childId);
-    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(childId, updateType, normalizedContent, historySummaries);
-    const payload = { child_id: childId, update_type: updateType, update_content: content };
+    const historySummaries = await fetchChildUpdateSummaries(remoteChildId);
+    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(remoteChildId, updateType, normalizedContent, historySummaries);
+    const payload = { child_id: remoteChildId, update_type: updateType, update_content: content };
     if (aiSummary) payload.ai_summary = aiSummary;
     if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
     try {
@@ -7589,7 +7601,7 @@ const TIMELINE_MILESTONES = [
       console.error('Supabase child_updates insert failed', { error: err, payload });
       try {
         await logChildUpdateViaApi({
-          childId,
+          childId: remoteChildId,
           updateType,
           updateContent: content,
           aiSummary,
@@ -7600,16 +7612,18 @@ const TIMELINE_MILESTONES = [
         throw fallbackErr;
       }
     }
-    invalidateGrowthStatus(childId);
+    invalidateGrowthStatus(remoteChildId);
     scheduleFamilyContextRefresh();
   }
 
   async function logChildUpdateViaApi({ childId, updateType, updateContent, aiSummary, aiCommentaire }) {
+    const remoteChildId = assertValidChildId(childId);
     const body = {
-      childId,
+      childId: remoteChildId,
       updateType,
       updateContent,
     };
+    body.child_id = remoteChildId;
     if (aiSummary) body.aiSummary = aiSummary;
     if (aiCommentaire) body.aiCommentaire = aiCommentaire;
     let token = authSession?.access_token || '';
@@ -7650,11 +7664,12 @@ const TIMELINE_MILESTONES = [
     try {
       const childAccess = dataProxy.children();
       if (childAccess.isAnon) return [];
+      const remoteChildId = assertValidChildId(childId);
       const supaClient = await childAccess.getClient();
       const { data, error } = await supaClient
         .from('child_updates')
         .select('ai_summary')
-        .eq('child_id', childId)
+        .eq('child_id', remoteChildId)
         .not('ai_summary', 'is', null)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -7672,16 +7687,17 @@ const TIMELINE_MILESTONES = [
   async function fetchChildFullReport(childId, { growthStatus: providedGrowthStatus = null } = {}) {
     if (!childId) throw new Error('Profil enfant introuvable.');
     if (!useRemote()) throw new Error('Connectez-vous pour générer un bilan complet.');
+    const remoteChildId = assertValidChildId(childId);
     let growthStatusForPayload = providedGrowthStatus;
     if (!growthStatusForPayload) {
       try {
-        growthStatusForPayload = await renderGrowthStatus(childId);
+        growthStatusForPayload = await renderGrowthStatus(remoteChildId);
       } catch (err) {
         console.warn('fetchChildFullReport growth status fallback failed', err);
       }
     }
     try {
-      const payload = { childId, child_id: childId };
+      const payload = { childId: remoteChildId, child_id: remoteChildId };
       if (growthStatusForPayload) {
         try {
           const statusEntries = growthStatusForPayload.toPromptPayload(10);
@@ -7731,11 +7747,12 @@ const TIMELINE_MILESTONES = [
   }
 
   async function generateAiSummaryAndComment(childId, updateType, contentObj, historySummaries) {
+    const remoteChildId = assertValidChildId(childId);
     try {
       const payload = {
         type: 'child-update',
-        childId,
-        child_id: childId,
+        childId: remoteChildId,
+        child_id: remoteChildId,
         updateType,
         update: contentObj,
         parentComment: typeof contentObj?.userComment === 'string' ? contentObj.userComment : '',
@@ -7743,7 +7760,7 @@ const TIMELINE_MILESTONES = [
       };
       if (updateType === 'measure') {
         try {
-          const growthStatus = await renderGrowthStatus(childId);
+          const growthStatus = await renderGrowthStatus(remoteChildId);
           const growthInputs = extractGrowthInputsFromUpdate(contentObj);
           if (growthStatus && growthInputs.hasMeasurements) {
             const matched = growthStatus.matchUpdate(null, growthInputs);
@@ -7897,14 +7914,15 @@ const TIMELINE_MILESTONES = [
     if (useRemote()) {
       try {
         const childAccess = dataProxy.children();
+        const remoteChildId = assertValidChildId(id);
         if (childAccess.isAnon) {
-          await childAccess.callAnon('set-primary', { childId: id });
+          await childAccess.callAnon('set-primary', { childId: remoteChildId });
         } else {
           const uid = getActiveProfileId();
           if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
           const supaClient = await childAccess.getClient();
           await supaClient.from('children').update({ is_primary: false }).eq('user_id', uid);
-          await supaClient.from('children').update({ is_primary: true }).eq('id', id);
+          await supaClient.from('children').update({ is_primary: true }).eq('id', remoteChildId);
         }
       } catch {}
       invalidateSettingsRemoteCache();
@@ -8403,6 +8421,7 @@ const TIMELINE_MILESTONES = [
       }
     }
     if (!supabase) return { rows: [], notice: null };
+    const remoteChildId = assertValidChildId(childId);
     const supaClient = await childAccess.getClient();
     const orderAttempts = [
       { column: 'measured_at', options: { ascending: false, nullsFirst: false } },
@@ -8416,7 +8435,7 @@ const TIMELINE_MILESTONES = [
         let query = supaClient
           .from('child_growth_with_status')
           .select('*')
-          .eq('child_id', childId)
+          .eq('child_id', remoteChildId)
           .limit(20);
         if (attempt?.column) {
           query = query.order(attempt.column, attempt.options || {});
