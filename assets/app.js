@@ -219,6 +219,33 @@ const TIMELINE_MILESTONES = [
     snapshots: new Map(),
   };
 
+  let currentChildId = null;
+
+  function updateCurrentChildId(value) {
+    if (value == null) {
+      currentChildId = null;
+      return currentChildId;
+    }
+    const str = String(value).trim();
+    currentChildId = str ? str : null;
+    return currentChildId;
+  }
+
+  function getCurrentChildId() {
+    if (currentChildId) return currentChildId;
+    const selectors = ['#child-switcher', '#ai-child-switcher'];
+    for (const selector of selectors) {
+      const select = document.querySelector(selector);
+      if (select && select.value) {
+        return updateCurrentChildId(select.value);
+      }
+    }
+    if (settingsState?.selectedChildId != null) {
+      return updateCurrentChildId(settingsState.selectedChildId);
+    }
+    return currentChildId;
+  }
+
   const dashboardState = {
     viewMode: 'child',
     profileId: null,
@@ -895,6 +922,7 @@ const TIMELINE_MILESTONES = [
     settingsState.childrenMap = new Map(children.map((child) => [String(child.id), child]));
     settingsState.snapshots = new Map();
     settingsState.selectedChildId = selectedId || null;
+    updateCurrentChildId(settingsState.selectedChildId);
 
     const pseudoInput = form.elements.namedItem('pseudo');
     if (pseudoInput) pseudoInput.value = userForStore.pseudo || '';
@@ -1102,6 +1130,12 @@ const TIMELINE_MILESTONES = [
     'child.bilan',
   ]);
 
+  const ANON_CHILD_ACTIONS_REQUIRING_SELECTION = new Set([
+    'children.get',
+    'children.update',
+    'children.log-update',
+  ]);
+
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
@@ -1109,13 +1143,38 @@ const TIMELINE_MILESTONES = [
     const actionKey = typeof action === 'string' && action.includes('.')
       ? action
       : `children.${action}`;
-    const payloadObject = payload && typeof payload === 'object' ? payload : {};
+    const payloadObject = payload && typeof payload === 'object' ? { ...payload } : {};
+    if (ANON_CHILD_ACTIONS_REQUIRING_SELECTION.has(actionKey)) {
+      const providedChildId =
+        payloadObject.childId
+        ?? payloadObject.child_id
+        ?? payloadObject.id
+        ?? (payloadObject.child && payloadObject.child.id);
+      if (providedChildId == null || providedChildId === '') {
+        const fallbackId = getCurrentChildId();
+        if (!fallbackId) {
+          console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
+          return null;
+        }
+        payloadObject.child_id = fallbackId;
+      } else {
+        updateCurrentChildId(providedChildId);
+      }
+    }
     const sanitized = sanitizeAnonChildPayload(payloadObject);
-    if (ANON_CHILD_ACTIONS_REQUIRING_ID.has(actionKey) && !Object.prototype.hasOwnProperty.call(sanitized, 'childId')) {
-      console.warn("Aucun enfant sélectionné, impossible d'exécuter l’action :", actionKey);
+    const finalChildId = sanitized.child_id ?? sanitized.childId;
+    if (finalChildId != null) {
+      sanitized.child_id = finalChildId;
+      updateCurrentChildId(finalChildId);
+    }
+    if (ANON_CHILD_ACTIONS_REQUIRING_ID.has(actionKey) && (finalChildId == null)) {
+      console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
       return null;
     }
     const body = { code, ...sanitized };
+    if (finalChildId != null && !Object.prototype.hasOwnProperty.call(body, 'child_id')) {
+      body.child_id = finalChildId;
+    }
     const qs = new URLSearchParams({ action: actionKey });
     const response = await fetch(`/api/anon?${qs.toString()}`, {
       method: 'POST',
@@ -1170,7 +1229,30 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const sanitizedPayload = sanitizeAnonFamilyPayload(payload);
+    const payloadObject = payload && typeof payload === 'object' ? { ...payload } : {};
+    const requiresChildSelection = action === 'family.growth-status' || action === 'growth-status';
+    if (requiresChildSelection) {
+      const providedChildId =
+        payloadObject.childId
+        ?? payloadObject.child_id
+        ?? payloadObject.id;
+      if (providedChildId == null || providedChildId === '') {
+        const fallbackId = getCurrentChildId();
+        if (!fallbackId) {
+          console.warn(`Aucun enfant sélectionné pour ${action}`);
+          return null;
+        }
+        payloadObject.child_id = fallbackId;
+      } else {
+        updateCurrentChildId(providedChildId);
+      }
+    }
+    const sanitizedPayload = sanitizeAnonFamilyPayload(payloadObject);
+    const finalChildId = sanitizedPayload.child_id ?? sanitizedPayload.childId;
+    if (finalChildId != null) {
+      sanitizedPayload.child_id = finalChildId;
+      updateCurrentChildId(finalChildId);
+    }
     const body = { code, action, payload: sanitizedPayload };
     const response = await fetch('/api/anon/family', {
       method: 'POST',
@@ -3240,6 +3322,7 @@ const TIMELINE_MILESTONES = [
     const setCurrentChild = (child) => {
       if (!isActiveInstance()) return;
       aiPageState.currentChild = child || null;
+      updateCurrentChildId(child?.id ?? null);
     };
     const getCurrentChild = () => (isActiveInstance() ? aiPageState.currentChild : null);
 
@@ -4559,6 +4642,7 @@ const TIMELINE_MILESTONES = [
       setPrimaryChildAction(id);
     } else if (action === 'edit') {
       settingsState.selectedChildId = String(id);
+      updateCurrentChildId(settingsState.selectedChildId);
       renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
       renderChildEditor(settingsState.selectedChildId, renderSettings._rid);
     } else if (action === 'delete') {
@@ -8072,6 +8156,7 @@ const TIMELINE_MILESTONES = [
 
   async function setPrimaryChild(id) {
     if (!id) return;
+    updateCurrentChildId(id);
     if (useRemote()) {
       try {
         if (isAnonProfile()) {
@@ -8116,13 +8201,17 @@ const TIMELINE_MILESTONES = [
       <a class="btn btn-primary" href="#/onboarding">Ajouter</a>
     `;
     const sel = box.querySelector('#child-switcher');
-    if (sel && !sel.dataset.bound) {
-      sel.addEventListener('change', async (e) => {
-        const id = e.currentTarget.value;
-        await setPrimaryChild(id);
-        if (typeof onChange === 'function') onChange(id);
-      });
-      sel.dataset.bound = '1';
+    if (sel) {
+      updateCurrentChildId(sel.value);
+      if (!sel.dataset.bound) {
+        sel.addEventListener('change', async (e) => {
+          const id = e.currentTarget.value;
+          updateCurrentChildId(id);
+          await setPrimaryChild(id);
+          if (typeof onChange === 'function') onChange(id);
+        });
+        sel.dataset.bound = '1';
+      }
     }
   }
 
