@@ -946,6 +946,153 @@ const TIMELINE_MILESTONES = [
 
   restoreAnonSession();
 
+  function parseAnonInteger(value) {
+    if (value == null) return null;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? Math.trunc(value) : null;
+    }
+    const str = String(value).trim();
+    if (!str) return null;
+    if (!/^[-+]?\d+$/.test(str)) return null;
+    const parsed = Number.parseInt(str, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function sanitizeAnonStruct(value) {
+    if (value == null) return value === null ? null : undefined;
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+    if (typeof value === 'boolean') return value;
+    if (Array.isArray(value)) {
+      const arr = value
+        .map((entry) => sanitizeAnonStruct(entry))
+        .filter((entry) => entry !== undefined);
+      return arr;
+    }
+    if (typeof value === 'object') {
+      const out = {};
+      for (const [key, val] of Object.entries(value)) {
+        if (val === undefined) continue;
+        const cleaned = sanitizeAnonStruct(val);
+        if (cleaned === undefined) continue;
+        if (cleaned === null) {
+          out[key] = null;
+        } else if (Array.isArray(cleaned)) {
+          out[key] = cleaned;
+        } else if (typeof cleaned === 'object') {
+          if (Object.keys(cleaned).length) out[key] = cleaned;
+        } else {
+          out[key] = cleaned;
+        }
+      }
+      return out;
+    }
+    return undefined;
+  }
+
+  function sanitizeAnonChildPayload(payload = {}) {
+    const safe = {};
+    if (!payload || typeof payload !== 'object') return safe;
+    const childIdCandidate =
+      payload.childId ?? payload.child_id ?? payload.id ?? (payload.child && payload.child.id);
+    const parsedChildId = parseAnonInteger(childIdCandidate);
+    if (parsedChildId != null) safe.childId = parsedChildId;
+
+    if (payload.child && typeof payload.child === 'object') {
+      const childData = sanitizeAnonStruct(payload.child);
+      if (childData && typeof childData === 'object' && Object.keys(childData).length) {
+        safe.child = childData;
+      }
+    }
+
+    if (payload.growthMeasurements != null) {
+      const measurements = buildMeasurementPayloads(payload.growthMeasurements);
+      if (measurements.length) safe.growthMeasurements = measurements;
+    }
+    if (payload.growthTeeth != null) {
+      const teeth = buildTeethPayloads(payload.growthTeeth);
+      if (teeth.length) safe.growthTeeth = teeth;
+    }
+    if (payload.growthSleep != null) {
+      const sleep = buildSleepPayloads(payload.growthSleep);
+      if (sleep.length) safe.growthSleep = sleep;
+    }
+    if (payload.limit != null) {
+      const limitVal = parseAnonInteger(payload.limit);
+      if (limitVal != null) safe.limit = limitVal;
+    }
+
+    if (payload.growth && typeof payload.growth === 'object') {
+      const growth = {};
+      if (Array.isArray(payload.growth.measurements)) {
+        const measurements = buildMeasurementPayloads(payload.growth.measurements);
+        if (measurements.length) growth.measurements = measurements;
+      }
+      if (Array.isArray(payload.growth.teeth)) {
+        const teeth = buildTeethPayloads(payload.growth.teeth);
+        if (teeth.length) growth.teeth = teeth;
+      }
+      if (Array.isArray(payload.growth.sleep)) {
+        const sleep = buildSleepPayloads(payload.growth.sleep);
+        if (sleep.length) growth.sleep = sleep;
+      }
+      if (Object.keys(growth).length) safe.growth = growth;
+    }
+
+    for (const [key, value] of Object.entries(payload)) {
+      if (
+        key === 'childId'
+        || key === 'child_id'
+        || key === 'id'
+        || key === 'child'
+        || key === 'growthMeasurements'
+        || key === 'growthTeeth'
+        || key === 'growthSleep'
+        || key === 'growth'
+        || key === 'limit'
+      ) {
+        continue;
+      }
+      const cleaned = sanitizeAnonStruct(value);
+      if (cleaned === undefined) continue;
+      if (cleaned === null) {
+        safe[key] = null;
+      } else if (typeof cleaned === 'string') {
+        safe[key] = cleaned;
+      } else if (typeof cleaned === 'number' || typeof cleaned === 'boolean') {
+        safe[key] = cleaned;
+      } else if (Array.isArray(cleaned)) {
+        if (cleaned.length) safe[key] = cleaned;
+      } else if (typeof cleaned === 'object') {
+        if (Object.keys(cleaned).length) safe[key] = cleaned;
+      }
+    }
+    return safe;
+  }
+
+  function sanitizeAnonFamilyPayload(payload = {}) {
+    if (!payload || typeof payload !== 'object') return {};
+    const safe = {};
+    const childCandidate = payload.childId ?? payload.child_id ?? payload.id;
+    const parsedChildId = parseAnonInteger(childCandidate);
+    if (parsedChildId != null) safe.childId = parsedChildId;
+    if (payload.limit != null) {
+      const limitVal = parseAnonInteger(payload.limit);
+      if (limitVal != null) safe.limit = limitVal;
+    }
+    for (const [key, value] of Object.entries(payload)) {
+      if (['childId', 'child_id', 'id', 'limit'].includes(key)) continue;
+      if (typeof value === 'boolean') {
+        safe[key] = value;
+      } else if (typeof value === 'number') {
+        if (Number.isFinite(value)) safe[key] = value;
+      } else if (typeof value === 'string') {
+        safe[key] = value.trim();
+      }
+    }
+    return safe;
+  }
+
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
@@ -953,8 +1100,9 @@ const TIMELINE_MILESTONES = [
     const actionKey = typeof action === 'string' && action.includes('.')
       ? action
       : `children.${action}`;
-    const payloadObject = payload && typeof payload === 'object' ? { ...payload } : {};
-    const body = { code, ...payloadObject };
+    const payloadObject = payload && typeof payload === 'object' ? payload : {};
+    const sanitized = sanitizeAnonChildPayload(payloadObject);
+    const body = { code, ...sanitized };
     const qs = new URLSearchParams({ action: actionKey });
     const response = await fetch(`/api/anon?${qs.toString()}`, {
       method: 'POST',
@@ -967,7 +1115,14 @@ const TIMELINE_MILESTONES = [
       try { json = JSON.parse(text); } catch {}
     }
     if (!response.ok) {
-      const err = new Error(json?.error || 'Service indisponible');
+      const message = json?.error || 'Service indisponible';
+      console.warn('anonChildRequest failed', {
+        action: actionKey,
+        status: response.status,
+        message,
+        details: json?.details,
+      });
+      const err = new Error(message);
       if (json?.details) err.details = json.details;
       throw err;
     }
@@ -1002,9 +1157,9 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { code, payload };
-    const qs = new URLSearchParams({ action: `family.${action}` });
-    const response = await fetch(`/api/anon?${qs.toString()}`, {
+    const sanitizedPayload = sanitizeAnonFamilyPayload(payload);
+    const body = { code, action, payload: sanitizedPayload };
+    const response = await fetch('/api/anon/family', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1015,7 +1170,14 @@ const TIMELINE_MILESTONES = [
       try { json = JSON.parse(text); } catch {}
     }
     if (!response.ok) {
-      const err = new Error(json?.error || 'Service indisponible');
+      const message = json?.error || 'Service indisponible';
+      console.warn('anonFamilyRequest failed', {
+        action,
+        status: response.status,
+        message,
+        details: json?.details,
+      });
+      const err = new Error(message);
       if (json?.details) err.details = json.details;
       throw err;
     }
