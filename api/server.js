@@ -2,46 +2,18 @@
 // Utilisation : OPENAI_API_KEY=sk-... node api/server.js
 
 import { createServer } from 'http';
-import { randomBytes, randomUUID } from 'crypto';
 import { readFile, stat } from 'fs/promises';
 import { extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { processAnonChildrenRequest } from '../lib/anon-children.js';
 import { processAnonCommunityRequest } from '../lib/anon-community.js';
+import { processAnonFamilyRequest } from '../lib/anon-family.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 import { processAnonParentUpdatesRequest } from '../lib/anon-parent-updates.js';
+import { handleByCode, handleCreateAnon, handleUpdateAnon } from './profiles.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
-
-const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const CODE_DIGITS = '23456789';
-const MAX_ANON_ATTEMPTS = 5;
-
-/**
- * Génère un code lisible pour les profils anonymes en alternant lettres et chiffres.
- * On exclut volontairement les caractères ambigus (I, O, 0, 1) pour limiter les erreurs de saisie.
- */
-function generateAnonCode() {
-  const bytes = randomBytes(12);
-  let out = '';
-  for (let i = 0; i < 12; i += 1) {
-    const alphabet = i % 2 === 0 ? CODE_LETTERS : CODE_DIGITS;
-    const index = bytes[i] % alphabet.length;
-    out += alphabet[index];
-  }
-  return out;
-}
-
-/**
- * Détermine s’il faut retenter une création de profil après une erreur Supabase.
- * Les collisions de code_unique déclenchent un nouvel essai jusqu’à atteindre MAX_ANON_ATTEMPTS.
- */
-function shouldRetryDuplicate(status, detailsText) {
-  if (status === 409) return true;
-  if (!detailsText) return false;
-  return /duplicate key value/i.test(detailsText) && /code_unique/i.test(detailsText);
-}
 
 // Charge les variables d’environnement depuis .env.local/.env en local si nécessaire
 async function loadLocalEnv() {
@@ -542,104 +514,129 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  if (req.method === 'OPTIONS' && url.pathname === '/api/profiles/create-anon') {
-    return send(res, 204, '', {
-      'Access-Control-Allow-Methods': 'POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/profiles/create-anon') {
-    try {
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
-      const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-      if (!serviceKey || !supaUrl) {
-        return send(res, 500, JSON.stringify({ error: 'Server misconfigured' }), { 'Content-Type': 'application/json; charset=utf-8' });
-      }
-
-      let body = {};
+  if (url.pathname === '/api/profiles') {
+    if (req.method === 'OPTIONS') {
+      return send(res, 204, '', {
+        'Access-Control-Allow-Methods': 'GET,POST,PATCH,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+    }
+    const allowedMethods = new Set(['GET', 'POST', 'PATCH']);
+    if (!allowedMethods.has(req.method)) {
+      return send(res, 405, JSON.stringify({ error: 'Method Not Allowed' }), {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Allow': 'GET,POST,PATCH,OPTIONS'
+      });
+    }
+    let body = {};
+    if (req.method !== 'GET') {
       try {
         body = await parseJson(req);
       } catch {
         return send(res, 400, JSON.stringify({ error: 'Invalid JSON body' }), { 'Content-Type': 'application/json; charset=utf-8' });
       }
-      const fullNameRaw = typeof body.fullName === 'string' ? body.fullName.trim() : '';
-      const basePayload = {};
-      if (fullNameRaw) basePayload.full_name = fullNameRaw.slice(0, 120);
-
-      let lastError = null;
-      for (let attempt = 0; attempt < MAX_ANON_ATTEMPTS; attempt += 1) {
-        const insertPayload = {
-          ...basePayload,
-          id: randomUUID(),
-          code_unique: generateAnonCode()
-        };
-
-        const response = await fetch(`${supaUrl}/rest/v1/profiles`, {
-          method: 'POST',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(insertPayload)
-        });
-
-        const text = await response.text().catch(() => '');
-        let json = null;
-        if (text) {
-          try { json = JSON.parse(text); } catch {}
-        }
-
-        if (response.ok) {
-          const row = Array.isArray(json) ? json?.[0] : json;
-          const id = row?.id || insertPayload.id;
-          const code = row?.code_unique || insertPayload.code_unique;
-          if (!id || !code) {
-            return send(res, 500, JSON.stringify({ error: 'Invalid response from Supabase' }), { 'Content-Type': 'application/json; charset=utf-8' });
-          }
-          const profile = {
-            id,
-            code_unique: code,
-            full_name: row?.full_name || basePayload.full_name || '',
-            user_id: row?.user_id ?? null
-          };
-          return send(res, 200, JSON.stringify({ profile }), { 'Content-Type': 'application/json; charset=utf-8' });
-        }
-
-        const detailsText = json ? JSON.stringify(json) : text;
-        if (shouldRetryDuplicate(response.status, detailsText)) {
-          lastError = { status: response.status, details: detailsText };
-          continue;
-        }
-
-        return send(res, response.status, JSON.stringify({ error: 'Create failed', details: detailsText || undefined }), { 'Content-Type': 'application/json; charset=utf-8' });
-      }
-
-      return send(res, lastError?.status || 500, JSON.stringify({ error: 'Create failed', details: lastError?.details || undefined }), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      return send(res, 500, JSON.stringify({ error: 'Server error', details: String(e.message || e) }), { 'Content-Type': 'application/json; charset=utf-8' });
     }
+    const mergedBody = body && typeof body === 'object' ? { ...body } : {};
+    for (const [key, value] of url.searchParams.entries()) {
+      if (key === 'action') continue;
+      if (mergedBody[key] != null) continue;
+      mergedBody[key] = value;
+    }
+    const action = (url.searchParams.get('action') || mergedBody.action || '').trim();
+    if (!action) {
+      return send(res, 400, JSON.stringify({ error: 'Unknown action' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+    let result;
+    if (action === 'create-anon') {
+      if (req.method !== 'POST') {
+        return send(res, 405, JSON.stringify({ error: 'Method Not Allowed' }), {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Allow': 'POST,OPTIONS'
+        });
+      }
+      result = await handleCreateAnon(mergedBody);
+    } else if (action === 'update-anon') {
+      if (req.method !== 'POST' && req.method !== 'PATCH') {
+        return send(res, 405, JSON.stringify({ error: 'Method Not Allowed' }), {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Allow': 'POST,PATCH,OPTIONS'
+        });
+      }
+      result = await handleUpdateAnon(mergedBody);
+    } else if (action === 'by-code') {
+      if (req.method !== 'GET' && req.method !== 'POST') {
+        return send(res, 405, JSON.stringify({ error: 'Method Not Allowed' }), {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Allow': 'GET,POST,OPTIONS'
+        });
+      }
+      result = await handleByCode(mergedBody);
+    } else {
+      return send(res, 400, JSON.stringify({ error: 'Unknown action' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+    const status = Number.isInteger(result?.status) ? result.status : 500;
+    const payload = result?.body && typeof result.body === 'object' ? result.body : {};
+    return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
   }
 
-  if (req.method === 'OPTIONS' && url.pathname === '/api/anon/children') {
-    return send(res, 204, '', {
-      'Access-Control-Allow-Methods': 'POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/anon/children') {
+  if (url.pathname === '/api/anon') {
+    if (req.method === 'OPTIONS') {
+      return send(res, 204, '', {
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+    }
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      return send(res, 405, JSON.stringify({ error: 'Method Not Allowed' }), {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Allow': 'GET,POST,OPTIONS'
+      });
+    }
+    let body = {};
+    if (req.method !== 'GET') {
+      try {
+        body = await parseJson(req);
+      } catch {
+        return send(res, 400, JSON.stringify({ error: 'Invalid JSON body' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+    }
+    const mergedBody = body && typeof body === 'object' ? { ...body } : {};
+    for (const [key, value] of url.searchParams.entries()) {
+      if (key === 'action') continue;
+      if (mergedBody[key] != null) continue;
+      mergedBody[key] = value;
+    }
+    const actionRaw = (url.searchParams.get('action') || mergedBody.action || '').trim();
+    if (!actionRaw) {
+      return send(res, 400, JSON.stringify({ error: 'Unknown action' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+    const [namespace, ...restParts] = actionRaw.split('.');
+    const operation = restParts.join('.').trim();
+    if (!namespace || !operation) {
+      return send(res, 400, JSON.stringify({ error: 'Unknown action' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+    const handlerMap = {
+      children: processAnonChildrenRequest,
+      'parent-updates': processAnonParentUpdatesRequest,
+      family: processAnonFamilyRequest,
+    };
+    const handler = handlerMap[namespace];
+    if (!handler) {
+      return send(res, 400, JSON.stringify({ error: 'Unknown action' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+    mergedBody.action = operation;
+    let result;
     try {
-      const body = await parseJson(req);
-      const result = await processAnonChildrenRequest(body);
-      return send(res, result.status, JSON.stringify(result.body), { 'Content-Type': 'application/json; charset=utf-8' });
+      result = await handler(mergedBody);
     } catch (e) {
       const status = e && Number.isInteger(e.status) ? e.status : 500;
       const payload = { error: 'Server error', details: String(e?.details || e?.message || e) };
+      console.error('[api/server] /api/anon handler error', e);
       return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
     }
+    const status = Number.isInteger(result?.status) ? result.status : 500;
+    const payload = result?.body && typeof result.body === 'object' ? result.body : {};
+    return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
   }
 
   if (req.method === 'OPTIONS' && url.pathname === '/api/anon/community') {
@@ -680,24 +677,6 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  if (req.method === 'OPTIONS' && url.pathname === '/api/anon/parent-updates') {
-    return send(res, 204, '', {
-      'Access-Control-Allow-Methods': 'POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/anon/parent-updates') {
-    try {
-      const body = await parseJson(req);
-      const result = await processAnonParentUpdatesRequest(body);
-      return send(res, result.status, JSON.stringify(result.body), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      const status = e && Number.isInteger(e.status) ? e.status : 500;
-      const payload = { error: 'Server error', details: String(e?.details || e?.message || e) };
-      return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
-    }
-  }
 
   // Suppression d’une conversation (parité avec la fonction Vercel en local)
   if (req.method === 'POST' && url.pathname === '/api/messages/delete-conversation') {
