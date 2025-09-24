@@ -117,25 +117,33 @@ const TIMELINE_MILESTONES = [
   let dashboardFocusCleanupTimer = null;
   function maybeFocusDashboardSection(){
     if (!pendingDashboardFocus) return;
-    if (pendingDashboardFocus === 'history') {
-      const target = document.getElementById('dashboard-history');
-      if (!target) return;
-      try {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } catch {
-        target.scrollIntoView();
-      }
-      target.classList.add('dashboard-focus-highlight');
-      if (dashboardFocusCleanupTimer) {
-        clearTimeout(dashboardFocusCleanupTimer);
-        dashboardFocusCleanupTimer = null;
-      }
-      dashboardFocusCleanupTimer = setTimeout(() => {
-        target.classList.remove('dashboard-focus-highlight');
-        dashboardFocusCleanupTimer = null;
-      }, 1800);
+    const focusKey = pendingDashboardFocus;
+    const targetId = focusKey === 'history'
+      ? 'dashboard-history'
+      : focusKey === 'parent-updates'
+        ? 'dashboard-parent-updates'
+        : '';
+    if (!targetId) {
       pendingDashboardFocus = null;
+      return;
     }
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    try {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch {
+      target.scrollIntoView();
+    }
+    target.classList.add('dashboard-focus-highlight');
+    if (dashboardFocusCleanupTimer) {
+      clearTimeout(dashboardFocusCleanupTimer);
+      dashboardFocusCleanupTimer = null;
+    }
+    dashboardFocusCleanupTimer = setTimeout(() => {
+      target.classList.remove('dashboard-focus-highlight');
+      dashboardFocusCleanupTimer = null;
+    }, 1800);
+    pendingDashboardFocus = null;
   }
   const routeSections = new Map();
   document.querySelectorAll('section[data-route]').forEach(section => {
@@ -1491,7 +1499,14 @@ const TIMELINE_MILESTONES = [
     const requestedPath = normalizeRoutePath(hash);
     const path = routeSections.has(requestedPath) ? requestedPath : '/';
     const queryParams = parseHashQuery(typeof hash === 'string' ? hash : '');
-    const focusParam = queryParams?.get('focus') || '';
+    const focusParam = (() => {
+      const raw = queryParams?.get('focus');
+      return raw ? String(raw).trim().toLowerCase() : '';
+    })();
+    const viewParam = (() => {
+      const raw = queryParams?.get('view');
+      return raw ? String(raw).trim().toLowerCase() : '';
+    })();
     const targetSection = routeSections.get(path) || null;
     if (targetSection && activeRouteEl !== targetSection) {
       activeRouteEl?.classList.remove('active');
@@ -1524,6 +1539,11 @@ const TIMELINE_MILESTONES = [
     }
     if (path === '/onboarding') { renderOnboarding(); }
     if (path === '/dashboard') {
+      if (viewParam === 'family' || viewParam === 'child') {
+        dashboardState.viewMode = viewParam;
+      } else if (focusParam === 'parent-updates') {
+        dashboardState.viewMode = 'family';
+      }
       pendingDashboardFocus = focusParam || null;
       renderDashboard();
     } else if (path !== '/ai') {
@@ -4416,8 +4436,10 @@ const TIMELINE_MILESTONES = [
 
       showNotification({
         title: 'Profil parent mis à jour',
-        text: 'Vos informations parentales sont enregistrées.',
-        durationMs: 5000,
+        text: 'Rendez-vous dans le Carnet de santé à la section « Mises à jour parentales » vue famille, pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
+        actionHref: '#/dashboard?view=family&focus=parent-updates',
+        actionLabel: 'Voir',
+        durationMs: 10000,
       });
 
       if (shouldResetComment && commentControl && typeof commentControl === 'object' && 'value' in commentControl) {
@@ -5645,6 +5667,7 @@ const TIMELINE_MILESTONES = [
       if (rid !== renderDashboard._rid) return;
       setDashboardHtml(buildFamilyDashboardHtml(data));
       bindFamilyViewActions(dom);
+      maybeFocusDashboardSection();
     } catch (err) {
       console.warn('renderFamilyDashboardView failed', err);
       if (rid !== renderDashboard._rid) return;
@@ -5854,7 +5877,7 @@ const TIMELINE_MILESTONES = [
     `;
     if (!list.length) {
       return `
-        <div class="card stack parent-updates-card">
+        <div class="card stack parent-updates-card" id="dashboard-parent-updates">
           ${header}
           <div class="empty-state muted">Aucune mise à jour parentale enregistrée pour l’instant.</div>
         </div>
@@ -5872,8 +5895,9 @@ const TIMELINE_MILESTONES = [
         </div>
       `
       : '';
+    const collapsibleAttr = shouldCollapse ? ' data-collapsible="1"' : '';
     return `
-      <div class="card stack parent-updates-card"${shouldCollapse ? ' data-collapsible="1"' : ''}>
+      <div class="card stack parent-updates-card" id="dashboard-parent-updates"${collapsibleAttr}>
         ${header}
         <ul class="parent-updates-list">${itemsHtml}</ul>
         ${toggleHtml}
