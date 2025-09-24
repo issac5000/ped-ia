@@ -608,6 +608,17 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           );
         }
         const growthContextText = buildFamilyGrowthSection(childrenRows, growthByChild);
+        const childStatusLines = buildFamilyChildrenGlobalStatus({
+          children: childrenRows,
+          childUpdates,
+          growthByChild,
+        });
+        const childStatusFallback = childrenRows.map((child, index) => {
+          if (!child) return `Enfant #${index + 1} : aucune donnée récente`;
+          const rawName = typeof child.first_name === 'string' ? child.first_name.trim() : '';
+          const displayName = rawName || `#${index + 1}`;
+          return `Enfant ${displayName} : aucune donnée récente`;
+        });
         const childUpdatesText = formatChildUpdatesForFamilyPrompt(childUpdates, childrenRows);
         const parentUpdatesText = formatParentUpdatesForPrompt(parentUpdates);
         console.log('[family-bilan] preparing OpenAI payload', {
@@ -627,6 +638,9 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           childUpdatesText.length
             ? `Évolutions enfant (du plus récent au plus ancien):\n${childUpdatesText.join('\n')}`
             : 'Évolutions enfant: aucune donnée exploitable.',
+          childrenRows.length
+            ? `État global des enfants:\n${(childStatusLines.length ? childStatusLines : childStatusFallback).join('\n')}`
+            : 'État global des enfants:\nAucun enfant enregistré.',
           parentUpdatesText.length
             ? `Historique parental récent:\n${parentUpdatesText.join('\n')}`
             : 'Historique parental: aucun changement récent consigné.',
@@ -794,6 +808,8 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
             teethLimit: 3,
             supaUrl,
             headers: supabaseHeaders,
+            profileId,
+            codeUnique,
           });
         } catch (err) {
           growthError = err;
@@ -1019,6 +1035,80 @@ function buildFamilyGrowthSection(children = [], growthMap) {
     blocks.push(`${header}:\n${indented}`);
   }
   return blocks.join('\n\n');
+}
+
+function buildFamilyChildrenGlobalStatus({ children = [], childUpdates = [], growthByChild }) {
+  if (!Array.isArray(children) || !children.length) return [];
+  const updatesByChild = new Map();
+  (Array.isArray(childUpdates) ? childUpdates : []).forEach((row) => {
+    if (!row || !Object.prototype.hasOwnProperty.call(row, 'child_id')) return;
+    const id = row.child_id != null ? String(row.child_id) : '';
+    if (!id) return;
+    const list = updatesByChild.get(id) || [];
+    if (list.length >= 3) return;
+    list.push(row);
+    updatesByChild.set(id, list);
+  });
+  return children
+    .map((child, index) => {
+      if (!child) return '';
+      const id = child.id != null ? String(child.id) : '';
+      const rawName = typeof child.first_name === 'string' ? child.first_name.trim() : '';
+      const displayName = rawName || `#${index + 1}`;
+      const updates = updatesByChild.get(id) || [];
+      const updateHighlights = updates
+        .map((row) => extractChildUpdateHighlight(row))
+        .filter(Boolean);
+      const growthEntry = growthByChild && typeof growthByChild.get === 'function' ? growthByChild.get(id) : null;
+      const growthHighlight = buildChildGrowthHighlight(growthEntry);
+      const parts = [];
+      if (updateHighlights.length) {
+        parts.push(updateHighlights.join(' | '));
+      }
+      if (growthHighlight) {
+        parts.push(`Croissance: ${growthHighlight}`);
+      }
+      const body = parts.length ? truncateForPrompt(parts.join(' ; '), 280) : 'aucune donnée récente';
+      return `Enfant ${displayName} : ${body}`;
+    })
+    .filter(Boolean);
+}
+
+function extractChildUpdateHighlight(row = {}) {
+  const summary = truncateForPrompt(row?.ai_summary, 200);
+  if (summary) return summary;
+  const comment = truncateForPrompt(row?.ai_commentaire, 200);
+  if (comment) return comment;
+  const parsed = parseUpdateContentForPrompt(row?.update_content);
+  if (parsed && typeof parsed === 'object') {
+    const parsedSummary = truncateForPrompt(parsed.summary, 200);
+    if (parsedSummary) return parsedSummary;
+    const formatted = formatUpdateDataForPrompt(parsed);
+    if (formatted) return truncateForPrompt(formatted, 200);
+  }
+  return '';
+}
+
+function buildChildGrowthHighlight(growthData) {
+  if (!growthData || typeof growthData !== 'object') return '';
+  const measurements = Array.isArray(growthData.measurements)
+    ? growthData.measurements.filter(Boolean).slice(0, 3)
+    : [];
+  const measurementLines = formatGrowthMeasurementsForPrompt(measurements).slice(0, 2);
+  const analysis = buildGrowthInterpretationLine(measurements) || '';
+  const teethLine = formatGrowthTeethForPrompt(growthData.teeth);
+  const parts = [];
+  if (measurementLines.length) {
+    parts.push(measurementLines.join(' | '));
+  }
+  if (analysis) {
+    parts.push(analysis.replace(/^Analyse\s*:\s*/i, '').trim());
+  }
+  if (teethLine) {
+    parts.push(`Dents: ${teethLine}`);
+  }
+  const text = parts.filter(Boolean).join(' ; ');
+  return text ? truncateForPrompt(text, 200) : '';
 }
 
 function formatChildrenForPrompt(children = []) {
@@ -1327,17 +1417,30 @@ async function fetchGrowthDataForPrompt({
   teethLimit = 3,
   supaUrl,
   headers,
+  profileId,
+  codeUnique,
 } = {}) {
+  const isAnonContext = !profileId && Boolean(codeUnique);
+  const logAnonFailure = (err) => {
+    if (isAnonContext) {
+      console.error('[ai/growth] anon fetch failed', { childId, err });
+    }
+  };
   if (!childId) {
+    logAnonFailure('missing childId');
     return { measurements: [], teeth: [] };
   }
-  let effectiveUrl = typeof supaUrl === 'string' && supaUrl ? supaUrl : '';
-  let effectiveHeaders = headers && typeof headers === 'object' ? headers : null;
-  if (!effectiveUrl || !effectiveHeaders) {
-    const config = getServiceConfig();
-    effectiveUrl = config.supaUrl;
-    effectiveHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
+  let config;
+  try {
+    config = getServiceConfig();
+  } catch (err) {
+    logAnonFailure(err);
+    throw err;
   }
+  const effectiveUrl = typeof supaUrl === 'string' && supaUrl ? supaUrl : config.supaUrl;
+  const baseHeaders = headers && typeof headers === 'object' && !Array.isArray(headers) ? { ...headers } : {};
+  const serviceHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
+  const effectiveHeaders = { ...baseHeaders, ...serviceHeaders };
   const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
   const limitedTeeth = Math.max(1, Math.min(3, Number(teethLimit) || 3));
   try {
@@ -1364,10 +1467,15 @@ async function fetchGrowthDataForPrompt({
         created_at: row?.created_at ?? null,
       }));
 
+    if (!measurements.length && !teeth.length) {
+      logAnonFailure('empty growth dataset');
+    }
+
     return { measurements, teeth };
   } catch (err) {
     const details = err instanceof HttpError ? err.details : err?.message;
     console.error('[ai/growth] fetch failed', { childId, err, details });
+    logAnonFailure(err);
     if (err instanceof HttpError) throw err;
     throw new HttpError(500, 'Supabase growth fetch failed', details);
   }
