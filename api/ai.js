@@ -575,6 +575,38 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const parentContext = sanitizeParentContextInput(profileRow);
         const parentContextLines = parentContextToPromptLines(parentContext);
         const childContextText = formatChildrenForPrompt(childrenRows);
+        const growthByChild = new Map();
+        if (childIds.length) {
+          await Promise.all(
+            childIds.map(async (id) => {
+              try {
+                const growth = await fetchGrowthDataForPrompt({
+                  childId: id,
+                  profileId,
+                  measurementLimit: 3,
+                  teethLimit: 2,
+                  supaUrl,
+                  headers,
+                });
+                if (
+                  growth &&
+                  ((Array.isArray(growth.measurements) && growth.measurements.length) ||
+                    (Array.isArray(growth.teeth) && growth.teeth.length))
+                ) {
+                  growthByChild.set(String(id), growth);
+                }
+              } catch (err) {
+                const status = err instanceof HttpError ? err.status : null;
+                console.warn('[family-bilan] unable to fetch growth data', {
+                  childId: id,
+                  status,
+                  message: err?.message || err,
+                });
+              }
+            })
+          );
+        }
+        const growthContextText = buildFamilyGrowthSection(childrenRows, growthByChild);
         const childUpdatesText = formatChildUpdatesForFamilyPrompt(childUpdates, childrenRows);
         const parentUpdatesText = formatParentUpdatesForPrompt(parentUpdates);
         console.log('[family-bilan] preparing OpenAI payload', {
@@ -585,6 +617,9 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         });
         const userPromptSections = [
           `Enfants suivis:\n${childContextText}`,
+          growthContextText
+            ? `Croissance récente (taille/poids/dents):\n${growthContextText}`
+            : 'Croissance récente: aucune mesure enregistrée.',
           parentContextLines.length
             ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
             : 'Contexte parental actuel: non précisé.',
@@ -924,6 +959,27 @@ function parentContextToPromptLines(ctx = {}) {
   return lines;
 }
 
+function buildFamilyGrowthSection(children = [], growthMap) {
+  if (!Array.isArray(children) || !children.length) return '';
+  if (!growthMap || typeof growthMap.get !== 'function') return '';
+  const blocks = [];
+  for (const child of children) {
+    if (!child) continue;
+    const id = child.id != null ? String(child.id) : '';
+    if (!id) continue;
+    const formatted = formatGrowthSectionForPrompt(growthMap.get(id));
+    if (!formatted) continue;
+    const name = child.first_name ? String(child.first_name).trim() : '';
+    const header = name || 'Enfant';
+    const indented = formatted
+      .split('\n')
+      .map((line) => (line ? `  ${line}` : line))
+      .join('\n');
+    blocks.push(`${header}:\n${indented}`);
+  }
+  return blocks.join('\n\n');
+}
+
 function formatChildrenForPrompt(children = []) {
   if (!Array.isArray(children) || !children.length) return 'Aucun enfant enregistré.';
   return children.map((child, index) => {
@@ -1027,14 +1083,9 @@ async function fetchGrowthDataForPrompt({
   let effectiveUrl = typeof supaUrl === 'string' && supaUrl ? supaUrl : '';
   let effectiveHeaders = headers && typeof headers === 'object' ? headers : null;
   if (!effectiveUrl || !effectiveHeaders) {
-    try {
-      const config = getServiceConfig();
-      effectiveUrl = config.supaUrl;
-      effectiveHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
-    } catch (err) {
-      console.warn('[api/ai] unable to resolve Supabase config for growth data', err);
-      return { measurements: [], teeth: [] };
-    }
+    const config = getServiceConfig();
+    effectiveUrl = config.supaUrl;
+    effectiveHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
   }
   let resolvedProfileId = typeof profileId === 'string' ? profileId.trim().slice(0, 128) : '';
   const normalizedCode = codeUnique ? String(codeUnique).trim().toUpperCase().slice(0, 64) : '';
@@ -1077,7 +1128,7 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   }
   const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
-  const measurementUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_height,status_weight,status_global,created_at&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc&limit=${limitedMeasurements}`;
+  const measurementUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_height,status_weight,status_global,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc&order=created_at.desc&limit=${limitedMeasurements}`;
   const teethUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc&order=created_at.desc&limit=${limitedTeeth}`;
   const [measurementRows, teethRows] = await Promise.all([
     supabaseRequest(measurementUrl, { headers }).catch((err) => {
