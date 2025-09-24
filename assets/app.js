@@ -5,6 +5,7 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
+import { createDataProxy } from './data-proxy.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -203,6 +204,7 @@ const TIMELINE_MILESTONES = [
   let supabase = null;
   let authSession = null;
   let activeProfile = null;
+  let dataProxy = null;
   // Conserver la liste des canaux de notifications pour les nettoyer à la déconnexion
   let notifChannels = [];
   let anonNotifTimer = null;
@@ -682,7 +684,8 @@ const TIMELINE_MILESTONES = [
       const working = cloneSettingsSnapshot(baseSnapshot);
       try {
         if (isAnonProfile()) {
-          const res = await anonChildRequest('list', {});
+          const childAccess = dataProxy.children();
+          const res = await childAccess.callAnon('list', {});
           const rows = Array.isArray(res.children) ? res.children : [];
           working.children = rows
             .map((row) => {
@@ -695,7 +698,8 @@ const TIMELINE_MILESTONES = [
           const primaryRow = rows.find((row) => row && row.is_primary);
           if (primaryRow?.id != null) working.primaryId = primaryRow.id;
           try {
-            const profileRes = await anonParentRequest('profile', {});
+            const parentAccess = dataProxy.parentUpdates();
+            const profileRes = await parentAccess.callAnon('profile', {});
             const profileRow = profileRes?.profile || null;
             if (profileRow) {
               const pseudo = profileRow.full_name || working.user.pseudo || '';
@@ -942,7 +946,13 @@ const TIMELINE_MILESTONES = [
   const isProfileLoggedIn = () => !!getActiveProfileId();
   // ✅ Fix: useRemote défini dès le départ
   const useRemote = () => !!supabase && isProfileLoggedIn();
-  const isAnonProfile = () => !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
+  const isAnonProfile = () => {
+    if (dataProxy && typeof dataProxy.isAnon === 'function') {
+      try { return dataProxy.isAnon(); }
+      catch { /* fallback */ }
+    }
+    return !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
+  };
 
   restoreAnonSession();
 
@@ -975,6 +985,29 @@ const TIMELINE_MILESTONES = [
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
     const response = await fetch('/api/anon/parent-updates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text().catch(() => '');
+    let json = null;
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!response.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
+      throw err;
+    }
+    return json || {};
+  }
+
+  async function anonFamilyRequest(action, payload = {}) {
+    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
+    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    if (!code) throw new Error('Code unique manquant');
+    const body = { action, code, ...payload };
+    const response = await fetch('/api/anon/family', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1042,6 +1075,15 @@ const TIMELINE_MILESTONES = [
     }
     return json || {};
   }
+
+  dataProxy = createDataProxy({
+    getActiveProfile: () => activeProfile,
+    ensureSupabaseClient,
+    getSupabaseClient: () => supabase,
+    anonChildrenRequest: (action, payload) => anonChildRequest(action, payload),
+    anonParentRequest: (action, payload) => anonParentRequest(action, payload),
+    anonFamilyRequest: (action, payload) => anonFamilyRequest(action, payload),
+  });
 
   async function fetchAnonProfileByCode(rawCode) {
     const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
@@ -2699,7 +2741,8 @@ const TIMELINE_MILESTONES = [
   async function syncUserFromSupabase() {
     try {
       if (isAnonProfile()) {
-        const res = await anonParentRequest('profile', {});
+        const parentAccess = dataProxy.parentUpdates();
+        const res = await parentAccess.callAnon('profile', {});
         const profileRow = res?.profile || null;
         if (profileRow) {
           setActiveProfile({ ...profileRow, isAnonymous: true });
@@ -3038,7 +3081,8 @@ const TIMELINE_MILESTONES = [
       if (useRemote()) {
         try {
           if (isAnonProfile()) {
-            const list = await anonChildRequest('list', {});
+            const childAccess = dataProxy.children();
+            const list = await childAccess.callAnon('list', {});
             const rows = Array.isArray(list.children) ? list.children : [];
             if (!rows.length) {
               const user = store.get(K.user);
@@ -3047,7 +3091,7 @@ const TIMELINE_MILESTONES = [
             }
             const primaryRow = rows.find((x) => x.is_primary) || rows[0];
             if (!primaryRow) return null;
-            const detail = await anonChildRequest('get', { childId: primaryRow.id });
+            const detail = await childAccess.callAnon('get', { childId: primaryRow.id });
             const data = detail.child;
             if (!data) return null;
             const child = mapRowToChild(data);
@@ -3125,7 +3169,8 @@ const TIMELINE_MILESTONES = [
       if (useRemote()) {
         try {
           if (isAnonProfile()) {
-            const detail = await anonChildRequest('get', { childId: id });
+            const childAccess = dataProxy.children();
+            const detail = await childAccess.callAnon('get', { childId: id });
             const data = detail.child;
             if (!data) return null;
             const ch = mapRowToChild(data);
@@ -3707,6 +3752,8 @@ const TIMELINE_MILESTONES = [
       async function saveChildProfile(child) {
         const uid = getActiveProfileId();
         if (!uid) throw new Error('Profil utilisateur introuvable');
+        const childAccess = dataProxy.children();
+        const supaClient = childAccess.isSupabase ? await childAccess.getClient() : null;
         const storedChildren = Array.isArray(settingsState.children) && settingsState.children.length
           ? settingsState.children
           : (store.get(K.children, []) || []);
@@ -3717,9 +3764,9 @@ const TIMELINE_MILESTONES = [
           return false;
         });
         let shouldBePrimary = !hasPrimaryLocally;
-        if (!isAnonProfile()) {
+        if (childAccess.isSupabase && supaClient) {
           try {
-            const { data: primaryRow, error: primaryError } = await supabase
+            const { data: primaryRow, error: primaryError } = await supaClient
               .from('children')
               .select('id')
               .eq('user_id', uid)
@@ -3758,8 +3805,8 @@ const TIMELINE_MILESTONES = [
         const measurementRecords = buildMeasurementPayloads(child.growth.measurements);
         const teethRecords = buildTeethPayloads(child.growth.teeth);
         const sleepRecords = buildSleepPayloads(child.growth.sleep);
-        if (isAnonProfile()) {
-          await anonChildRequest('create', {
+        if (childAccess.isAnon) {
+          await childAccess.callAnon('create', {
             child: payload,
             growthMeasurements: measurementRecords,
             growthTeeth: teethRecords,
@@ -3767,7 +3814,8 @@ const TIMELINE_MILESTONES = [
           });
           return;
         }
-        const { data: insChild, error: errC } = await supabase
+        if (!supaClient) throw new Error('Supabase client unavailable');
+        const { data: insChild, error: errC } = await supaClient
           .from('children')
           .insert([payload])
           .select('id')
@@ -3776,17 +3824,17 @@ const TIMELINE_MILESTONES = [
         const childId = insChild.id;
         const msPayload = measurementRecords.map(m => ({ ...m, child_id: childId }));
         if (msPayload.length) {
-          await supabase
+          await supaClient
             .from('growth_measurements')
             .upsert(msPayload, { onConflict: 'child_id,month' });
         }
         const teethPayloads = teethRecords.map(t => ({ ...t, child_id: childId }));
         if (teethPayloads.length) {
-          await supabase.from('growth_teeth').insert(teethPayloads);
+          await supaClient.from('growth_teeth').insert(teethPayloads);
         }
         const sleepPayloads = sleepRecords.map(s => ({ ...s, child_id: childId }));
         if (sleepPayloads.length) {
-          await supabase.from('growth_sleep').insert(sleepPayloads);
+          await supaClient.from('growth_sleep').insert(sleepPayloads);
         }
       }
 
@@ -3977,13 +4025,15 @@ const TIMELINE_MILESTONES = [
     const shouldFetchRemote = useRemote() && (!skipRemote || !child);
     if (shouldFetchRemote) {
       try {
-        if (isAnonProfile()) {
-          const detail = await anonChildRequest('get', { childId: idStr });
+        const childAccess = dataProxy.children();
+        if (childAccess.isAnon) {
+          const detail = await childAccess.callAnon('get', { childId: idStr });
           if (detail?.child) {
             child = mapRowToChild(detail.child) || child;
           }
         } else {
-          const { data: row } = await supabase.from('children').select('*').eq('id', idStr).maybeSingle();
+          const supaClient = await childAccess.getClient();
+          const { data: row } = await supaClient.from('children').select('*').eq('id', idStr).maybeSingle();
           if (row) child = mapRowToChild(row) || child;
         }
       } catch (err) {
@@ -4233,7 +4283,8 @@ const TIMELINE_MILESTONES = [
       let remoteProfileResponse = null;
 
       if (useRemote()) {
-        if (isAnonProfile()) {
+        const parentAccess = dataProxy.parentUpdates();
+        if (parentAccess.isAnon) {
           const profileId = activeProfile?.id;
           const snapshotInfo = await prepareParentSnapshot(profileId);
           if (snapshotInfo?.hasParentNote) shouldResetComment = true;
@@ -4255,7 +4306,7 @@ const TIMELINE_MILESTONES = [
             payloadBody.parentUpdate = snapshotInfo.snapshotRow;
           }
           try {
-            const response = await anonParentRequest('update-profile', payloadBody);
+            const response = await parentAccess.callAnon('update-profile', payloadBody);
             remoteProfileResponse = response?.profile || null;
             if (snapshotInfo?.snapshotRow) shouldRefreshFamily = true;
           } catch (anonErr) {
@@ -4265,17 +4316,18 @@ const TIMELINE_MILESTONES = [
         } else {
           const uid = getActiveProfileId();
           if (uid) {
+            const supaClient = await parentAccess.getClient();
             const updatePayload = {
               full_name: pseudo,
               parent_role: role,
               show_children_count: showStats,
               ...parentDbPayload,
             };
-            await supabase.from('profiles').update(updatePayload).eq('id', uid);
+            await supaClient.from('profiles').update(updatePayload).eq('id', uid);
             const snapshotInfo = await prepareParentSnapshot(uid);
             if (snapshotInfo?.snapshotRow) {
               try {
-                await supabase.from('parent_updates').insert(snapshotInfo.snapshotRow);
+                await supaClient.from('parent_updates').insert(snapshotInfo.snapshotRow);
                 if (snapshotInfo.hasParentNote) shouldResetComment = true;
                 shouldRefreshFamily = true;
               } catch (logErr) {
@@ -4375,10 +4427,12 @@ const TIMELINE_MILESTONES = [
     if (!confirm('Supprimer ce profil enfant ?')) return;
     try {
       if (useRemote()) {
-        if (isAnonProfile()) {
-          await anonChildRequest('delete', { childId });
+        const childAccess = dataProxy.children();
+        if (childAccess.isAnon) {
+          await childAccess.callAnon('delete', { childId });
         } else {
-          await supabase.from('children').delete().eq('id', childId);
+          const supaClient = await childAccess.getClient();
+          await supaClient.from('children').delete().eq('id', childId);
         }
       } else {
         const localChildren = store.get(K.children, []).filter((child) => String(child.id) !== String(childId));
@@ -4452,7 +4506,8 @@ const TIMELINE_MILESTONES = [
         }
 
         if (useRemote()) {
-          if (isAnonProfile()) {
+          const childAccess = dataProxy.children();
+          if (childAccess.isAnon) {
             const payload = {
               firstName: updated.firstName,
               sex: updated.sex,
@@ -4473,8 +4528,9 @@ const TIMELINE_MILESTONES = [
             const requestBody = { childId, child: payload };
             if (measurementRecords.length) requestBody.growthMeasurements = measurementRecords;
             if (teethRecords.length) requestBody.growthTeeth = teethRecords;
-            await anonChildRequest('update', requestBody);
+            await childAccess.callAnon('update', requestBody);
           } else {
+            const supaClient = await childAccess.getClient();
             const payload = {
               first_name: updated.firstName,
               sex: updated.sex,
@@ -4492,7 +4548,7 @@ const TIMELINE_MILESTONES = [
               sleep_bedtime: updated.context.sleep.bedtime,
               milestones: updated.milestones,
             };
-            await supabase.from('children').update(payload).eq('id', childId);
+            await supaClient.from('children').update(payload).eq('id', childId);
             if (measurementRecords.length || teethRecords.length) {
               const remoteUpdates = [];
               if (measurementRecords.length) {
@@ -4503,7 +4559,7 @@ const TIMELINE_MILESTONES = [
                   return payload;
                 });
                 remoteUpdates.push(
-                  supabase.from('growth_measurements').upsert(upsertMeasurements, { onConflict: 'child_id,month' })
+                  supaClient.from('growth_measurements').upsert(upsertMeasurements, { onConflict: 'child_id,month' })
                 );
               }
               if (teethRecords.length) {
@@ -4514,10 +4570,10 @@ const TIMELINE_MILESTONES = [
                 }));
                 remoteUpdates.push((async () => {
                   try {
-                    await supabase.from('growth_teeth').upsert(upsertTeeth, { onConflict: 'child_id,month' });
+                    await supaClient.from('growth_teeth').upsert(upsertTeeth, { onConflict: 'child_id,month' });
                   } catch (errTeeth) {
                     console.warn('growth_teeth upsert failed, fallback to insert', errTeeth);
-                    await supabase.from('growth_teeth').insert(upsertTeeth);
+                    await supaClient.from('growth_teeth').insert(upsertTeeth);
                   }
                 })());
               }
@@ -4584,9 +4640,10 @@ const TIMELINE_MILESTONES = [
     };
     try {
       if (useRemote()) {
-        if (isAnonProfile()) {
+        const parentAccess = dataProxy.parentUpdates();
+        if (parentAccess.isAnon) {
           try {
-            const response = await anonParentRequest('update-profile', {
+            const response = await parentAccess.callAnon('update-profile', {
               profileUpdate: { showChildrenCount: checked },
             });
             if (response?.profile && Object.prototype.hasOwnProperty.call(response.profile, 'show_children_count')) {
@@ -4601,7 +4658,8 @@ const TIMELINE_MILESTONES = [
         } else {
           const uid = getActiveProfileId();
           if (uid) {
-            const { error } = await supabase
+            const supaClient = await parentAccess.getClient();
+            const { error } = await supaClient
               .from('profiles')
               .update({ show_children_count: checked })
               .eq('id', uid);
@@ -5204,14 +5262,15 @@ const TIMELINE_MILESTONES = [
         let handled = false;
         if (useRemote()) {
           try {
-            if (isAnonProfile()) {
+            const childAccess = dataProxy.children();
+            if (childAccess.isAnon) {
               const measurementInputs = [];
               if (Number.isFinite(height)) measurementInputs.push({ month, height });
               if (Number.isFinite(weight)) measurementInputs.push({ month, weight });
               const measurementRecords = buildMeasurementPayloads(measurementInputs);
               const sleepRecords = Number.isFinite(sleep) ? buildSleepPayloads([{ month, hours: sleep }]) : [];
               const teethRecords = Number.isFinite(teeth) ? buildTeethPayloads([{ month, count: teeth }]) : [];
-              await anonChildRequest('add-growth', {
+              await childAccess.callAnon('add-growth', {
                 childId: safeChild.id,
                 growthMeasurements: measurementRecords,
                 growthSleep: sleepRecords,
@@ -5221,11 +5280,7 @@ const TIMELINE_MILESTONES = [
               renderDashboard();
               handled = true;
             } else {
-              const uid = getActiveProfileId();
-              if (!uid) {
-                console.warn('Aucun user_id disponible pour growth_measurements/growth_sleep/growth_teeth (form-measure)');
-                throw new Error('Pas de user_id');
-              }
+              const supaClient = await childAccess.getClient();
               const promises = [];
               if (Number.isFinite(height) || Number.isFinite(weight)) {
                 const payload = {
@@ -5236,7 +5291,7 @@ const TIMELINE_MILESTONES = [
                 };
                 if (payload.child_id && Number.isInteger(payload.month)) {
                   promises.push(
-                    supabase
+                    supaClient
                       .from('growth_measurements')
                       .upsert([payload], { onConflict: 'child_id,month' })
                   );
@@ -5247,7 +5302,7 @@ const TIMELINE_MILESTONES = [
               if (Number.isFinite(sleep) && safeChild?.id) {
                 promises.push((async () => {
                   try {
-                    const { data, error } = await supabase
+                    const { data, error } = await supaClient
                       .from('growth_sleep')
                       .insert([{ child_id: safeChild.id, month, hours: sleep }]);
                     if (error) {
@@ -5262,7 +5317,7 @@ const TIMELINE_MILESTONES = [
               if (Number.isFinite(teeth)) {
                 const payload = { child_id: safeChild.id, month, count: teeth };
                 promises.push(
-                  supabase
+                  supaClient
                     .from('growth_teeth')
                     .insert([payload])
                 );
@@ -5373,7 +5428,8 @@ const TIMELINE_MILESTONES = [
         let gmCount = 0;
         try {
           if (isAnonProfile()) {
-            const listRes = await anonChildRequest('list', {});
+            const childAccess = dataProxy.children();
+            const listRes = await childAccess.callAnon('list', {});
             const rows = Array.isArray(listRes.children) ? listRes.children : [];
             if (!rows.length) {
               if (rid !== renderDashboard._rid) return;
@@ -5385,7 +5441,7 @@ const TIMELINE_MILESTONES = [
             if (rid !== renderDashboard._rid) return;
             renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
             const primary = rows.find(r => r.id === selId) || rows[0];
-            const detail = await anonChildRequest('get', { childId: primary.id });
+            const detail = await childAccess.callAnon('get', { childId: primary.id });
             const data = detail.child;
             if (!data) throw new Error('Profil introuvable');
             const mapped = mapRowToChild(data);
@@ -6089,7 +6145,8 @@ const TIMELINE_MILESTONES = [
           };
           let children = [];
           try {
-            const res = await anonChildRequest('list', {});
+            const childAccess = dataProxy.children();
+            const res = await childAccess.callAnon('list', {});
             const rows = Array.isArray(res.children) ? res.children : [];
             children = rows.map((row) => normalizeChild(row)).filter(Boolean);
           } catch (err) {
@@ -6110,7 +6167,8 @@ const TIMELINE_MILESTONES = [
           let parentUpdates = [];
           let familyContext = state.data?.familyContext || null;
           try {
-            const updatesRes = await anonParentRequest('list', { limit: PARENT_UPDATES_LIMIT });
+            const parentAccess = dataProxy.parentUpdates();
+            const updatesRes = await parentAccess.callAnon('list', { limit: PARENT_UPDATES_LIMIT });
             if (Array.isArray(updatesRes.parentUpdates)) {
               parentUpdates = updatesRes.parentUpdates;
             }
@@ -7472,21 +7530,23 @@ const TIMELINE_MILESTONES = [
     if (!childId || !useRemote()) return;
     const normalizedContent = normalizeUpdateContentForLog(updateContent);
     const content = JSON.stringify(normalizedContent);
-    if (isAnonProfile()) {
-      await anonChildRequest('log-update', {
+    const childAccess = dataProxy.children();
+    if (childAccess.isAnon) {
+      await childAccess.callAnon('log-update', {
         childId,
         updateType,
         updateContent: content
       });
       return;
     }
+    const supaClient = await childAccess.getClient();
     const historySummaries = await fetchChildUpdateSummaries(childId);
     const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(childId, updateType, normalizedContent, historySummaries);
     const payload = { child_id: childId, update_type: updateType, update_content: content };
     if (aiSummary) payload.ai_summary = aiSummary;
     if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
     try {
-      const { error } = await supabase
+      const { error } = await supaClient
         .from('child_updates')
         .insert([payload]);
       if (error) throw error;
@@ -7553,7 +7613,10 @@ const TIMELINE_MILESTONES = [
   async function fetchChildUpdateSummaries(childId) {
     if (!childId) return [];
     try {
-      const { data, error } = await supabase
+      const childAccess = dataProxy.children();
+      if (childAccess.isAnon) return [];
+      const supaClient = await childAccess.getClient();
+      const { data, error } = await supaClient
         .from('child_updates')
         .select('ai_summary')
         .eq('child_id', childId)
@@ -7695,11 +7758,13 @@ const TIMELINE_MILESTONES = [
   async function getChildUpdates(childId) {
     if (!useRemote()) return [];
     try {
-      if (isAnonProfile()) {
-        const res = await anonChildRequest('list-updates', { childId });
+      const childAccess = dataProxy.children();
+      if (childAccess.isAnon) {
+        const res = await childAccess.callAnon('list-updates', { childId });
         return Array.isArray(res.updates) ? res.updates : [];
       }
-      const { data, error } = await supabase
+      const supaClient = await childAccess.getClient();
+      const { data, error } = await supaClient
         .from('child_updates')
         .select('*')
         .eq('child_id', childId)
@@ -7767,8 +7832,9 @@ const TIMELINE_MILESTONES = [
   async function listChildrenSlim() {
     if (useRemote()) {
       try {
-        if (isAnonProfile()) {
-          const res = await anonChildRequest('list', {});
+        const childAccess = dataProxy.children();
+        if (childAccess.isAnon) {
+          const res = await childAccess.callAnon('list', {});
           const rows = Array.isArray(res.children) ? res.children : [];
           return rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
         }
@@ -7777,7 +7843,8 @@ const TIMELINE_MILESTONES = [
           console.warn('Aucun user_id disponible pour children (listChildrenSlim)');
           throw new Error('Pas de user_id');
         }
-        const { data: rows } = await supabase
+        const supaClient = await childAccess.getClient();
+        const { data: rows } = await supaClient
           .from('children')
           .select('id,first_name,dob,is_primary')
           .eq('user_id', uid)
@@ -7794,13 +7861,15 @@ const TIMELINE_MILESTONES = [
     if (!id) return;
     if (useRemote()) {
       try {
-        if (isAnonProfile()) {
-          await anonChildRequest('set-primary', { childId: id });
+        const childAccess = dataProxy.children();
+        if (childAccess.isAnon) {
+          await childAccess.callAnon('set-primary', { childId: id });
         } else {
           const uid = getActiveProfileId();
           if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
-          await supabase.from('children').update({ is_primary: false }).eq('user_id', uid);
-          await supabase.from('children').update({ is_primary: true }).eq('id', id);
+          const supaClient = await childAccess.getClient();
+          await supaClient.from('children').update({ is_primary: false }).eq('user_id', uid);
+          await supaClient.from('children').update({ is_primary: true }).eq('id', id);
         }
       } catch {}
       invalidateSettingsRemoteCache();
@@ -8286,9 +8355,10 @@ const TIMELINE_MILESTONES = [
       message: 'Impossible de récupérer les repères OMS pour le moment. Réessayez plus tard ou contactez le support.'
     };
     if (!useRemote() || !childId) return { rows: [], notice: null };
-    if (isAnonProfile()) {
+    const childAccess = dataProxy.children();
+    if (childAccess.isAnon) {
       try {
-        const res = await anonChildRequest('growth-status', { childId, limit: 20 });
+        const res = await childAccess.callAnon('growth-status', { childId, limit: 20 });
         const rows = Array.isArray(res?.rows) ? res.rows : [];
         const notice = res?.notice && typeof res.notice === 'object' ? res.notice : null;
         return { rows, notice };
@@ -8298,6 +8368,7 @@ const TIMELINE_MILESTONES = [
       }
     }
     if (!supabase) return { rows: [], notice: null };
+    const supaClient = await childAccess.getClient();
     const orderAttempts = [
       { column: 'measured_at', options: { ascending: false, nullsFirst: false } },
       { column: 'recorded_at', options: { ascending: false, nullsFirst: false } },
@@ -8307,7 +8378,7 @@ const TIMELINE_MILESTONES = [
     let lastError = null;
     for (const attempt of orderAttempts) {
       try {
-        let query = supabase
+        let query = supaClient
           .from('child_growth_with_status')
           .select('*')
           .eq('child_id', childId)
