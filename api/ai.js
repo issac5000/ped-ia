@@ -588,11 +588,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
                   supaUrl,
                   headers,
                 });
-                if (
-                  growth &&
-                  ((Array.isArray(growth.measurements) && growth.measurements.length) ||
-                    (Array.isArray(growth.teeth) && growth.teeth.length))
-                ) {
+                if (growth) {
                   growthByChild.set(String(id), growth);
                 }
               } catch (err) {
@@ -601,6 +597,11 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
                   childId: id,
                   status,
                   message: err?.message || err,
+                });
+                growthByChild.set(String(id), {
+                  measurements: [],
+                  teeth: [],
+                  status: 'error',
                 });
               }
             })
@@ -1119,7 +1120,34 @@ async function fetchGrowthDataForPrompt({
       }
     }
   }
-  return fetchGrowthTables(effectiveUrl, effectiveHeaders, childId, { measurementLimit, teethLimit });
+  try {
+    const tables = await fetchGrowthTables(effectiveUrl, effectiveHeaders, childId, { measurementLimit, teethLimit });
+    const measurements = Array.isArray(tables?.measurements) ? tables.measurements.filter(Boolean) : [];
+    const teeth = Array.isArray(tables?.teeth) ? tables.teeth.filter(Boolean) : [];
+    const hasData = measurements.length > 0 || teeth.length > 0;
+    return {
+      measurements,
+      teeth,
+      status: hasData ? 'ok' : 'empty',
+    };
+  } catch (err) {
+    const status = err instanceof HttpError ? err.status : (typeof err?.status === 'number' ? err.status : null);
+    const details = extractSupabaseErrorDetails(err);
+    console.error('[api/ai] growth data fetch failed', {
+      childId,
+      profileId: resolvedProfileId || null,
+      codeUnique: normalizedCode || null,
+      status,
+      details,
+    });
+    return {
+      measurements: [],
+      teeth: [],
+      status: 'error',
+      error: 'technical_failure',
+      errorMessage: details || 'Growth data unavailable due to technical error.',
+    };
+  }
 }
 
 async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit = 3, teethLimit = 3 } = {}) {
@@ -1128,10 +1156,10 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   }
   const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
-  const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=*&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
+  const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,height_cm,weight_kg,status_height,status_weight,status_global,month,age_month,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
   const measurementRows = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
-    '&order=age_month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=age_month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=created_at.desc',
     '',
@@ -1151,8 +1179,10 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
     errorMessage: 'Unable to fetch teeth measurements',
     context: { childId },
   });
-  const measurements = Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [];
-  const teeth = Array.isArray(teethRows) ? teethRows.filter(Boolean) : [];
+  const measurements = sortGrowthMeasurements(Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [])
+    .slice(0, limitedMeasurements);
+  const teeth = sortGrowthTeeth(Array.isArray(teethRows) ? teethRows.filter(Boolean) : [])
+    .slice(0, limitedTeeth);
   return { measurements, teeth };
 }
 
@@ -1212,7 +1242,64 @@ async function fetchSupabaseRowsWithFallback(baseUrl, headers, orderSuffixes, { 
   return [];
 }
 
+function sortGrowthMeasurements(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  return rows
+    .slice()
+    .sort((a, b) => compareGrowthEntries(b, a));
+}
+
+function sortGrowthTeeth(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  return rows
+    .slice()
+    .sort((a, b) => compareGrowthEntries(b, a));
+}
+
+function compareGrowthEntries(first, second) {
+  const firstMonth = extractGrowthMonth(first);
+  const secondMonth = extractGrowthMonth(second);
+  if (Number.isFinite(firstMonth) || Number.isFinite(secondMonth)) {
+    const normalizedFirst = Number.isFinite(firstMonth) ? firstMonth : -Infinity;
+    const normalizedSecond = Number.isFinite(secondMonth) ? secondMonth : -Infinity;
+    return normalizedFirst - normalizedSecond;
+  }
+  const firstTimestamp = extractGrowthTimestamp(first);
+  const secondTimestamp = extractGrowthTimestamp(second);
+  const normalizedFirst = Number.isFinite(firstTimestamp) ? firstTimestamp : -Infinity;
+  const normalizedSecond = Number.isFinite(secondTimestamp) ? secondTimestamp : -Infinity;
+  return normalizedFirst - normalizedSecond;
+}
+
+function extractGrowthMonth(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const keys = ['age_month', 'ageMonth', 'month', 'months', 'age_in_months', 'agemos'];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(entry, key)) continue;
+    const value = Number(entry[key]);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function extractGrowthTimestamp(entry) {
+  if (!entry || typeof entry !== 'object') return -Infinity;
+  const recorded = typeof entry.recorded_at === 'string' ? Date.parse(entry.recorded_at) : NaN;
+  const created = typeof entry.created_at === 'string' ? Date.parse(entry.created_at) : NaN;
+  if (Number.isFinite(recorded)) return recorded;
+  if (Number.isFinite(created)) return created;
+  return -Infinity;
+}
+
 function formatGrowthSectionForPrompt(growthData) {
+  if (!growthData || typeof growthData !== 'object') {
+    return 'Croissance non disponible (erreur technique).';
+  }
+  if (growthData.status === 'error') {
+    return 'Croissance non disponible (erreur technique).';
+  }
   const measurementLines = formatGrowthMeasurementsForPrompt(growthData?.measurements);
   const lines = [];
   if (measurementLines.length) {
@@ -1225,7 +1312,9 @@ function formatGrowthSectionForPrompt(growthData) {
   if (teethLine) {
     lines.push(`Dents: ${teethLine}`);
   }
-  if (!lines.length) return '';
+  if (!lines.length) {
+    return 'Aucune mesure de croissance disponible.';
+  }
   return lines.join('\n').slice(0, 600);
 }
 
