@@ -1002,7 +1002,7 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   }
   const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
-  const measurementUrl = `${supaUrl}/rest/v1/growth_measurements?select=month,height_cm,weight_kg,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc&order=created_at.desc&limit=${limitedMeasurements}`;
+  const measurementUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_height,status_weight,status_global,created_at&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc&limit=${limitedMeasurements}`;
   const teethUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc&order=created_at.desc&limit=${limitedTeeth}`;
   const [measurementRows, teethRows] = await Promise.all([
     supabaseRequest(measurementUrl, { headers }).catch((err) => {
@@ -1047,11 +1047,41 @@ function formatGrowthMeasurementEntry(entry) {
   if (!entry || typeof entry !== 'object') return '';
   const parts = [];
   const heightText = formatGrowthNumber(entry.height_cm, { unit: 'cm', decimals: 1 });
-  if (heightText) parts.push(`taille ${heightText}`);
+  if (heightText) {
+    let heightLabel = `taille ${heightText}`;
+    const heightStatus = sanitizeGrowthSummary(entry.status_height);
+    if (heightStatus) {
+      heightLabel += ` (statut: ${heightStatus})`;
+    }
+    parts.push(heightLabel);
+  }
   const weightText = formatGrowthNumber(entry.weight_kg, { unit: 'kg', decimals: 2 });
-  if (weightText) parts.push(`poids ${weightText}`);
+  if (weightText) {
+    let weightLabel = `poids ${weightText}`;
+    const weightStatus = sanitizeGrowthSummary(entry.status_weight);
+    if (weightStatus) {
+      weightLabel += ` (statut: ${weightStatus})`;
+    }
+    parts.push(weightLabel);
+  }
   if (!parts.length) return '';
-  const period = formatGrowthPeriod(entry);
+  let period = '';
+  if (entry.agemos !== undefined && entry.agemos !== null && entry.agemos !== '') {
+    const ageNumber = Number(entry.agemos);
+    if (Number.isFinite(ageNumber)) {
+      const normalizedAge = ageNumber % 1 === 0 ? ageNumber : Number(ageNumber.toFixed(1));
+      period = `mois ${normalizedAge}`;
+    } else {
+      const rawAge = sanitizeGrowthSummary(entry.agemos);
+      if (rawAge) {
+        period = `mois ${rawAge}`;
+      }
+    }
+  }
+  if (!period) {
+    const createdAt = typeof entry.created_at === 'string' ? entry.created_at : '';
+    period = createdAt ? formatDateForPrompt(createdAt) : '';
+  }
   return period ? `${period}: ${parts.join(' ; ')}` : parts.join(' ; ');
 }
 
