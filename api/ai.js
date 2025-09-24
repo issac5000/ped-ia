@@ -311,19 +311,24 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           : [];
         const contextParts = rawContextParts.filter(Boolean).slice(0, 10);
         const latestGrowthData = growthStatusEntries[0] || null;
-        const growthSummary = summarizeGrowthStatus(latestGrowthData);
-        if (growthSummary && !contextParts.includes(growthSummary)) {
-          contextParts.push(growthSummary);
-        }
+        const growthSummaryFromEntry = summarizeGrowthStatus(latestGrowthData);
+        const growthSummaryFromBody = sanitizeGrowthSummary(
+          body.growthStatusSummary ?? body.growth_status_summary ?? ''
+        );
+        const growthSummary = sanitizeGrowthSummary(growthSummaryFromEntry || growthSummaryFromBody || '');
         const includeGrowth = Boolean(growthSummary);
+        const filteredContextParts = includeGrowth
+          ? contextParts.filter((entry) => !isSameGrowthSummary(entry, growthSummary))
+          : contextParts;
         const growthPromptLines = buildGrowthPromptLines({ parentComment, latestGrowthData })
           .filter((line) => !/^\s*Analyse\s+OMS/i.test(line || ''));
         const growthSection = includeGrowth ? formatGrowthSectionForPrompt(growthData) : '';
         const summarySections = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Mise à jour (JSON): ${updateText || 'Aucune'}`,
+          includeGrowth ? `Synthèse croissance (OMS): ${growthSummary}` : '',
           ...growthPromptLines,
-          ...contextParts,
+          ...filteredContextParts,
           includeGrowth && growthSection ? `Section Croissance:\n${growthSection}` : ''
         ].filter(Boolean);
         const summaryMessages = [
@@ -359,8 +364,9 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
           `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
+          includeGrowth ? `Synthèse croissance (OMS): ${growthSummary}` : '',
           ...growthPromptLines,
-          ...contextParts,
+          ...filteredContextParts,
           includeGrowth && growthSection ? `Croissance récente:\n${growthSection}` : '',
           parentContextBlock
         ].filter(Boolean);
@@ -1060,6 +1066,22 @@ function formatGrowthTeethForPrompt(teethEntries = []) {
   const label = `${count} dent${count > 1 ? 's' : ''}`;
   const period = formatGrowthPeriod(latest);
   return period ? `${label} (${period})` : label;
+}
+
+function sanitizeGrowthSummary(value) {
+  if (!value) return '';
+  const text = typeof value === 'string' ? value : String(value);
+  return text.trim().slice(0, 400);
+}
+
+function isSameGrowthSummary(a, b) {
+  if (!a || !b) return false;
+  const normalize = (text) =>
+    String(text)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  return normalize(a) === normalize(b);
 }
 
 function formatGrowthPeriod(entry) {
