@@ -188,18 +188,23 @@ async function loginAsGuest() {
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
     if (status) status.textContent = 'Création du compte invité…';
-    const response = await fetch('/api/guest-create', { method: 'POST' });
+    const response = await fetch('/api/profile-ensure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isGuest: true }),
+    });
     const text = await response.text().catch(() => '');
     let payload = null;
     if (text) {
       try { payload = JSON.parse(text); } catch { payload = null; }
     }
-    if (!response.ok || !payload?.email || !payload?.password) {
+    const credentials = payload?.credentials;
+    if (!response.ok || !credentials?.email || !credentials?.password) {
       const message = payload?.error || 'Impossible de créer un invité pour le moment.';
       throw new Error(message);
     }
     if (status) status.textContent = 'Connexion invitée…';
-    const { data, error } = await supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email, password: credentials.password });
     if (error || !data?.session) {
       throw new Error(error?.message || 'Connexion invitée impossible.');
     }

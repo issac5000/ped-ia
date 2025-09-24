@@ -2779,21 +2779,19 @@ const TIMELINE_MILESTONES = [
   // Garantir l’existence d’une ligne profil pour l’utilisateur authentifié sans écraser son pseudo
   async function ensureProfile(user){
     try {
-      if (!supabase || !user?.id) return;
-      const uid = user.id;
-      const metaName = user.user_metadata?.full_name || user.email || '';
-      // Vérifier si un profil existe déjà
-      const { data: existing, error: selErr } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .eq('id', uid)
-        .maybeSingle();
-      if (selErr) throw selErr;
-      if (!existing) {
-        // Insérer un nouveau profil avec les métadonnées par défaut (pas d’avatar)
-        await supabase.from('profiles').insert({ id: uid, full_name: metaName });
-      } else {
-        // Ne pas écraser un full_name choisi par l’utilisateur ; rien d’autre à mettre à jour
+      if (!user?.id) return;
+      const payload = {
+        userId: user.id,
+        isGuest: !!(user.user_metadata && user.user_metadata.is_guest),
+      };
+      const response = await fetch('/api/profile-ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok && DEBUG_AUTH) {
+        const text = await response.text().catch(() => '');
+        console.warn('ensureProfile failed', text || response.statusText);
       }
     } catch (e) {
       if (DEBUG_AUTH) console.warn('ensureProfile failed', e);
@@ -2878,18 +2876,23 @@ const TIMELINE_MILESTONES = [
     try {
       if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
       if (status) status.textContent = 'Création du compte invité…';
-      const response = await fetch('/api/guest-create', { method: 'POST' });
+      const response = await fetch('/api/profile-ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isGuest: true }),
+      });
       const text = await response.text().catch(() => '');
       let payload = null;
       if (text) {
         try { payload = JSON.parse(text); } catch (err) { payload = null; }
       }
-      if (!response.ok || !payload?.email || !payload?.password) {
+      const credentials = payload?.credentials;
+      if (!response.ok || !credentials?.email || !credentials?.password) {
         const message = payload?.error || 'Impossible de créer un invité pour le moment.';
         throw new Error(message);
       }
       if (status) status.textContent = 'Connexion invitée…';
-      const { data, error } = await supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email, password: credentials.password });
       if (error || !data?.session) {
         throw new Error(error?.message || 'Connexion invitée impossible.');
       }

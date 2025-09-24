@@ -1,7 +1,7 @@
 import handleAi from '../lib/api-handlers/ai.js';
 import handleChildUpdates from '../lib/api-handlers/child-updates.js';
 import handleEnv from '../lib/api-handlers/env.js';
-import handleGuestCreate from '../lib/api-handlers/guest-create.js';
+import handleProfileEnsure from '../lib/api-handlers/profile-ensure.js';
 import handleImage from '../lib/api-handlers/image.js';
 import handleAnonChildren from '../lib/api-handlers/anon/children.js';
 import handleAnonCommunity from '../lib/api-handlers/anon/community.js';
@@ -17,7 +17,7 @@ import handleProfilesByIds from '../lib/api-handlers/profiles/by-ids.js';
 //   • /api/ai                (ancien api/ai.js)
 //   • /api/child-updates     (ancien api/child-updates.js)
 //   • /api/env               (ancien api/env.js)
-//   • /api/guest-create      (ancien api/guest-create.js)
+//   • /api/profile-ensure    (nouvelle route garantissant un profil Supabase)
 //   • /api/image             (ancien api/image.js)
 //   • /api/messages/delete-conversation (ancien api/messages/delete-conversation.js)
 //   • /api/profiles/create-anon         (ancien api/profiles/create-anon.js)
@@ -35,7 +35,7 @@ export default async function unifiedApiRouter(req, res) {
   if (pathname === '/api/ai') return handleAi(req, res);
   if (pathname === '/api/child-updates') return handleChildUpdates(req, res);
   if (pathname === '/api/env') return handleEnv(req, res);
-  if (pathname === '/api/guest-create') return handleGuestCreate(req, res);
+  if (pathname === '/api/profile-ensure') return handleProfileEnsure(req, res);
   if (pathname === '/api/image') return handleImage(req, res);
 
   if (pathname.startsWith('/api/anon')) {
