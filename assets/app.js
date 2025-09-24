@@ -6,6 +6,7 @@ import { DEV_QUESTIONS } from './questions-dev.js';
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
+import { summarizeGrowthStatus } from './ia.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -7758,6 +7759,7 @@ const TIMELINE_MILESTONES = [
         parentComment: typeof contentObj?.userComment === 'string' ? contentObj.userComment : '',
         historySummaries: Array.isArray(historySummaries) ? historySummaries.slice(0, 10) : [],
       };
+      const contextParts = [];
       if (updateType === 'measure') {
         try {
           const growthStatus = await renderGrowthStatus(remoteChildId);
@@ -7768,15 +7770,22 @@ const TIMELINE_MILESTONES = [
               const serialized = growthStatus.serializeEntry(matched);
               if (serialized) {
                 contentObj.growthStatus = serialized;
-                contentObj.growthStatusSummary = growthStatus.describeEntry(matched, { short: false });
-                payload.growthStatus = growthStatus.toPromptPayload(5, matched);
-                payload.growthStatusSummary = contentObj.growthStatusSummary;
+                const growthSummary = summarizeGrowthStatus(serialized);
+                if (growthSummary) {
+                  contentObj.growthStatusSummary = growthSummary;
+                  payload.growthStatus = growthStatus.toPromptPayload(5, matched);
+                  payload.growthStatusSummary = growthSummary;
+                  contextParts.push(growthSummary);
+                }
               }
             }
           }
         } catch (err) {
           console.warn('generateAiSummaryAndComment growth status enrich failed', err);
         }
+      }
+      if (contextParts.length) {
+        payload.contextParts = contextParts;
       }
       if (activeProfile?.id) {
         payload.profileId = String(activeProfile.id);
