@@ -4448,6 +4448,15 @@ const TIMELINE_MILESTONES = [
       settingsState.selectedChildId = String(id);
       renderSettingsChildrenList(settingsState.children, settingsState.user.primaryChildId);
       renderChildEditor(settingsState.selectedChildId, renderSettings._rid);
+      const editContainer = $('#child-edit');
+      if (editContainer) {
+        requestAnimationFrame(() => {
+          const scrollTarget = editContainer.closest('.card') || editContainer;
+          if (scrollTarget && typeof scrollTarget.scrollIntoView === 'function') {
+            scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      }
     } else if (action === 'delete') {
       deleteChildAction(id);
     }
