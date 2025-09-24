@@ -1093,7 +1093,14 @@ const TIMELINE_MILESTONES = [
     return safe;
   }
 
-  const ANON_CHILD_ACTIONS_REQUIRING_ID = new Set(['children.get', 'children.update', 'children.delete']);
+  const ANON_CHILD_ACTIONS_REQUIRING_ID = new Set([
+    'children.get',
+    'children.update',
+    'children.delete',
+    'children.log-update',
+    'children.bilan',
+    'child.bilan',
+  ]);
 
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
@@ -1105,7 +1112,7 @@ const TIMELINE_MILESTONES = [
     const payloadObject = payload && typeof payload === 'object' ? payload : {};
     const sanitized = sanitizeAnonChildPayload(payloadObject);
     if (ANON_CHILD_ACTIONS_REQUIRING_ID.has(actionKey) && !Object.prototype.hasOwnProperty.call(sanitized, 'childId')) {
-      console.warn("Aucun enfant sélectionné, impossible d'exécuter l'action :", actionKey);
+      console.warn("Aucun enfant sélectionné, impossible d'exécuter l’action :", actionKey);
       return null;
     }
     const body = { code, ...sanitized };
@@ -4609,37 +4616,25 @@ const TIMELINE_MILESTONES = [
     e.preventDefault();
     const form = e.currentTarget;
     if (form.dataset.busy === '1') return;
+    const childId = form.getAttribute('data-child-id');
+    const baseChild = childId ? settingsState.childrenMap.get(childId) : null;
+    if (!childId || !baseChild) {
+      console.warn("Aucun enfant sélectionné, impossible d'exécuter l’action :", 'children.update');
+      showNotification({
+        title: 'Sélection requise',
+        text: 'Veuillez sélectionner un enfant avant de continuer.',
+      });
+      return;
+    }
     form.dataset.busy = '1';
     const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Mise à jour en cours…';
     }
-    const childId = form.getAttribute('data-child-id');
-    if (!childId) {
-      console.warn("Aucun enfant sélectionné, impossible d'exécuter l'action :", 'children.update');
-      showNotification({
-        title: 'Sélection requise',
-        text: 'Veuillez sélectionner un enfant avant de continuer.',
-      });
-      delete form.dataset.busy;
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Mettre à jour';
-      }
-      return;
-    }
     let hadError = false;
     try {
-      const base = settingsState.childrenMap.get(childId);
-      if (!base) {
-        console.warn("Aucun enfant sélectionné, impossible d'exécuter l'action :", 'children.update');
-        showNotification({
-          title: 'Sélection requise',
-          text: 'Veuillez sélectionner un enfant avant de continuer.',
-        });
-        return;
-      }
+      const base = baseChild;
       const prevSnapshot = settingsState.snapshots.get(childId) || makeUpdateSnapshot(base);
       const { child: updated, growthInputs, userComment } = buildChildUpdateFromForm(base, form);
       const nextSnapshot = makeUpdateSnapshot(updated);
@@ -7725,7 +7720,15 @@ const TIMELINE_MILESTONES = [
   }
 
   async function logChildUpdate(childId, updateType, updateContent) {
-    if (!childId || !useRemote()) return;
+    if (!childId) {
+      console.warn("Aucun enfant sélectionné, impossible d'exécuter l’action :", 'children.log-update');
+      showNotification({
+        title: 'Sélection requise',
+        text: 'Veuillez sélectionner un enfant avant de continuer.',
+      });
+      return;
+    }
+    if (!useRemote()) return;
     const normalizedContent = normalizeUpdateContentForLog(updateContent);
     const content = JSON.stringify(normalizedContent);
     if (isAnonProfile()) {
