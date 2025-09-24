@@ -961,6 +961,12 @@ const TIMELINE_MILESTONES = [
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
+    if (typeof body.code === 'string') {
+      body.code = body.code.trim().toUpperCase();
+    }
+    if (!body.code) {
+      console.warn('Anon request without code:', body);
+    }
     const response = await fetch('/api/anon/children', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -972,6 +978,7 @@ const TIMELINE_MILESTONES = [
       try { json = JSON.parse(text); } catch {}
     }
     if (!response.ok) {
+      console.error('Anon response:', response.status, text);
       const err = new Error(json?.error || 'Service indisponible');
       if (json?.details) err.details = json.details;
       throw err;
@@ -984,6 +991,12 @@ const TIMELINE_MILESTONES = [
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
+    if (typeof body.code === 'string') {
+      body.code = body.code.trim().toUpperCase();
+    }
+    if (!body.code) {
+      console.warn('Anon request without code:', body);
+    }
     const response = await fetch('/api/anon/parent-updates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -995,6 +1008,7 @@ const TIMELINE_MILESTONES = [
       try { json = JSON.parse(text); } catch {}
     }
     if (!response.ok) {
+      console.error('Anon response:', response.status, text);
       const err = new Error(json?.error || 'Service indisponible');
       if (json?.details) err.details = json.details;
       throw err;
@@ -1007,6 +1021,12 @@ const TIMELINE_MILESTONES = [
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
+    if (typeof body.code === 'string') {
+      body.code = body.code.trim().toUpperCase();
+    }
+    if (!body.code) {
+      console.warn('Anon request without code:', body);
+    }
     const response = await fetch('/api/anon/family', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1018,6 +1038,7 @@ const TIMELINE_MILESTONES = [
       try { json = JSON.parse(text); } catch {}
     }
     if (!response.ok) {
+      console.error('Anon response:', response.status, text);
       const err = new Error(json?.error || 'Service indisponible');
       if (json?.details) err.details = json.details;
       throw err;
@@ -1058,6 +1079,12 @@ const TIMELINE_MILESTONES = [
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
+    if (typeof body.code === 'string') {
+      body.code = body.code.trim().toUpperCase();
+    }
+    if (!body.code) {
+      console.warn('Anon request without code:', body);
+    }
     const response = await fetch('/api/anon/community', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1069,12 +1096,20 @@ const TIMELINE_MILESTONES = [
       try { json = JSON.parse(text); } catch {}
     }
     if (!response.ok) {
+      console.error('Anon response:', response.status, text);
       const err = new Error(json?.error || 'Service indisponible');
       if (json?.details) err.details = json.details;
       throw err;
     }
     return json || {};
   }
+
+  anonChildRequest.__anonEndpoint = '/api/anon/children';
+  anonChildRequest.__expectsCode = true;
+  anonParentRequest.__anonEndpoint = '/api/anon/parent-updates';
+  anonParentRequest.__expectsCode = true;
+  anonFamilyRequest.__anonEndpoint = '/api/anon/family';
+  anonFamilyRequest.__expectsCode = true;
 
   dataProxy = createDataProxy({
     getActiveProfile: () => activeProfile,
