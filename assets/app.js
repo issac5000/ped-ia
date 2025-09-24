@@ -219,29 +219,79 @@ const TIMELINE_MILESTONES = [
     snapshots: new Map(),
   };
 
+  const NO_ACTIVE_CHILD_MESSAGE = 'Vous devez sélectionner ou créer un enfant avant d’accéder à cette section.';
+
   let currentChildId = null;
+  const ACTIVE_CHILD_STORAGE_KEY = 'pedia.active_child_id';
+
+  function persistCurrentChildId(value) {
+    if (typeof window === 'undefined') return;
+    const storages = [];
+    try {
+      if (window.localStorage) storages.push(window.localStorage);
+    } catch {}
+    try {
+      if (window.sessionStorage) storages.push(window.sessionStorage);
+    } catch {}
+    for (const storage of storages) {
+      try {
+        if (value) {
+          storage.setItem(ACTIVE_CHILD_STORAGE_KEY, value);
+        } else {
+          storage.removeItem(ACTIVE_CHILD_STORAGE_KEY);
+        }
+      } catch {}
+    }
+  }
+
+  function readPersistedChildId() {
+    if (typeof window === 'undefined') return null;
+    const storages = [];
+    try {
+      if (window.localStorage) storages.push(window.localStorage);
+    } catch {}
+    try {
+      if (window.sessionStorage) storages.push(window.sessionStorage);
+    } catch {}
+    for (const storage of storages) {
+      try {
+        const value = storage.getItem(ACTIVE_CHILD_STORAGE_KEY);
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed) return trimmed;
+        }
+      } catch {}
+    }
+    return null;
+  }
 
   function updateCurrentChildId(value) {
     if (value == null) {
       currentChildId = null;
+      settingsState.selectedChildId = null;
+      persistCurrentChildId(null);
       return currentChildId;
     }
     const str = String(value).trim();
     currentChildId = str ? str : null;
+    settingsState.selectedChildId = currentChildId;
+    persistCurrentChildId(currentChildId);
     return currentChildId;
   }
 
   function getCurrentChildId() {
     if (currentChildId) return currentChildId;
+    const persisted = readPersistedChildId();
+    if (persisted) return updateCurrentChildId(persisted);
+    if (settingsState?.selectedChildId != null) {
+      return updateCurrentChildId(settingsState.selectedChildId);
+    }
     const selectors = ['#child-switcher', '#ai-child-switcher'];
     for (const selector of selectors) {
       const select = document.querySelector(selector);
       if (select && select.value) {
         return updateCurrentChildId(select.value);
       }
-    }
-    if (settingsState?.selectedChildId != null) {
-      return updateCurrentChildId(settingsState.selectedChildId);
     }
     return currentChildId;
   }
@@ -1126,14 +1176,11 @@ const TIMELINE_MILESTONES = [
     'children.update',
     'children.delete',
     'children.log-update',
+    'children.add-growth',
+    'children.list-updates',
+    'children.set-primary',
     'children.bilan',
     'child.bilan',
-  ]);
-
-  const ANON_CHILD_ACTIONS_REQUIRING_SELECTION = new Set([
-    'children.get',
-    'children.update',
-    'children.log-update',
   ]);
 
   async function anonChildRequest(action, payload = {}) {
@@ -1144,32 +1191,41 @@ const TIMELINE_MILESTONES = [
       ? action
       : `children.${action}`;
     const payloadObject = payload && typeof payload === 'object' ? { ...payload } : {};
-    if (ANON_CHILD_ACTIONS_REQUIRING_SELECTION.has(actionKey)) {
-      const providedChildId =
-        payloadObject.childId
-        ?? payloadObject.child_id
-        ?? payloadObject.id
-        ?? (payloadObject.child && payloadObject.child.id);
-      if (providedChildId == null || providedChildId === '') {
-        const fallbackId = getCurrentChildId();
-        if (!fallbackId) {
-          console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
-          return null;
-        }
-        payloadObject.child_id = fallbackId;
-      } else {
-        updateCurrentChildId(providedChildId);
-      }
+    const requiresChildId = ANON_CHILD_ACTIONS_REQUIRING_ID.has(actionKey);
+    const providedChildId =
+      payloadObject.child_id
+      ?? payloadObject.childId
+      ?? payloadObject.id
+      ?? (payloadObject.child && payloadObject.child.id);
+    let childId = parseAnonInteger(providedChildId);
+    if (childId == null) {
+      const currentId = parseAnonInteger(getCurrentChildId());
+      if (currentId != null) childId = currentId;
+    }
+    if (requiresChildId && childId == null) {
+      console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
+      return Promise.reject({ error: 'Aucun enfant sélectionné' });
+    }
+    if (childId != null) {
+      payloadObject.childId = childId;
     }
     const sanitized = sanitizeAnonChildPayload(payloadObject);
-    const finalChildId = sanitized.child_id ?? sanitized.childId;
+    let finalChildId = parseAnonInteger(sanitized.child_id ?? sanitized.childId ?? childId);
     if (finalChildId != null) {
       sanitized.child_id = finalChildId;
       updateCurrentChildId(finalChildId);
+    } else if (childId != null) {
+      sanitized.child_id = childId;
+      finalChildId = childId;
+      updateCurrentChildId(childId);
     }
-    if (ANON_CHILD_ACTIONS_REQUIRING_ID.has(actionKey) && (finalChildId == null)) {
+    if (sanitized.childId != null && sanitized.child_id == null) {
+      sanitized.child_id = sanitized.childId;
+    }
+    if (sanitized.childId != null) delete sanitized.childId;
+    if (requiresChildId && (finalChildId == null)) {
       console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
-      return null;
+      return Promise.reject({ error: 'Aucun enfant sélectionné' });
     }
     const body = { code, ...sanitized };
     if (finalChildId != null && !Object.prototype.hasOwnProperty.call(body, 'child_id')) {
@@ -1230,28 +1286,41 @@ const TIMELINE_MILESTONES = [
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
     const payloadObject = payload && typeof payload === 'object' ? { ...payload } : {};
-    const requiresChildSelection = action === 'family.growth-status' || action === 'growth-status';
-    if (requiresChildSelection) {
-      const providedChildId =
-        payloadObject.childId
-        ?? payloadObject.child_id
-        ?? payloadObject.id;
-      if (providedChildId == null || providedChildId === '') {
-        const fallbackId = getCurrentChildId();
-        if (!fallbackId) {
-          console.warn(`Aucun enfant sélectionné pour ${action}`);
-          return null;
-        }
-        payloadObject.child_id = fallbackId;
-      } else {
-        updateCurrentChildId(providedChildId);
-      }
+    const actionKey = typeof action === 'string' && action.includes('.') ? action : `family.${action}`;
+    const requiresChildSelection = actionKey === 'family.growth-status';
+    const providedChildId =
+      payloadObject.child_id
+      ?? payloadObject.childId
+      ?? payloadObject.id;
+    let childId = parseAnonInteger(providedChildId);
+    if (childId == null) {
+      const currentId = parseAnonInteger(getCurrentChildId());
+      if (currentId != null) childId = currentId;
+    }
+    if (requiresChildSelection && childId == null) {
+      console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
+      return Promise.reject({ error: 'Aucun enfant sélectionné' });
+    }
+    if (childId != null) {
+      payloadObject.childId = childId;
     }
     const sanitizedPayload = sanitizeAnonFamilyPayload(payloadObject);
-    const finalChildId = sanitizedPayload.child_id ?? sanitizedPayload.childId;
+    let finalChildId = parseAnonInteger(sanitizedPayload.child_id ?? sanitizedPayload.childId ?? childId);
     if (finalChildId != null) {
       sanitizedPayload.child_id = finalChildId;
       updateCurrentChildId(finalChildId);
+    } else if (childId != null) {
+      sanitizedPayload.child_id = childId;
+      finalChildId = childId;
+      updateCurrentChildId(childId);
+    }
+    if (sanitizedPayload.childId != null && sanitizedPayload.child_id == null) {
+      sanitizedPayload.child_id = sanitizedPayload.childId;
+    }
+    if (sanitizedPayload.childId != null) delete sanitizedPayload.childId;
+    if (requiresChildSelection && finalChildId == null) {
+      console.warn(`Aucun enfant sélectionné pour ${actionKey}`);
+      return Promise.reject({ error: 'Aucun enfant sélectionné' });
     }
     const body = { code, action, payload: sanitizedPayload };
     const response = await fetch('/api/anon/family', {
@@ -3339,7 +3408,8 @@ const TIMELINE_MILESTONES = [
             }
             const primaryRow = rows.find((x) => x.is_primary) || rows[0];
             if (!primaryRow) return null;
-            const detail = await anonChildRequest('get', { childId: primaryRow.id });
+            updateCurrentChildId(primaryRow.id);
+            const detail = await anonChildRequest('get');
             const data = detail.child;
             if (!data) return null;
             const child = mapRowToChild(data);
@@ -3417,7 +3487,8 @@ const TIMELINE_MILESTONES = [
       if (useRemote()) {
         try {
           if (isAnonProfile()) {
-            const detail = await anonChildRequest('get', { childId: id });
+            updateCurrentChildId(id);
+            const detail = await anonChildRequest('get');
             const data = detail.child;
             if (!data) return null;
             const ch = mapRowToChild(data);
@@ -4051,12 +4122,14 @@ const TIMELINE_MILESTONES = [
         const teethRecords = buildTeethPayloads(child.growth.teeth);
         const sleepRecords = buildSleepPayloads(child.growth.sleep);
         if (isAnonProfile()) {
-          await anonChildRequest('create', {
+          const created = await anonChildRequest('create', {
             child: payload,
             growthMeasurements: measurementRecords,
             growthTeeth: teethRecords,
             growthSleep: sleepRecords
           });
+          const createdId = created?.child?.id ?? created?.childId ?? created?.child_id;
+          if (createdId != null) updateCurrentChildId(createdId);
           return;
         }
         const { data: insChild, error: errC } = await supabase
@@ -4260,17 +4333,18 @@ const TIMELINE_MILESTONES = [
     const container = $('#child-edit');
     if (!container) return;
     if (!childId) {
-      container.innerHTML = '<p class="muted">Veuillez sélectionner un enfant avant de continuer.</p>';
+      container.innerHTML = `<p class="muted">${NO_ACTIVE_CHILD_MESSAGE}</p>`;
       return;
     }
     const idStr = String(childId);
     const { skipRemote = false } = options || {};
+    updateCurrentChildId(idStr);
     let child = settingsState.childrenMap.get(idStr);
     const shouldFetchRemote = useRemote() && (!skipRemote || !child);
     if (shouldFetchRemote) {
       try {
         if (isAnonProfile()) {
-          const detail = await anonChildRequest('get', { childId: idStr });
+          const detail = await anonChildRequest('get');
           if (detail?.child) {
             child = mapRowToChild(detail.child) || child;
           }
@@ -4404,6 +4478,12 @@ const TIMELINE_MILESTONES = [
       form.dataset.bound = '1';
     }
     if (form) {
+      const submitControl = form.querySelector('button[type="submit"],input[type="submit"]');
+      if (submitControl) {
+        const hasChild = !!getCurrentChildId();
+        submitControl.disabled = !hasChild;
+        submitControl.setAttribute('aria-disabled', hasChild ? 'false' : 'true');
+      }
       const milestonesBlock = form.querySelector('#edit-milestones');
       const toggleBtn = form.querySelector('#toggle-milestones');
       if (milestonesBlock && toggleBtn && !toggleBtn.dataset.bound) {
@@ -4669,7 +4749,8 @@ const TIMELINE_MILESTONES = [
     try {
       if (useRemote()) {
         if (isAnonProfile()) {
-          await anonChildRequest('delete', { childId });
+          updateCurrentChildId(childId);
+          await anonChildRequest('delete');
         } else {
           await supabase.from('children').delete().eq('id', childId);
         }
@@ -4677,6 +4758,7 @@ const TIMELINE_MILESTONES = [
         const localChildren = store.get(K.children, []).filter((child) => String(child.id) !== String(childId));
         store.set(K.children, localChildren);
       }
+      updateCurrentChildId(null);
       alert('Profil enfant supprimé.');
     } catch (err) {
       console.warn('deleteChildAction failed', err);
@@ -4706,7 +4788,7 @@ const TIMELINE_MILESTONES = [
       console.warn("Aucun enfant sélectionné, impossible d'exécuter l’action :", 'children.update');
       showNotification({
         title: 'Sélection requise',
-        text: 'Veuillez sélectionner un enfant avant de continuer.',
+        text: NO_ACTIVE_CHILD_MESSAGE,
       });
       return;
     }
@@ -4715,6 +4797,7 @@ const TIMELINE_MILESTONES = [
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Mise à jour en cours…';
+      submitBtn.setAttribute('aria-disabled', 'true');
     }
     let hadError = false;
     try {
@@ -4771,7 +4854,8 @@ const TIMELINE_MILESTONES = [
               sleepBedtime: updated.context.sleep.bedtime,
               milestones: updated.milestones,
             };
-            const requestBody = { childId, child: payload };
+            updateCurrentChildId(childId);
+            const requestBody = { child: payload };
             if (measurementRecords.length) requestBody.growthMeasurements = measurementRecords;
             if (teethRecords.length) requestBody.growthTeeth = teethRecords;
             await anonChildRequest('update', requestBody);
@@ -4863,6 +4947,7 @@ const TIMELINE_MILESTONES = [
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = hadError ? 'Réessayer' : 'Mettre à jour';
+        submitBtn.setAttribute('aria-disabled', 'false');
       }
     }
   }
@@ -5116,7 +5201,7 @@ const TIMELINE_MILESTONES = [
     }
     if (!useRemote() && !child) {
       if (rid !== renderDashboard._rid) return;
-      setDashboardHtml(`<div class="card stack"><p>Aucun profil enfant. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`);
+      setDashboardHtml(`<div class="card stack"><p>${NO_ACTIVE_CHILD_MESSAGE}</p><a class="btn btn-primary" href="#/onboarding">Ajouter un enfant</a></div>`);
       return;
     }
     // Placeholder pendant le chargement distant
@@ -5127,6 +5212,9 @@ const TIMELINE_MILESTONES = [
     }
     const renderForChild = async (child) => {
       const safeChild = child && typeof child === 'object' ? child : {};
+      if (safeChild.id != null) {
+        updateCurrentChildId(safeChild.id);
+      }
       const dobValue = safeChild.dob;
       const ageRaw = dobValue ? ageInMonths(dobValue) : NaN;
       const ageM = Number.isFinite(ageRaw) ? ageRaw : 0;
@@ -5516,8 +5604,8 @@ const TIMELINE_MILESTONES = [
               const measurementRecords = buildMeasurementPayloads(measurementInputs);
               const sleepRecords = Number.isFinite(sleep) ? buildSleepPayloads([{ month, hours: sleep }]) : [];
               const teethRecords = Number.isFinite(teeth) ? buildTeethPayloads([{ month, count: teeth }]) : [];
+              updateCurrentChildId(safeChild.id);
               await anonChildRequest('add-growth', {
-                childId: safeChild.id,
                 growthMeasurements: measurementRecords,
                 growthSleep: sleepRecords,
                 growthTeeth: teethRecords
@@ -5682,7 +5770,7 @@ const TIMELINE_MILESTONES = [
             const rows = Array.isArray(listRes.children) ? listRes.children : [];
             if (!rows.length) {
               if (rid !== renderDashboard._rid) return;
-              setDashboardHtml(`<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
+              setDashboardHtml(`<div class="card stack"><p>${NO_ACTIVE_CHILD_MESSAGE}</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
               return;
             }
             const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
@@ -5690,7 +5778,8 @@ const TIMELINE_MILESTONES = [
             if (rid !== renderDashboard._rid) return;
             renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
             const primary = rows.find(r => r.id === selId) || rows[0];
-            const detail = await anonChildRequest('get', { childId: primary.id });
+            updateCurrentChildId(primary?.id ?? null);
+            const detail = await anonChildRequest('get');
             const data = detail.child;
             if (!data) throw new Error('Profil introuvable');
             const mapped = mapRowToChild(data);
@@ -5721,7 +5810,7 @@ const TIMELINE_MILESTONES = [
               const all = store.get(K.children, []);
               if (!all.length) {
                 if (rid !== renderDashboard._rid) return;
-                setDashboardHtml(`<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
+                setDashboardHtml(`<div class="card stack"><p>${NO_ACTIVE_CHILD_MESSAGE}</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
                 return;
               }
               const slimLocal = all.map(c => ({ id: c.id, firstName: c.firstName, dob: c.dob, isPrimary: c.id === u.primaryChildId }));
@@ -5736,7 +5825,7 @@ const TIMELINE_MILESTONES = [
             if (rowsErr) throw rowsErr;
             if (!rows || !rows.length) {
               if (rid !== renderDashboard._rid) return;
-              setDashboardHtml(`<div class="card stack"><p>Aucun profil. Créez‑en un.</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
+              setDashboardHtml(`<div class="card stack"><p>${NO_ACTIVE_CHILD_MESSAGE}</p><a class="btn btn-primary" href="#/onboarding">Créer un profil enfant</a></div>`);
               return;
             }
             const slimRemote = rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
@@ -5842,7 +5931,15 @@ const TIMELINE_MILESTONES = [
       console.warn('renderFamilyDashboardView failed', err);
       if (rid !== renderDashboard._rid) return;
       setDashboardHtml('<div class="card stack"><p>Impossible de charger la vue famille pour le moment.</p><button type="button" class="btn btn-secondary" id="btn-retry-family">Réessayer</button></div>');
-      dom.querySelector('#btn-retry-family')?.addEventListener('click', () => renderDashboard());
+      const retryBtn = dom.querySelector('#btn-retry-family');
+      if (retryBtn) {
+        const hasChild = !!getCurrentChildId();
+        retryBtn.disabled = !hasChild;
+        retryBtn.setAttribute('aria-disabled', hasChild ? 'false' : 'true');
+        if (hasChild) {
+          retryBtn.addEventListener('click', () => renderDashboard());
+        }
+      }
     }
   }
 
@@ -7804,28 +7901,30 @@ const TIMELINE_MILESTONES = [
   }
 
   async function logChildUpdate(childId, updateType, updateContent) {
-    if (!childId) {
+    const effectiveChildId = childId ?? getCurrentChildId();
+    if (!effectiveChildId) {
+      const warningText = NO_ACTIVE_CHILD_MESSAGE;
       console.warn("Aucun enfant sélectionné, impossible d'exécuter l’action :", 'children.log-update');
       showNotification({
         title: 'Sélection requise',
-        text: 'Veuillez sélectionner un enfant avant de continuer.',
+        text: warningText,
       });
       return;
     }
+    updateCurrentChildId(effectiveChildId);
     if (!useRemote()) return;
     const normalizedContent = normalizeUpdateContentForLog(updateContent);
     const content = JSON.stringify(normalizedContent);
     if (isAnonProfile()) {
       await anonChildRequest('log-update', {
-        childId,
         updateType,
         updateContent: content
       });
       return;
     }
-    const historySummaries = await fetchChildUpdateSummaries(childId);
-    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(childId, updateType, normalizedContent, historySummaries);
-    const payload = { child_id: childId, update_type: updateType, update_content: content };
+    const historySummaries = await fetchChildUpdateSummaries(effectiveChildId);
+    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(effectiveChildId, updateType, normalizedContent, historySummaries);
+    const payload = { child_id: effectiveChildId, update_type: updateType, update_content: content };
     if (aiSummary) payload.ai_summary = aiSummary;
     if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
     try {
@@ -7919,7 +8018,8 @@ const TIMELINE_MILESTONES = [
     if (!useRemote()) throw new Error('Connectez-vous pour générer un bilan complet.');
     if (isAnonProfile()) {
       try {
-        const response = await anonChildRequest('child.bilan', { childId });
+        updateCurrentChildId(childId);
+        const response = await anonChildRequest('child.bilan');
         const summary = typeof response?.summary === 'string' ? response.summary.trim() : '';
         if (!summary) {
           throw new Error(response?.error || 'Pas assez de données pour générer un bilan complet.');
@@ -8058,15 +8158,19 @@ const TIMELINE_MILESTONES = [
 
   async function getChildUpdates(childId) {
     if (!useRemote()) return [];
+    const targetId = childId ?? getCurrentChildId();
+    if (!targetId) return [];
     try {
       if (isAnonProfile()) {
-        const res = await anonChildRequest('list-updates', { childId });
+        updateCurrentChildId(targetId);
+        const res = await anonChildRequest('list-updates');
         return Array.isArray(res.updates) ? res.updates : [];
       }
+      updateCurrentChildId(targetId);
       const { data, error } = await supabase
         .from('child_updates')
         .select('*')
-        .eq('child_id', childId)
+        .eq('child_id', targetId)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return Array.isArray(data) ? data : [];
@@ -8160,7 +8264,7 @@ const TIMELINE_MILESTONES = [
     if (useRemote()) {
       try {
         if (isAnonProfile()) {
-          await anonChildRequest('set-primary', { childId: id });
+          await anonChildRequest('set-primary');
         } else {
           const uid = getActiveProfileId();
           if (!uid) { console.warn('Aucun user_id disponible pour children (setPrimaryChild)'); throw new Error('Pas de user_id'); }
@@ -8657,7 +8761,8 @@ const TIMELINE_MILESTONES = [
     if (!useRemote() || !childId) return { rows: [], notice: null };
     if (isAnonProfile()) {
       try {
-        const res = await anonFamilyRequest('growth-status', { childId, limit: 20 });
+        updateCurrentChildId(childId);
+        const res = await anonFamilyRequest('growth-status', { limit: 20 });
         const rows = Array.isArray(res?.rows) ? res.rows : [];
         const notice = res?.notice && typeof res.notice === 'object' ? res.notice : null;
         return { rows, notice };
@@ -8666,6 +8771,7 @@ const TIMELINE_MILESTONES = [
         return { rows: [], notice: unavailableNotice };
       }
     }
+    updateCurrentChildId(childId);
     if (!supabase) return { rows: [], notice: null };
     const orderAttempts = [
       { column: 'measured_at', options: { ascending: false, nullsFirst: false } },
