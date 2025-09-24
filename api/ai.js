@@ -1158,8 +1158,8 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
   const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,height_cm,weight_kg,status_height,status_weight,status_global,month,age_month,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
   const measurementRows = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
-    '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=age_month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=created_at.desc',
     '',
