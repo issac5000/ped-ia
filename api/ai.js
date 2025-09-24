@@ -732,7 +732,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           const { supaUrl, serviceKey } = supaConfig;
           supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
           const data = await supabaseRequest(
-            `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary,ai_commentaire,parent_comment&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${REPORT_UPDATE_LIMIT}`,
+            `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${REPORT_UPDATE_LIMIT}`,
             { headers: supabaseHeaders }
           );
           updateRows = Array.isArray(data) ? data : [];
@@ -775,10 +775,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           const aiCommentaire = truncateForPrompt(row?.ai_commentaire, 350);
           const parsedContent = parseUpdateContentForPrompt(row?.update_content);
           const parentSummary = truncateForPrompt(parsedContent?.summary, 350);
-          const parentCommentRaw = typeof row?.parent_comment === 'string' && row.parent_comment.trim()
-            ? row.parent_comment
-            : parsedContent?.userComment;
-          const parentComment = truncateForPrompt(parentCommentRaw, 320);
+          const parentComment = truncateForPrompt(parsedContent?.userComment, 320);
 
           let fallbackDetails = '';
           if (!aiSummary && !parentSummary) {
@@ -1188,10 +1185,11 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
   const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,height_cm,weight_kg,status_height,status_weight,status_global,agemos,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
-  const measurementRows = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
+  const {
+    rows: measurementRows,
+    query: measurementQuery,
+  } = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
     '&order=agemos.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
-    '&order=age_month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
-    '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=created_at.desc',
     '',
@@ -1200,8 +1198,17 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
     errorMessage: 'Unable to fetch growth measurements',
     context: { childId },
   });
+  const filteredMeasurementRows = Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [];
+  if (!filteredMeasurementRows.length) {
+    console.error('[api/ai] growth measurements empty', {
+      childId,
+      query: measurementQuery,
+    });
+  }
   const teethBaseUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedTeeth}`;
-  const teethRows = await fetchSupabaseRowsWithFallback(teethBaseUrl, headers, [
+  const {
+    rows: teethRows,
+  } = await fetchSupabaseRowsWithFallback(teethBaseUrl, headers, [
     '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=recorded_at.desc.nullslast&order=created_at.desc',
     '&order=created_at.desc',
@@ -1211,7 +1218,7 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
     errorMessage: 'Unable to fetch teeth measurements',
     context: { childId },
   });
-  const measurements = sortGrowthMeasurements(Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [])
+  const measurements = sortGrowthMeasurements(filteredMeasurementRows)
     .slice(0, limitedMeasurements);
   const teeth = sortGrowthTeeth(Array.isArray(teethRows) ? teethRows.filter(Boolean) : [])
     .slice(0, limitedTeeth);
@@ -1251,13 +1258,16 @@ function wrapSupabaseError(err, message) {
 async function fetchSupabaseRowsWithFallback(baseUrl, headers, orderSuffixes, { logLabel, errorMessage, context } = {}) {
   const attempts = Array.isArray(orderSuffixes) && orderSuffixes.length ? orderSuffixes : [''];
   let lastError = null;
+  let lastQuery = '';
   for (let index = 0; index < attempts.length; index += 1) {
     const suffix = attempts[index] || '';
+    const query = `${baseUrl}${suffix}`;
     try {
-      const data = await supabaseRequest(`${baseUrl}${suffix}`, { headers });
-      return Array.isArray(data) ? data : [];
+      const data = await supabaseRequest(query, { headers });
+      return { rows: Array.isArray(data) ? data : [], query };
     } catch (err) {
       lastError = err;
+      lastQuery = query;
       if (logLabel) {
         const status = err instanceof HttpError ? err.status : (typeof err?.status === 'number' ? err.status : null);
         const details = extractSupabaseErrorDetails(err);
@@ -1271,7 +1281,7 @@ async function fetchSupabaseRowsWithFallback(baseUrl, headers, orderSuffixes, { 
   if (lastError) {
     throw wrapSupabaseError(lastError, errorMessage);
   }
-  return [];
+  return { rows: [], query: lastQuery || baseUrl };
 }
 
 function sortGrowthMeasurements(rows = []) {
