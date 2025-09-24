@@ -1093,6 +1093,8 @@ const TIMELINE_MILESTONES = [
     return safe;
   }
 
+  const ANON_CHILD_ACTIONS_REQUIRING_ID = new Set(['children.get', 'children.update', 'children.delete']);
+
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
@@ -1102,6 +1104,10 @@ const TIMELINE_MILESTONES = [
       : `children.${action}`;
     const payloadObject = payload && typeof payload === 'object' ? payload : {};
     const sanitized = sanitizeAnonChildPayload(payloadObject);
+    if (ANON_CHILD_ACTIONS_REQUIRING_ID.has(actionKey) && !Object.prototype.hasOwnProperty.call(sanitized, 'childId')) {
+      console.warn("Aucun enfant sélectionné, impossible d'exécuter l'action :", actionKey);
+      return null;
+    }
     const body = { code, ...sanitized };
     const qs = new URLSearchParams({ action: actionKey });
     const response = await fetch(`/api/anon?${qs.toString()}`, {
@@ -4164,7 +4170,7 @@ const TIMELINE_MILESTONES = [
     const container = $('#child-edit');
     if (!container) return;
     if (!childId) {
-      container.innerHTML = '<p class="muted">Sélectionnez un enfant à modifier.</p>';
+      container.innerHTML = '<p class="muted">Veuillez sélectionner un enfant avant de continuer.</p>';
       return;
     }
     const idStr = String(childId);
@@ -4610,10 +4616,30 @@ const TIMELINE_MILESTONES = [
       submitBtn.textContent = 'Mise à jour en cours…';
     }
     const childId = form.getAttribute('data-child-id');
+    if (!childId) {
+      console.warn("Aucun enfant sélectionné, impossible d'exécuter l'action :", 'children.update');
+      showNotification({
+        title: 'Sélection requise',
+        text: 'Veuillez sélectionner un enfant avant de continuer.',
+      });
+      delete form.dataset.busy;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Mettre à jour';
+      }
+      return;
+    }
     let hadError = false;
     try {
       const base = settingsState.childrenMap.get(childId);
-      if (!base) throw new Error('Profil enfant introuvable');
+      if (!base) {
+        console.warn("Aucun enfant sélectionné, impossible d'exécuter l'action :", 'children.update');
+        showNotification({
+          title: 'Sélection requise',
+          text: 'Veuillez sélectionner un enfant avant de continuer.',
+        });
+        return;
+      }
       const prevSnapshot = settingsState.snapshots.get(childId) || makeUpdateSnapshot(base);
       const { child: updated, growthInputs, userComment } = buildChildUpdateFromForm(base, form);
       const nextSnapshot = makeUpdateSnapshot(updated);
