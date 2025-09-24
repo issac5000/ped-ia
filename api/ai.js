@@ -1,4 +1,5 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
+import { buildGrowthPromptLines } from '../assets/ia.js';
 
 async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
   if (!codeUnique) return null;
@@ -295,15 +296,24 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const growthSection = formatGrowthSectionForPrompt(growthData);
         const parentContext = sanitizeParentContextInput(body.parentContext);
         const parentContextLines = parentContextToPromptLines(parentContext);
+        const parentContextBlock = parentContextLines.length
+          ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
+          : 'Contexte parental actuel: non précisé.';
         const updateText = JSON.stringify({ type: updateType || 'update', data: updateForPrompt }).slice(0, 4000);
+        const growthStatusEntries = Array.isArray(body.growthStatus)
+          ? body.growthStatus.filter((entry) => entry && typeof entry === 'object')
+          : [];
+        const latestGrowthData = growthStatusEntries[0] || null;
+        const growthPromptLines = buildGrowthPromptLines({ parentComment, latestGrowthData });
+        const summarySections = [
+          updateType ? `Type de mise à jour: ${updateType}` : '',
+          `Mise à jour (JSON): ${updateText || 'Aucune'}`,
+          ...growthPromptLines,
+          `Section Croissance:\n${growthSection}`
+        ].filter(Boolean);
         const summaryMessages = [
           { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent + données de croissance)." },
-          { role: 'user', content: [
-            updateType ? `Type de mise à jour: ${updateType}` : '',
-            `Mise à jour (JSON): ${updateText || 'Aucune'}`,
-            `Commentaire du parent: ${parentComment || 'Aucun'}`,
-            `Section Croissance:\n${growthSection}`
-          ].filter(Boolean).join('\n\n') }
+          { role: 'user', content: summarySections.join('\n\n') }
         ];
         let summary = '';
         try {
@@ -329,19 +339,18 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const historyText = historySummaries.length
           ? historySummaries.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')
           : 'Aucun historique disponible';
+        const commentSections = [
+          updateType ? `Type de mise à jour: ${updateType}` : '',
+          `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
+          summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
+          `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
+          ...growthPromptLines,
+          `Croissance récente:\n${growthSection}`,
+          parentContextBlock
+        ].filter(Boolean);
         const commentMessages = [
           { role: 'system', content: "Tu es Ped’IA, assistant parental bienveillant. Rédige un commentaire personnalisé (80 mots max) basé uniquement sur la nouvelle mise à jour, le commentaire parent, les données de croissance fournies et les résumés factuels. Prends en compte le contexte parental (stress, fatigue, émotions) pour adapter ton empathie et tes conseils. Ne réutilise jamais d’anciens commentaires IA." },
-          { role: 'user', content: [
-            updateType ? `Type de mise à jour: ${updateType}` : '',
-            `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
-            summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
-            `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
-            `Commentaire du parent: ${parentComment || 'Aucun'}`,
-            `Croissance récente:\n${growthSection}`,
-            parentContextLines.length
-              ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
-              : 'Contexte parental actuel: non précisé.'
-          ].filter(Boolean).join('\n\n') }
+          { role: 'user', content: commentSections.join('\n\n') }
         ];
         let comment = '';
         try {
