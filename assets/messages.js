@@ -73,10 +73,10 @@ async function ensureSupabase(){
 async function fetchAnonProfileByCode(rawCode) {
   const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
   if (!code) throw new Error('Code unique manquant.');
-  const response = await fetch('/api/profiles/by-code', {
-    method: 'POST',
+  const qs = new URLSearchParams({ action: 'by-code', code });
+  const response = await fetch(`/api/profiles?${qs.toString()}`, {
+    method: 'GET',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code })
   });
   const text = await response.text().catch(() => '');
   let payload = null;
@@ -138,7 +138,8 @@ async function createAnonymousProfile(){
   }
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-    const response = await fetch('/api/profiles/create-anon', {
+    const qs = new URLSearchParams({ action: 'create-anon' });
+    const response = await fetch(`/api/profiles?${qs.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})

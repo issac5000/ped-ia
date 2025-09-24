@@ -950,8 +950,9 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, payload };
-    const response = await fetch('/api/anon/children', {
+    const body = { code, payload };
+    const qs = new URLSearchParams({ action: `children.${action}` });
+    const response = await fetch(`/api/anon?${qs.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -973,8 +974,9 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, payload };
-    const response = await fetch('/api/anon/parent-updates', {
+    const body = { code, payload };
+    const qs = new URLSearchParams({ action: `parent-updates.${action}` });
+    const response = await fetch(`/api/anon?${qs.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -996,8 +998,9 @@ const TIMELINE_MILESTONES = [
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
     if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, payload };
-    const response = await fetch('/api/anon/family', {
+    const body = { code, payload };
+    const qs = new URLSearchParams({ action: `family.${action}` });
+    const response = await fetch(`/api/anon?${qs.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1069,10 +1072,10 @@ const TIMELINE_MILESTONES = [
   async function fetchAnonProfileByCode(rawCode) {
     const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
     if (!code) throw new Error('Code unique manquant');
-    const response = await fetch('/api/profiles/by-code', {
-      method: 'POST',
+    const qs = new URLSearchParams({ action: 'by-code', code });
+    const response = await fetch(`/api/profiles?${qs.toString()}`, {
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
     });
     const text = await response.text().catch(() => '');
     let payload = null;
@@ -2792,7 +2795,8 @@ const TIMELINE_MILESTONES = [
     }
     try {
       if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-      const response = await fetch('/api/profiles/create-anon', {
+      const qs = new URLSearchParams({ action: 'create-anon' });
+      const response = await fetch(`/api/profiles?${qs.toString()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
