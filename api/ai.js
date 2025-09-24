@@ -434,38 +434,28 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const historyText = historySummaries.length
           ? historySummaries.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')
           : 'Aucun historique disponible';
-        const parentSummarySource = parentComment || summary || '';
-        const parentSummaryText =
-          truncateForPrompt(parentSummarySource || 'Aucun commentaire parent transmis.', 400) ||
-          'Aucun commentaire parent transmis.';
         const hasGrowthMeasurements = Array.isArray(growthData?.measurements) && growthData.measurements.length > 0;
         const hasGrowthTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
+        const parentSummaryBlock =
+          truncateForPrompt(parentComment || 'Aucun commentaire parent transmis.', 400) ||
+          'Aucun commentaire parent transmis.';
         let growthPromptBlock = 'Pas de mesure de croissance disponible pour cet enfant.';
         if (hasGrowthMeasurements || hasGrowthTeeth) {
-          const rawGrowthSection = formatGrowthSectionForPrompt(growthData);
-          const growthLines = rawGrowthSection
-            .split('\n')
-            .map((line) => line.replace(/^\s*[-•]?\s*/, '').trim())
-            .filter(Boolean);
-          if (growthLines.length > 1 && /^mesures\b/i.test(growthLines[0])) {
-            growthLines.shift();
+          const formattedGrowth = formatGrowthSectionForPrompt(growthData);
+          const truncatedGrowth = truncateForPrompt(formattedGrowth, 400);
+          if (truncatedGrowth) {
+            growthPromptBlock = truncatedGrowth;
           }
-          const inlineGrowthText = growthLines.join(' | ');
-          const growthContent = inlineGrowthText || rawGrowthSection || '';
-          growthPromptBlock = `Croissance : ${truncateForPrompt(growthContent, 400)}`;
         }
         const updateDetailsRaw = formatUpdateDataForPrompt(updateForPrompt) || updateText || '';
         const updateDetailsText =
           truncateForPrompt(updateDetailsRaw || 'Aucune donnée détaillée fournie.', 400) ||
           'Aucune donnée détaillée fournie.';
-        const structuredPromptHeader = [
-          `Résumé parent (max 400 chars): ${parentSummaryText}`,
-          growthPromptBlock,
-          `Détails update_content (tronqué à 400 chars): ${updateDetailsText}`,
-        ].join('\n---\n');
 
         const commentSections = [
-          structuredPromptHeader,
+          `Résumé parent: ${parentSummaryBlock}`,
+          `Croissance: ${growthPromptBlock}`,
+          `Détails update_content: ${updateDetailsText}`,
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
