@@ -1128,21 +1128,88 @@ async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit =
   }
   const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
   const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
-  const measurementUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_height,status_weight,status_global,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc&order=created_at.desc&limit=${limitedMeasurements}`;
-  const teethUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc&order=created_at.desc&limit=${limitedTeeth}`;
-  const [measurementRows, teethRows] = await Promise.all([
-    supabaseRequest(measurementUrl, { headers }).catch((err) => {
-      console.warn('[api/ai] growth measurements fetch failed', err);
-      return [];
-    }),
-    supabaseRequest(teethUrl, { headers }).catch((err) => {
-      console.warn('[api/ai] growth teeth fetch failed', err);
-      return [];
-    }),
-  ]);
+  const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=*&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
+  const measurementRows = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
+    '&order=age_month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=created_at.desc',
+    '',
+  ], {
+    logLabel: '[api/ai] growth measurements fetch error',
+    errorMessage: 'Unable to fetch growth measurements',
+    context: { childId },
+  });
+  const teethBaseUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedTeeth}`;
+  const teethRows = await fetchSupabaseRowsWithFallback(teethBaseUrl, headers, [
+    '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=recorded_at.desc.nullslast&order=created_at.desc',
+    '&order=created_at.desc',
+    '',
+  ], {
+    logLabel: '[api/ai] growth teeth fetch error',
+    errorMessage: 'Unable to fetch teeth measurements',
+    context: { childId },
+  });
   const measurements = Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [];
   const teeth = Array.isArray(teethRows) ? teethRows.filter(Boolean) : [];
   return { measurements, teeth };
+}
+
+function extractSupabaseErrorDetails(err) {
+  if (!err) return '';
+  if (err instanceof HttpError) {
+    if (typeof err.details === 'string') return err.details;
+    if (err.details != null) {
+      try {
+        return JSON.stringify(err.details);
+      } catch {
+        return String(err.details);
+      }
+    }
+    if (typeof err.message === 'string') return err.message;
+  }
+  if (typeof err?.message === 'string') return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+function wrapSupabaseError(err, message) {
+  if (err instanceof HttpError) {
+    return new HttpError(err.status, message || err.message, err.details ?? err.message);
+  }
+  const status = typeof err?.status === 'number' ? err.status : 500;
+  const details = err?.details ?? err?.message ?? err;
+  return new HttpError(status, message || 'Supabase request failed', details);
+}
+
+async function fetchSupabaseRowsWithFallback(baseUrl, headers, orderSuffixes, { logLabel, errorMessage, context } = {}) {
+  const attempts = Array.isArray(orderSuffixes) && orderSuffixes.length ? orderSuffixes : [''];
+  let lastError = null;
+  for (let index = 0; index < attempts.length; index += 1) {
+    const suffix = attempts[index] || '';
+    try {
+      const data = await supabaseRequest(`${baseUrl}${suffix}`, { headers });
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      lastError = err;
+      if (logLabel) {
+        const status = err instanceof HttpError ? err.status : (typeof err?.status === 'number' ? err.status : null);
+        const details = extractSupabaseErrorDetails(err);
+        console.error(logLabel, { ...(context || {}), order: suffix || 'default', status, details });
+      }
+      if (index === attempts.length - 1) {
+        throw wrapSupabaseError(err, errorMessage);
+      }
+    }
+  }
+  if (lastError) {
+    throw wrapSupabaseError(lastError, errorMessage);
+  }
+  return [];
 }
 
 function formatGrowthSectionForPrompt(growthData) {
@@ -1197,22 +1264,11 @@ function formatGrowthMeasurementEntry(entry) {
       uniqueParts.push(part);
     }
   }
-  let period = '';
-  if (entry.agemos !== undefined && entry.agemos !== null && entry.agemos !== '') {
-    const ageNumber = Number(entry.agemos);
-    if (Number.isFinite(ageNumber)) {
-      const normalizedAge = ageNumber % 1 === 0 ? ageNumber : Number(ageNumber.toFixed(1));
-      period = `mois ${normalizedAge}`;
-    } else {
-      const rawAge = sanitizeGrowthSummary(entry.agemos);
-      if (rawAge) {
-        period = `mois ${rawAge}`;
-      }
-    }
-  }
+  let period = formatGrowthAgeForPrompt(entry);
   if (!period) {
+    const recordedAt = typeof entry.recorded_at === 'string' ? entry.recorded_at : '';
     const createdAt = typeof entry.created_at === 'string' ? entry.created_at : '';
-    period = createdAt ? formatDateForPrompt(createdAt) : '';
+    period = formatDateForPrompt(recordedAt) || formatDateForPrompt(createdAt) || '';
   }
   return period ? `${period}: ${uniqueParts.join(' ; ')}` : uniqueParts.join(' ; ');
 }
@@ -1248,13 +1304,31 @@ function isSameGrowthSummary(a, b) {
 
 function formatGrowthPeriod(entry) {
   if (!entry || typeof entry !== 'object') return '';
-  const month = Number(entry.month);
-  if (Number.isFinite(month) && month >= 0) {
-    return `mois ${month}`;
-  }
+  const ageText = formatGrowthAgeForPrompt(entry);
+  if (ageText) return ageText;
   const recorded = typeof entry.recorded_at === 'string' ? entry.recorded_at : '';
   const created = typeof entry.created_at === 'string' ? entry.created_at : '';
   return formatDateForPrompt(recorded) || formatDateForPrompt(created) || '';
+}
+
+function formatGrowthAgeForPrompt(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  const keys = ['age_month', 'ageMonth', 'month', 'months', 'age_in_months', 'agemos'];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(entry, key)) continue;
+    const value = entry[key];
+    if (value === undefined || value === null || value === '') continue;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      const normalized = numeric % 1 === 0 ? numeric : Number(numeric.toFixed(1));
+      return `mois ${normalized}`;
+    }
+    const text = sanitizeGrowthSummary(value);
+    if (text) {
+      return `mois ${text}`;
+    }
+  }
+  return '';
 }
 
 function formatGrowthNumber(value, { unit = '', decimals = 1 } = {}) {
