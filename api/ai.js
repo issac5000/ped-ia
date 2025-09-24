@@ -901,7 +901,9 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           clearTimeout(timeout);
           if (err?.name === 'AbortError') {
             console.warn('[ai] timeout', { feature: 'child-full-report', childId, elapsedMs: Date.now() - startTime });
-            return res.status(504).json({ error: 'AI timeout exceeded 20s' });
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.status(504).send(JSON.stringify({ error: 'AI timeout exceeded 20s' }));
           }
           console.error('[ai] openai error', { step: 'fetch', err });
           return res.status(502).json({ error: 'Erreur IA', details: err?.message || 'Unknown error' });
@@ -1330,7 +1332,7 @@ function buildReportGrowthSection({ growthData, hasError }) {
   const teethLines = buildGrowthTeethLines(growthData.teeth);
   teethLines.forEach((line) => lines.push(line));
   if (!measurementLines.length && !teethLines.length) {
-    lines.push('Pas de mesure enregistrée.');
+    lines.push('Pas de mesure enregistrée pour cet enfant.');
   }
   return lines.join('\n');
 }
@@ -1452,12 +1454,13 @@ async function fetchGrowthDataForPrompt({
   codeUnique,
 } = {}) {
   const isAnonContext = !profileId && Boolean(codeUnique);
+  const anonLogContext = {
+    childId: childId || null,
+    codeUnique: codeUnique || null,
+  };
   const logAnonFailure = () => {
     if (isAnonContext) {
-      console.error('[ai/growth] anon fetch failed', {
-        childId: childId || null,
-        codeUnique: codeUnique || null,
-      });
+      console.error('[ai/growth] anon fetch failed', anonLogContext);
     }
   };
   if (!childId) {
@@ -1472,9 +1475,10 @@ async function fetchGrowthDataForPrompt({
     throw err;
   }
   const effectiveUrl = typeof supaUrl === 'string' && supaUrl ? supaUrl : config.supaUrl;
-  const baseHeaders = !isAnonContext && headers && typeof headers === 'object' && !Array.isArray(headers) ? { ...headers } : {};
   const serviceHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
-  const effectiveHeaders = { ...baseHeaders, ...serviceHeaders };
+  const baseHeaders =
+    !isAnonContext && headers && typeof headers === 'object' && !Array.isArray(headers) ? { ...headers } : {};
+  const effectiveHeaders = isAnonContext ? serviceHeaders : { ...baseHeaders, ...serviceHeaders };
   const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
   const limitedTeeth = Math.max(1, Math.min(3, Number(teethLimit) || 3));
   try {
@@ -1501,8 +1505,8 @@ async function fetchGrowthDataForPrompt({
         created_at: row?.created_at ?? null,
       }));
 
-    if (!measurements.length && !teeth.length) {
-      logAnonFailure();
+    if (!measurements.length && !teeth.length && isAnonContext) {
+      console.error('[ai/growth] anon fetch empty', anonLogContext);
     }
 
     return { measurements, teeth };
@@ -1532,7 +1536,7 @@ function formatGrowthSectionForPrompt(growthData, { errorMessage = 'Croissance n
     lines.push(`Dents: ${teethLine}`);
   }
   if (!lines.length) {
-    return 'Pas de mesure enregistrée.';
+    return 'Pas de mesure enregistrée pour cet enfant.';
   }
   return lines.join('\n').slice(0, 600);
 }
