@@ -713,7 +713,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           typeof req?.query?.profileId === 'string' ? req.query.profileId.trim() : '',
           typeof req?.query?.profile_id === 'string' ? req.query.profile_id.trim() : '',
         ];
-        const profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        let profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
         const codeCandidates = [
           typeof body.code_unique === 'string' ? body.code_unique : '',
           typeof body.code === 'string' ? body.code : '',
@@ -723,119 +723,121 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const rawCode = codeCandidates.find(Boolean) || '';
         const codeUnique = rawCode ? String(rawCode).trim().toUpperCase().slice(0, 64) : '';
 
-        let supaConfig = null;
-        let supabaseHeaders = null;
-        const REPORT_UPDATE_LIMIT = 10;
-        let updateRows = [];
+        const startTime = Date.now();
+        console.info('[ai] child-full-report start', { childId, profileId: profileId || null });
+
+        let supaConfig;
         try {
           supaConfig = getServiceConfig();
-          const { supaUrl, serviceKey } = supaConfig;
-          supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
-          const data = await supabaseRequest(
-            `${supaUrl}/rest/v1/child_updates?select=created_at,update_type,update_content,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${REPORT_UPDATE_LIMIT}`,
-            { headers: supabaseHeaders }
-          );
-          updateRows = Array.isArray(data) ? data : [];
         } catch (err) {
-          const status = err instanceof HttpError && err.status ? err.status : (typeof err?.status === 'number' ? err.status : 500);
-          const detailString = (() => {
-            if (err instanceof HttpError) {
-              if (typeof err.details === 'string') return err.details;
-              if (err.details) {
-                try { return JSON.stringify(err.details); } catch { return String(err.details); }
-              }
-            }
-            if (typeof err?.message === 'string') return err.message;
-            return '';
-          })();
-          return res.status(status >= 400 && status < 600 ? status : 500).json({
-            error: 'Unable to fetch child updates',
-            details: detailString,
-          });
+          console.error('[ai] child-full-report fail', { step: 'config', err });
+          if (err instanceof HttpError && /Missing SUPABASE/i.test(err.message || '')) {
+            return res.status(500).json({ error: 'Missing Supabase service credentials' });
+          }
+          return res.status(500).json({ error: 'Supabase configuration error' });
+        }
+        const { supaUrl, serviceKey } = supaConfig;
+        if (!supaUrl || !serviceKey) {
+          console.error('[ai] child-full-report fail', { step: 'config', err: 'Missing service credentials' });
+          return res.status(500).json({ error: 'Missing Supabase service credentials' });
+        }
+        const supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+
+        if (!profileId && codeUnique) {
+          try {
+            const resolved = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers: supabaseHeaders });
+            if (resolved) profileId = resolved;
+          } catch (err) {
+            console.warn('[ai] child-full-report profile resolve failed', { codeUnique, err });
+          }
         }
 
-        const growthData = await fetchGrowthDataForPrompt({
-          childId,
-          profileId,
-          codeUnique,
-          measurementLimit: 3,
-          teethLimit: 3,
-          supaUrl: supaConfig?.supaUrl,
-          headers: supabaseHeaders,
-        });
-        const growthSection = formatGrowthSectionForPrompt(growthData);
+        let childUpdates;
+        try {
+          childUpdates = await fetchChildUpdatesForReport({ supaUrl, headers: supabaseHeaders, childId, limit: 15 });
+        } catch (err) {
+          console.error('[ai] child-full-report fail', { step: 'updates', err });
+          const status = err instanceof HttpError && err.status ? err.status : 500;
+          return res.status(status).json({ error: 'Unable to fetch child updates' });
+        }
+        if (!childUpdates.length) {
+          console.info('[ai] updates counts', { child: 0, parent: 0 });
+          return res.status(404).json({ error: 'Not enough updates' });
+        }
+        const childSummaries = childUpdates.map(summarizeChildUpdateForReport);
 
-        const limitedUpdates = updateRows
-          .filter((row) => row && typeof row === 'object')
-          .slice(0, REPORT_UPDATE_LIMIT);
-
-        const formatted = [];
-        for (const row of limitedUpdates) {
-          const aiSummary = truncateForPrompt(row?.ai_summary, 350);
-          const aiCommentaire = truncateForPrompt(row?.ai_commentaire, 350);
-          const parsedContent = parseUpdateContentForPrompt(row?.update_content);
-          const parentSummary = truncateForPrompt(parsedContent?.summary, 350);
-          const parentComment = truncateForPrompt(parsedContent?.userComment, 320);
-
-          let fallbackDetails = '';
-          if (!aiSummary && !parentSummary) {
-            const snapshotSource = parsedContent && typeof parsedContent === 'object'
-              ? (parsedContent.next && typeof parsedContent.next === 'object' ? parsedContent.next : parsedContent)
-              : {};
-            const sanitizedSnapshot = sanitizeUpdatePayload(snapshotSource);
-            fallbackDetails = truncateForPrompt(formatUpdateDataForPrompt(sanitizedSnapshot), 320);
-          }
-
-          if (aiSummary || aiCommentaire || parentSummary || parentComment || fallbackDetails) {
-            formatted.push({
-              type: typeof row?.update_type === 'string' ? row.update_type.trim().slice(0, 64) : '',
-              date: typeof row?.created_at === 'string' ? row.created_at : '',
-              aiSummary,
-              aiCommentaire,
-              parentSummary,
-              parentComment,
-              fallbackDetails,
+        let parentUpdates = [];
+        if (profileId) {
+          try {
+            parentUpdates = await fetchParentUpdatesForReport({
+              supaUrl,
+              headers: supabaseHeaders,
+              childId,
+              profileId,
+              limit: 5,
             });
+          } catch (err) {
+            console.error('[ai] child-full-report fail', { step: 'parent-updates', err });
+            const status = err instanceof HttpError && err.status ? err.status : 500;
+            return res.status(status).json({ error: 'Unable to fetch parent updates' });
           }
         }
+        const parentSummaries = parentUpdates.map(summarizeParentUpdateForReport);
+        console.info('[ai] updates counts', { child: childSummaries.length, parent: parentSummaries.length });
 
-        if (!formatted.length) {
-          return res.status(200).json({ report: 'Aucun résumé disponible.' });
+        let growthData = null;
+        let growthError = null;
+        try {
+          growthData = await fetchGrowthDataForPrompt({
+            childId,
+            measurementLimit: 3,
+            teethLimit: 3,
+            supaUrl,
+            headers: supabaseHeaders,
+          });
+        } catch (err) {
+          growthError = err;
+          console.error('[ai] child-full-report fail', { step: 'growth', err });
         }
+        const hasMeasurements = Array.isArray(growthData?.measurements) && growthData.measurements.length > 0;
+        const hasTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
+        console.info('[ai] growth presence', { hasMeasurements, hasTeeth });
 
-        const updatesText = formatted.map((item, idx) => {
-          const lines = [];
-          const headerParts = [`Mise à jour ${idx + 1}`];
-          const dateText = formatDateForPrompt(item.date);
-          if (dateText) headerParts.push(`date: ${dateText}`);
-          if (item.type) headerParts.push(`type: ${item.type}`);
-          lines.push(headerParts.join(' – '));
-          if (item.aiSummary) lines.push(`Résumé IA: ${item.aiSummary}`);
-          if (item.aiCommentaire) lines.push(`Commentaire IA: ${item.aiCommentaire}`);
-          if (item.parentSummary && item.parentSummary !== item.aiSummary) {
-            lines.push(`Résumé parent: ${item.parentSummary}`);
-          }
-          if (item.parentComment) lines.push(`Commentaire parent: ${item.parentComment}`);
-          if (item.fallbackDetails) lines.push(`Données clés: ${item.fallbackDetails}`);
-          return lines.join('\n');
-        }).join('\n\n');
+        const childFirstName = await fetchChildFirstName({ supaUrl, headers: supabaseHeaders, childId }).catch((err) => {
+          console.warn('[ai] child-full-report first name fetch failed', { childId, err });
+          return '';
+        });
 
-        const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « À compléter ». Valorise les données de croissance fournies pour analyser taille, poids et dents par rapport à l’âge de l’enfant. Sois synthétique, factuel et accessible.`;
-        const userPrompt = [
-          `Nombre de mises à jour utilisées: ${formatted.length} (de la plus récente à la plus ancienne).`,
-          `Section Croissance:\n${growthSection}`,
-          `Données réelles des mises à jour (ordre décroissant):\n\n${updatesText}`,
-        ].join('\n\n');
+        const resumeSection = buildReportResumeSection({
+          firstName: childFirstName,
+          childCount: childSummaries.length,
+          parentCount: parentSummaries.length,
+        });
+
+        const growthSection = buildReportGrowthSection({
+          growthData,
+          hasError: Boolean(growthError),
+        });
+
+        const detailsSection = buildReportDetailsSection({
+          childSummaries,
+          parentSummaries,
+        });
+
+        const userPrompt = [resumeSection, growthSection, detailsSection].join('\n---\n');
+        console.info('[ai] prompt sizes', { userChars: userPrompt.length });
+
+        const system = `Tu es Ped’IA, assistant parental. À partir des informations résumées ci-dessous, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données résumées fournies, sans extrapoler. Pour chaque section sans information fiable, écris « À compléter ». Analyse la croissance en t'appuyant sur les mesures et statuts fournis. Ton style est factuel, positif et accessible.`;
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        let r;
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        let aiResponse;
         try {
-          r = await fetch('https://api.openai.com/v1/chat/completions', {
+          aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json'
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
             },
             signal: controller.signal,
             body: JSON.stringify({
@@ -844,29 +846,39 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
               max_tokens: 900,
               messages: [
                 { role: 'system', content: system },
-                { role: 'user', content: userPrompt }
-              ]
-            })
+                { role: 'user', content: userPrompt },
+              ],
+            }),
           });
         } catch (err) {
           clearTimeout(timeout);
           if (err?.name === 'AbortError') {
-            console.warn('[child-full-report] OpenAI request aborted (timeout)');
-            return res.status(504).json({ error: 'Timeout AI' });
+            console.warn('[ai] timeout', { feature: 'child-full-report', childId, elapsedMs: Date.now() - startTime });
+            return res.status(504).json({ error: 'AI timeout exceeded 20s' });
           }
-          console.error('[child-full-report] OpenAI request failed', err);
+          console.error('[ai] openai error', { step: 'fetch', err });
           return res.status(502).json({ error: 'Erreur IA', details: err?.message || 'Unknown error' });
         }
         clearTimeout(timeout);
-        if (!r.ok) {
-          const t = await r.text();
-          return res.status(502).json({ error: 'OpenAI error', details: t });
+
+        if (!aiResponse.ok) {
+          const errorBody = await aiResponse.text();
+          console.error('[ai] openai error', { status: aiResponse.status, body: errorBody });
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          return res.status(502).send(errorBody || 'OpenAI error');
         }
-        const j = await r.json();
-        const report = j.choices?.[0]?.message?.content?.trim() || '';
+
+        const aiJson = await aiResponse.json();
+        const report = aiJson.choices?.[0]?.message?.content?.trim() || '';
         if (!report) {
+          console.error('[ai] child-full-report fail', { step: 'openai', err: 'Empty report' });
           return res.status(502).json({ error: 'Rapport indisponible' });
         }
+
+        const elapsedMs = Date.now() - startTime;
+        const tokensUsed = aiJson?.usage?.total_tokens ?? null;
+        console.info('[ai] child-full-report ok', { tokensUsed, elapsedMs });
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -1097,10 +1109,220 @@ function formatParentUpdatesForPrompt(updates = []) {
     });
 }
 
+async function fetchChildUpdatesForReport({ supaUrl, headers, childId, limit = 15 }) {
+  if (!supaUrl || !headers || !childId) {
+    throw new HttpError(500, 'Missing Supabase parameters');
+  }
+  const effectiveLimit = Math.max(1, Math.min(15, Number(limit) || 15));
+  const url = `${supaUrl}/rest/v1/child_updates?select=id,child_id,update_type,update_content,created_at,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${effectiveLimit}`;
+  const data = await supabaseRequest(url, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchParentUpdatesForReport({ supaUrl, headers, childId, profileId, limit = 5 }) {
+  if (!supaUrl || !headers || !childId || !profileId) {
+    throw new HttpError(500, 'Missing Supabase parameters');
+  }
+  const effectiveLimit = Math.max(1, Math.min(5, Number(limit) || 5));
+  const query = `${supaUrl}/rest/v1/parent_updates?select=id,profile_id,child_id,update_type,update_content,parent_comment,ai_commentaire,created_at&child_id=eq.${encodeURIComponent(childId)}&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=${effectiveLimit}`;
+  const data = await supabaseRequest(query, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchChildFirstName({ supaUrl, headers, childId }) {
+  if (!supaUrl || !headers || !childId) return '';
+  try {
+    const data = await supabaseRequest(
+      `${supaUrl}/rest/v1/children?select=first_name&id=eq.${encodeURIComponent(childId)}&limit=1`,
+      { headers }
+    );
+    const row = Array.isArray(data) ? data[0] : data;
+    const name = typeof row?.first_name === 'string' ? row.first_name.trim() : '';
+    return name.slice(0, 120);
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(500, 'Unable to fetch child name', err?.message || err);
+  }
+}
+
+function summarizeChildUpdateForReport(row = {}) {
+  const type = typeof row?.update_type === 'string' ? row.update_type.trim().slice(0, 64) : '';
+  const ai_summary = truncateForPrompt(row?.ai_summary, 400);
+  const ai_commentaire = truncateForPrompt(row?.ai_commentaire, 400);
+  let contentRaw = '';
+  if (typeof row?.update_content === 'string') {
+    contentRaw = row.update_content;
+  } else if (row?.update_content != null) {
+    try {
+      contentRaw = JSON.stringify(row.update_content);
+    } catch (err) {
+      contentRaw = String(row.update_content);
+    }
+  }
+  const content = truncateForPrompt(contentRaw, 400);
+  return {
+    date: toIsoString(row?.created_at),
+    type,
+    ai_summary,
+    ai_commentaire,
+    content,
+  };
+}
+
+function summarizeParentUpdateForReport(row = {}) {
+  const type = typeof row?.update_type === 'string' ? row.update_type.trim().slice(0, 64) : '';
+  const parent_comment = truncateForPrompt(row?.parent_comment, 400);
+  const ai_commentaire = truncateForPrompt(row?.ai_commentaire, 400);
+  return {
+    date: toIsoString(row?.created_at),
+    type,
+    parent_comment,
+    ai_commentaire,
+  };
+}
+
+function buildReportResumeSection({ firstName, childCount, parentCount }) {
+  const safeName = firstName ? firstName.trim().slice(0, 120) : '';
+  const label = safeName || 'Inconnu';
+  return [
+    'Résumé',
+    `Enfant: ${label}. Updates enfant retenues: ${childCount}, updates parent retenues: ${parentCount}.`,
+  ].join('\n');
+}
+
+function buildReportGrowthSection({ growthData, hasError }) {
+  const lines = ['Croissance'];
+  if (hasError || !growthData) {
+    lines.push('Croissance non disponible (erreur technique).');
+    return lines.join('\n');
+  }
+  const measurements = Array.isArray(growthData.measurements)
+    ? growthData.measurements.filter(Boolean).slice(0, 3)
+    : [];
+  const measurementLines = formatGrowthMeasurementsForPrompt(measurements).slice(0, 3);
+  if (measurementLines.length) {
+    measurementLines.forEach((line) => {
+      lines.push(`- ${line}`);
+    });
+    lines.push(buildGrowthInterpretationLine(measurements));
+  }
+  const teethLines = buildGrowthTeethLines(growthData.teeth);
+  teethLines.forEach((line) => lines.push(line));
+  if (!measurementLines.length && !teethLines.length) {
+    lines.push('Pas de mesure enregistrée.');
+  }
+  return lines.join('\n');
+}
+
+function buildReportDetailsSection({ childSummaries, parentSummaries }) {
+  const lines = ['Détails'];
+  lines.push('Enfant:');
+  const childLines = (Array.isArray(childSummaries) ? childSummaries : [])
+    .slice(0, 15)
+    .map(formatChildDetailLine)
+    .filter(Boolean);
+  if (childLines.length) {
+    lines.push(...childLines);
+  } else {
+    lines.push('- Aucune mise à jour enfant disponible.');
+  }
+  lines.push('Parent:');
+  const parentLines = (Array.isArray(parentSummaries) ? parentSummaries : [])
+    .slice(0, 5)
+    .map(formatParentDetailLine)
+    .filter(Boolean);
+  if (parentLines.length) {
+    lines.push(...parentLines);
+  } else {
+    lines.push('- Aucune mise à jour parent disponible.');
+  }
+  return lines.join('\n');
+}
+
+function formatChildDetailLine(summary) {
+  if (!summary) return '';
+  const date = summary.date ? formatDateForPrompt(summary.date) : '';
+  const headerParts = [];
+  if (date) headerParts.push(date);
+  if (summary.type) headerParts.push(summary.type);
+  const header = headerParts.length ? headerParts.join(' • ') : 'Mise à jour';
+  const detailParts = [];
+  if (summary.ai_summary) detailParts.push(summary.ai_summary);
+  if (summary.ai_commentaire) detailParts.push(`IA: ${summary.ai_commentaire}`);
+  if (!detailParts.length && summary.content) detailParts.push(summary.content);
+  const body = detailParts.slice(0, 2).join(' | ');
+  return body ? `- ${header}: ${body}` : `- ${header}`;
+}
+
+function formatParentDetailLine(summary) {
+  if (!summary) return '';
+  const date = summary.date ? formatDateForPrompt(summary.date) : '';
+  const headerParts = [];
+  if (date) headerParts.push(date);
+  if (summary.type) headerParts.push(summary.type);
+  const header = headerParts.length ? headerParts.join(' • ') : 'Mise à jour parent';
+  const detailParts = [];
+  if (summary.parent_comment) detailParts.push(summary.parent_comment);
+  if (summary.ai_commentaire) detailParts.push(`IA: ${summary.ai_commentaire}`);
+  const body = detailParts.slice(0, 2).join(' | ');
+  return body ? `- ${header}: ${body}` : `- ${header}`;
+}
+
+function buildGrowthInterpretationLine(measurements = []) {
+  const statuses = [];
+  measurements.slice(0, 3).forEach((entry) => {
+    const values = [entry?.status_global, entry?.status_height, entry?.status_weight];
+    values.forEach((value) => {
+      const text = sanitizeGrowthSummary(value);
+      if (text) statuses.push(text.toLowerCase());
+    });
+  });
+  if (!statuses.length) {
+    return 'Analyse: données partielles, à compléter lors des prochaines mesures.';
+  }
+  const hasAlert = statuses.some((status) => !/normal/i.test(status));
+  if (hasAlert) {
+    return 'Analyse: variations à surveiller, proposer un suivi médical si besoin.';
+  }
+  return 'Analyse: trajectoire conforme aux repères attendus.';
+}
+
+function buildGrowthTeethLines(teethEntries = []) {
+  if (!Array.isArray(teethEntries) || !teethEntries.length) return [];
+  const lines = [];
+  teethEntries
+    .filter(Boolean)
+    .slice(0, 3)
+    .forEach((entry) => {
+      const countNum = Number(entry?.count);
+      if (!Number.isFinite(countNum)) return;
+      const count = Math.max(0, Math.round(countNum));
+      const monthLabel = formatMonthLabel(entry?.month);
+      if (!monthLabel) return;
+      lines.push(`Dents: ${count} à ${monthLabel} mois`);
+    });
+  return lines;
+}
+
+function formatMonthLabel(value) {
+  if (value == null || value === '') return '';
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    const rounded = numeric % 1 === 0 ? numeric : Number(numeric.toFixed(1));
+    return String(rounded).replace(/\.0+$/, '');
+  }
+  return truncateForPrompt(String(value), 40);
+}
+
+function toIsoString(value) {
+  if (typeof value !== 'string' || !value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
+}
+
 async function fetchGrowthDataForPrompt({
   childId,
-  profileId = '',
-  codeUnique = '',
   measurementLimit = 3,
   teethLimit = 3,
   supaUrl,
@@ -1116,233 +1338,46 @@ async function fetchGrowthDataForPrompt({
     effectiveUrl = config.supaUrl;
     effectiveHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
   }
-  let resolvedProfileId = typeof profileId === 'string' ? profileId.trim().slice(0, 128) : '';
-  const normalizedCode = codeUnique ? String(codeUnique).trim().toUpperCase().slice(0, 64) : '';
-  if (!resolvedProfileId && normalizedCode) {
-    try {
-      const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: effectiveUrl, headers: effectiveHeaders });
-      if (resolved) resolvedProfileId = resolved;
-    } catch (err) {
-      const status = err instanceof HttpError ? err.status : null;
-      const detail = err?.details || err?.message || '';
-      console.warn('[api/ai] growth profile resolution failed', { codeUnique: normalizedCode || null, status, detail });
-    }
-  }
-  if (resolvedProfileId) {
-    try {
-      const check = await supabaseRequest(
-        `${effectiveUrl}/rest/v1/children?select=id&user_id=eq.${encodeURIComponent(resolvedProfileId)}&id=eq.${encodeURIComponent(childId)}&limit=1`,
-        { headers: effectiveHeaders }
-      );
-      const row = Array.isArray(check) ? check[0] : check;
-      if (!row) {
-        console.warn('[api/ai] growth data skipped: child not linked to profile', { childId, resolvedProfileId });
-        return { measurements: [], teeth: [] };
-      }
-    } catch (err) {
-      const status = err instanceof HttpError ? err.status : null;
-      const details = err?.details || err?.message || err;
-      console.warn('[api/ai] growth child/profile validation failed', { childId, resolvedProfileId, status, details });
-      if (status && status >= 400 && status < 500) {
-        return { measurements: [], teeth: [] };
-      }
-    }
-  }
+  const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
+  const limitedTeeth = Math.max(1, Math.min(3, Number(teethLimit) || 3));
   try {
-    const tables = await fetchGrowthTables(effectiveUrl, effectiveHeaders, childId, { measurementLimit, teethLimit });
-    const measurements = Array.isArray(tables?.measurements) ? tables.measurements.filter(Boolean) : [];
-    const teeth = Array.isArray(tables?.teeth) ? tables.teeth.filter(Boolean) : [];
-    const hasData = measurements.length > 0 || teeth.length > 0;
-    return {
-      measurements,
-      teeth,
-      status: hasData ? 'ok' : 'empty',
-    };
+    const measurementUrl = `${effectiveUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_weight,status_height,status_global&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc.nullslast&limit=${limitedMeasurements}`;
+    const measurementRows = await supabaseRequest(measurementUrl, { headers: effectiveHeaders });
+    const measurements = (Array.isArray(measurementRows) ? measurementRows : [])
+      .filter(Boolean)
+      .map((row) => ({
+        agemos: row?.agemos ?? null,
+        height_cm: row?.height_cm ?? null,
+        weight_kg: row?.weight_kg ?? null,
+        status_weight: row?.status_weight ?? null,
+        status_height: row?.status_height ?? null,
+        status_global: row?.status_global ?? null,
+      }));
+
+    const teethUrl = `${effectiveUrl}/rest/v1/growth_teeth?select=month,count,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc.nullslast&limit=${limitedTeeth}`;
+    const teethRows = await supabaseRequest(teethUrl, { headers: effectiveHeaders });
+    const teeth = (Array.isArray(teethRows) ? teethRows : [])
+      .filter(Boolean)
+      .map((row) => ({
+        month: row?.month ?? null,
+        count: row?.count ?? null,
+        created_at: row?.created_at ?? null,
+      }));
+
+    return { measurements, teeth };
   } catch (err) {
-    const status = err instanceof HttpError ? err.status : (typeof err?.status === 'number' ? err.status : null);
-    const details = extractSupabaseErrorDetails(err);
-    console.error('[api/ai] growth data fetch failed', {
-      childId,
-      profileId: resolvedProfileId || null,
-      codeUnique: normalizedCode || null,
-      status,
-      details,
-    });
-    return {
-      measurements: [],
-      teeth: [],
-      status: 'error',
-      error: 'technical_failure',
-      errorMessage: details || 'Growth data unavailable due to technical error.',
-    };
+    const details = err instanceof HttpError ? err.details : err?.message;
+    console.error('[ai/growth] fetch failed', { childId, err, details });
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(500, 'Supabase growth fetch failed', details);
   }
 }
 
-async function fetchGrowthTables(supaUrl, headers, childId, { measurementLimit = 3, teethLimit = 3 } = {}) {
-  if (!supaUrl || !headers || !childId) {
-    return { measurements: [], teeth: [] };
-  }
-  const limitedMeasurements = Math.max(1, Math.min(6, Number.isFinite(Number(measurementLimit)) ? Number(measurementLimit) : 3));
-  const limitedTeeth = Math.max(1, Math.min(6, Number.isFinite(Number(teethLimit)) ? Number(teethLimit) : 3));
-  const measurementBaseUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,height_cm,weight_kg,status_height,status_weight,status_global,agemos,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedMeasurements}`;
-  const {
-    rows: measurementRows,
-    query: measurementQuery,
-  } = await fetchSupabaseRowsWithFallback(measurementBaseUrl, headers, [
-    '&order=agemos.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
-    '&order=recorded_at.desc.nullslast&order=created_at.desc',
-    '&order=created_at.desc',
-    '',
-  ], {
-    logLabel: '[api/ai] growth measurements fetch error',
-    errorMessage: 'Unable to fetch growth measurements',
-    context: { childId },
-  });
-  const filteredMeasurementRows = Array.isArray(measurementRows) ? measurementRows.filter(Boolean) : [];
-  if (!filteredMeasurementRows.length) {
-    console.error('[api/ai] growth measurements empty', {
-      childId,
-      query: measurementQuery,
-    });
-  }
-  const teethBaseUrl = `${supaUrl}/rest/v1/growth_teeth?select=month,count,recorded_at,created_at&child_id=eq.${encodeURIComponent(childId)}&limit=${limitedTeeth}`;
-  const {
-    rows: teethRows,
-  } = await fetchSupabaseRowsWithFallback(teethBaseUrl, headers, [
-    '&order=month.desc.nullslast&order=recorded_at.desc.nullslast&order=created_at.desc',
-    '&order=recorded_at.desc.nullslast&order=created_at.desc',
-    '&order=created_at.desc',
-    '',
-  ], {
-    logLabel: '[api/ai] growth teeth fetch error',
-    errorMessage: 'Unable to fetch teeth measurements',
-    context: { childId },
-  });
-  const measurements = sortGrowthMeasurements(filteredMeasurementRows)
-    .slice(0, limitedMeasurements);
-  const teeth = sortGrowthTeeth(Array.isArray(teethRows) ? teethRows.filter(Boolean) : [])
-    .slice(0, limitedTeeth);
-  return { measurements, teeth };
-}
-
-function extractSupabaseErrorDetails(err) {
-  if (!err) return '';
-  if (err instanceof HttpError) {
-    if (typeof err.details === 'string') return err.details;
-    if (err.details != null) {
-      try {
-        return JSON.stringify(err.details);
-      } catch {
-        return String(err.details);
-      }
-    }
-    if (typeof err.message === 'string') return err.message;
-  }
-  if (typeof err?.message === 'string') return err.message;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
-
-function wrapSupabaseError(err, message) {
-  if (err instanceof HttpError) {
-    return new HttpError(err.status, message || err.message, err.details ?? err.message);
-  }
-  const status = typeof err?.status === 'number' ? err.status : 500;
-  const details = err?.details ?? err?.message ?? err;
-  return new HttpError(status, message || 'Supabase request failed', details);
-}
-
-async function fetchSupabaseRowsWithFallback(baseUrl, headers, orderSuffixes, { logLabel, errorMessage, context } = {}) {
-  const attempts = Array.isArray(orderSuffixes) && orderSuffixes.length ? orderSuffixes : [''];
-  let lastError = null;
-  let lastQuery = '';
-  for (let index = 0; index < attempts.length; index += 1) {
-    const suffix = attempts[index] || '';
-    const query = `${baseUrl}${suffix}`;
-    try {
-      const data = await supabaseRequest(query, { headers });
-      return { rows: Array.isArray(data) ? data : [], query };
-    } catch (err) {
-      lastError = err;
-      lastQuery = query;
-      if (logLabel) {
-        const status = err instanceof HttpError ? err.status : (typeof err?.status === 'number' ? err.status : null);
-        const details = extractSupabaseErrorDetails(err);
-        console.error(logLabel, { ...(context || {}), order: suffix || 'default', status, details });
-      }
-      if (index === attempts.length - 1) {
-        throw wrapSupabaseError(err, errorMessage);
-      }
-    }
-  }
-  if (lastError) {
-    throw wrapSupabaseError(lastError, errorMessage);
-  }
-  return { rows: [], query: lastQuery || baseUrl };
-}
-
-function sortGrowthMeasurements(rows = []) {
-  if (!Array.isArray(rows) || rows.length === 0) return [];
-  return rows
-    .slice()
-    .sort((a, b) => compareGrowthEntries(b, a));
-}
-
-function sortGrowthTeeth(rows = []) {
-  if (!Array.isArray(rows) || rows.length === 0) return [];
-  return rows
-    .slice()
-    .sort((a, b) => compareGrowthEntries(b, a));
-}
-
-function compareGrowthEntries(first, second) {
-  const firstMonth = extractGrowthMonth(first);
-  const secondMonth = extractGrowthMonth(second);
-  if (Number.isFinite(firstMonth) || Number.isFinite(secondMonth)) {
-    const normalizedFirst = Number.isFinite(firstMonth) ? firstMonth : -Infinity;
-    const normalizedSecond = Number.isFinite(secondMonth) ? secondMonth : -Infinity;
-    return normalizedFirst - normalizedSecond;
-  }
-  const firstTimestamp = extractGrowthTimestamp(first);
-  const secondTimestamp = extractGrowthTimestamp(second);
-  const normalizedFirst = Number.isFinite(firstTimestamp) ? firstTimestamp : -Infinity;
-  const normalizedSecond = Number.isFinite(secondTimestamp) ? secondTimestamp : -Infinity;
-  return normalizedFirst - normalizedSecond;
-}
-
-function extractGrowthMonth(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const keys = ['agemos', 'age_month', 'ageMonth', 'month', 'months', 'age_in_months'];
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(entry, key)) continue;
-    const value = Number(entry[key]);
-    if (Number.isFinite(value)) {
-      return value;
-    }
-  }
-  return null;
-}
-
-function extractGrowthTimestamp(entry) {
-  if (!entry || typeof entry !== 'object') return -Infinity;
-  const recorded = typeof entry.recorded_at === 'string' ? Date.parse(entry.recorded_at) : NaN;
-  const created = typeof entry.created_at === 'string' ? Date.parse(entry.created_at) : NaN;
-  if (Number.isFinite(recorded)) return recorded;
-  if (Number.isFinite(created)) return created;
-  return -Infinity;
-}
-
-function formatGrowthSectionForPrompt(growthData) {
+function formatGrowthSectionForPrompt(growthData, { errorMessage = 'Croissance non disponible (erreur technique).' } = {}) {
   if (!growthData || typeof growthData !== 'object') {
-    return 'Croissance non disponible (erreur technique).';
+    return errorMessage;
   }
-  if (growthData.status === 'error') {
-    return 'Croissance non disponible (erreur technique).';
-  }
-  const measurementLines = formatGrowthMeasurementsForPrompt(growthData?.measurements);
+  const measurementLines = formatGrowthMeasurementsForPrompt(growthData?.measurements).slice(0, 3);
   const lines = [];
   if (measurementLines.length) {
     lines.push('Mesures taille/poids récentes:');
@@ -1355,7 +1390,7 @@ function formatGrowthSectionForPrompt(growthData) {
     lines.push(`Dents: ${teethLine}`);
   }
   if (!lines.length) {
-    return 'Pas de mesure enregistrée';
+    return 'Pas de mesure enregistrée.';
   }
   return lines.join('\n').slice(0, 600);
 }
