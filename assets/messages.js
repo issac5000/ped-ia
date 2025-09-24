@@ -169,6 +169,59 @@ async function createAnonymousProfile(){
   }
 }
 
+async function loginAsGuest() {
+  const btn = $('#guest-login-btn');
+  const status = $('#guest-login-status');
+  if (btn?.dataset.busy === '1') return;
+  status?.classList.remove('error');
+  if (status) status.textContent = '';
+  const ok = await ensureSupabase();
+  if (!ok || !supabase) {
+    if (status) {
+      status.classList.add('error');
+      status.textContent = 'Service indisponible pour le moment.';
+    } else {
+      alert('Impossible de créer un invité pour le moment.');
+    }
+    return;
+  }
+  try {
+    if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
+    if (status) status.textContent = 'Création du compte invité…';
+    const response = await fetch('/api/guest-create', { method: 'POST' });
+    const text = await response.text().catch(() => '');
+    let payload = null;
+    if (text) {
+      try { payload = JSON.parse(text); } catch { payload = null; }
+    }
+    if (!response.ok || !payload?.email || !payload?.password) {
+      const message = payload?.error || 'Impossible de créer un invité pour le moment.';
+      throw new Error(message);
+    }
+    if (status) status.textContent = 'Connexion invitée…';
+    const { data, error } = await supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
+    if (error || !data?.session) {
+      throw new Error(error?.message || 'Connexion invitée impossible.');
+    }
+    if (status) {
+      status.classList.remove('error');
+      status.textContent = 'Connexion invitée réussie, redirection…';
+    }
+    location.href = '/#/settings';
+  } catch (e) {
+    console.error('loginAsGuest failed', e);
+    const message = e instanceof Error && e.message ? e.message : 'Impossible de créer un invité pour le moment.';
+    if (status) {
+      status.classList.add('error');
+      status.textContent = message;
+    } else {
+      alert('Impossible de créer un invité pour le moment.');
+    }
+  } finally {
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+  }
+}
+
 async function loginWithCode(){
   const input = $('#anon-code-input');
   const status = $('#anon-login-status');
@@ -254,6 +307,10 @@ function setupLoginUI(){
   $('#btn-create-anon')?.addEventListener('click', (e) => {
     e.preventDefault();
     createAnonymousProfile();
+  });
+  $('#guest-login-btn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    loginAsGuest();
   });
   $('#btn-login-code')?.addEventListener('click', (e) => {
     e.preventDefault();
