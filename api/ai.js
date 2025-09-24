@@ -1,5 +1,5 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
-import { buildGrowthPromptLines } from '../assets/ia.js';
+import { buildGrowthPromptLines, summarizeGrowthStatus } from '../assets/ia.js';
 
 async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
   if (!codeUnique) return null;
@@ -293,7 +293,6 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           measurementLimit: 3,
           teethLimit: 3,
         });
-        const growthSection = formatGrowthSectionForPrompt(growthData);
         const parentContext = sanitizeParentContextInput(body.parentContext);
         const parentContextLines = parentContextToPromptLines(parentContext);
         const parentContextBlock = parentContextLines.length
@@ -303,13 +302,29 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const growthStatusEntries = Array.isArray(body.growthStatus)
           ? body.growthStatus.filter((entry) => entry && typeof entry === 'object')
           : [];
+        const rawContextParts = Array.isArray(body.contextParts)
+          ? body.contextParts.map((entry) => {
+              if (entry == null) return '';
+              const text = String(entry).trim();
+              return text ? text.slice(0, 400) : '';
+            })
+          : [];
+        const contextParts = rawContextParts.filter(Boolean).slice(0, 10);
         const latestGrowthData = growthStatusEntries[0] || null;
-        const growthPromptLines = buildGrowthPromptLines({ parentComment, latestGrowthData });
+        const growthSummary = summarizeGrowthStatus(latestGrowthData);
+        if (growthSummary && !contextParts.includes(growthSummary)) {
+          contextParts.push(growthSummary);
+        }
+        const includeGrowth = Boolean(growthSummary);
+        const growthPromptLines = buildGrowthPromptLines({ parentComment, latestGrowthData })
+          .filter((line) => !/^\s*Analyse\s+OMS/i.test(line || ''));
+        const growthSection = includeGrowth ? formatGrowthSectionForPrompt(growthData) : '';
         const summarySections = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Mise à jour (JSON): ${updateText || 'Aucune'}`,
           ...growthPromptLines,
-          `Section Croissance:\n${growthSection}`
+          ...contextParts,
+          includeGrowth && growthSection ? `Section Croissance:\n${growthSection}` : ''
         ].filter(Boolean);
         const summaryMessages = [
           { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent + données de croissance)." },
@@ -345,7 +360,8 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
           `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
           ...growthPromptLines,
-          `Croissance récente:\n${growthSection}`,
+          ...contextParts,
+          includeGrowth && growthSection ? `Croissance récente:\n${growthSection}` : '',
           parentContextBlock
         ].filter(Boolean);
         const commentMessages = [
@@ -674,7 +690,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           return lines.join('\n');
         }).join('\n\n');
 
-        const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « Pas de données disponibles ». Valorise les données de croissance fournies pour analyser taille, poids et dents par rapport à l’âge de l’enfant. Sois synthétique, factuel et accessible.`;
+        const system = `Tu es Ped’IA, assistant parental. À partir des observations fournies, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données réelles transmises. Pour chaque section sans information fiable, écris « À compléter ». Valorise les données de croissance fournies pour analyser taille, poids et dents par rapport à l’âge de l’enfant. Sois synthétique, factuel et accessible.`;
         const userPrompt = [
           `Nombre de mises à jour: ${formatted.length}.`,
           `Section Croissance:\n${growthSection}`,
@@ -1005,15 +1021,12 @@ function formatGrowthSectionForPrompt(growthData) {
     measurementLines.forEach((line) => {
       lines.push(`- ${line}`);
     });
-  } else {
-    lines.push('Mesures taille/poids: Pas de données disponibles');
   }
   const teethLine = formatGrowthTeethForPrompt(growthData?.teeth);
   if (teethLine) {
     lines.push(`Dents: ${teethLine}`);
-  } else {
-    lines.push('Dents: Pas de données disponibles');
   }
+  if (!lines.length) return '';
   return lines.join('\n').slice(0, 600);
 }
 
