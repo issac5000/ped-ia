@@ -434,7 +434,38 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const historyText = historySummaries.length
           ? historySummaries.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')
           : 'Aucun historique disponible';
+        const parentSummarySource = parentComment || summary || '';
+        const parentSummaryText =
+          truncateForPrompt(parentSummarySource || 'Aucun commentaire parent transmis.', 400) ||
+          'Aucun commentaire parent transmis.';
+        const hasGrowthMeasurements = Array.isArray(growthData?.measurements) && growthData.measurements.length > 0;
+        const hasGrowthTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
+        let growthPromptBlock = 'Pas de mesure de croissance disponible pour cet enfant.';
+        if (hasGrowthMeasurements || hasGrowthTeeth) {
+          const rawGrowthSection = formatGrowthSectionForPrompt(growthData);
+          const growthLines = rawGrowthSection
+            .split('\n')
+            .map((line) => line.replace(/^\s*[-•]?\s*/, '').trim())
+            .filter(Boolean);
+          if (growthLines.length > 1 && /^mesures\b/i.test(growthLines[0])) {
+            growthLines.shift();
+          }
+          const inlineGrowthText = growthLines.join(' | ');
+          const growthContent = inlineGrowthText || rawGrowthSection || '';
+          growthPromptBlock = `Croissance : ${truncateForPrompt(growthContent, 400)}`;
+        }
+        const updateDetailsRaw = formatUpdateDataForPrompt(updateForPrompt) || updateText || '';
+        const updateDetailsText =
+          truncateForPrompt(updateDetailsRaw || 'Aucune donnée détaillée fournie.', 400) ||
+          'Aucune donnée détaillée fournie.';
+        const structuredPromptHeader = [
+          `Résumé parent (max 400 chars): ${parentSummaryText}`,
+          growthPromptBlock,
+          `Détails update_content (tronqué à 400 chars): ${updateDetailsText}`,
+        ].join('\n---\n');
+
         const commentSections = [
+          structuredPromptHeader,
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
@@ -1421,24 +1452,27 @@ async function fetchGrowthDataForPrompt({
   codeUnique,
 } = {}) {
   const isAnonContext = !profileId && Boolean(codeUnique);
-  const logAnonFailure = (err) => {
+  const logAnonFailure = () => {
     if (isAnonContext) {
-      console.error('[ai/growth] anon fetch failed', { childId, err });
+      console.error('[ai/growth] anon fetch failed', {
+        childId: childId || null,
+        codeUnique: codeUnique || null,
+      });
     }
   };
   if (!childId) {
-    logAnonFailure('missing childId');
+    logAnonFailure();
     return { measurements: [], teeth: [] };
   }
   let config;
   try {
     config = getServiceConfig();
   } catch (err) {
-    logAnonFailure(err);
+    logAnonFailure();
     throw err;
   }
   const effectiveUrl = typeof supaUrl === 'string' && supaUrl ? supaUrl : config.supaUrl;
-  const baseHeaders = headers && typeof headers === 'object' && !Array.isArray(headers) ? { ...headers } : {};
+  const baseHeaders = !isAnonContext && headers && typeof headers === 'object' && !Array.isArray(headers) ? { ...headers } : {};
   const serviceHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
   const effectiveHeaders = { ...baseHeaders, ...serviceHeaders };
   const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
@@ -1468,14 +1502,14 @@ async function fetchGrowthDataForPrompt({
       }));
 
     if (!measurements.length && !teeth.length) {
-      logAnonFailure('empty growth dataset');
+      logAnonFailure();
     }
 
     return { measurements, teeth };
   } catch (err) {
     const details = err instanceof HttpError ? err.details : err?.message;
     console.error('[ai/growth] fetch failed', { childId, err, details });
-    logAnonFailure(err);
+    logAnonFailure();
     if (err instanceof HttpError) throw err;
     throw new HttpError(500, 'Supabase growth fetch failed', details);
   }
