@@ -8423,38 +8423,19 @@ const TIMELINE_MILESTONES = [
     if (!supabase) return { rows: [], notice: null };
     const remoteChildId = assertValidChildId(childId);
     const supaClient = await childAccess.getClient();
-    const orderAttempts = [
-      { column: 'measured_at', options: { ascending: false, nullsFirst: false } },
-      { column: 'recorded_at', options: { ascending: false, nullsFirst: false } },
-      { column: 'created_at', options: { ascending: false, nullsFirst: false } },
-      { column: null },
-    ];
-    let lastError = null;
-    for (const attempt of orderAttempts) {
-      try {
-        let query = supaClient
-          .from('child_growth_with_status')
-          .select('*')
-          .eq('child_id', remoteChildId)
-          .limit(20);
-        if (attempt?.column) {
-          query = query.order(attempt.column, attempt.options || {});
-        }
-        const { data, error } = await query;
-        if (error) {
-          lastError = error;
-          continue;
-        }
-        const rows = Array.isArray(data) ? data : [];
-        return { rows, notice: null };
-      } catch (err) {
-        lastError = err;
+    try {
+      const { data, error } = await supaClient
+        .rpc('get_child_growth_with_status', { child_id: remoteChildId });
+      if (error) {
+        console.error('Erreur RPC get_child_growth_with_status', error);
+        return { rows: [], notice: unavailableNotice };
       }
+      const rows = Array.isArray(data) ? data : [];
+      return { rows, notice: null };
+    } catch (err) {
+      console.error('Erreur RPC get_child_growth_with_status', err);
+      return { rows: [], notice: unavailableNotice };
     }
-    if (lastError) {
-      console.warn('growth status fetch failed', lastError);
-    }
-    return { rows: [], notice: unavailableNotice };
   }
 
   function invalidateGrowthStatus(childId) {
