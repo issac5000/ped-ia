@@ -293,6 +293,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           measurementLimit: 3,
           teethLimit: 3,
         });
+        console.info('[ai/growth] before anomaly check', JSON.stringify(growthData, null, 2));
         const parentContext = sanitizeParentContextInput(body.parentContext);
         const parentContextLines = parentContextToPromptLines(parentContext);
         const parentContextBlock = parentContextLines.length
@@ -357,7 +358,13 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             buildGrowthAlertSummaryFromMeasurements(growthData.measurements)
           );
         }
+        if (growthSummary) {
+          console.info('[ai/growth] growthSummary', growthSummary);
+        }
         const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(growthSummary);
+        if (hasGrowthAnomaly) {
+          console.warn('[ai/growth] anomaly detected for childId', childId);
+        }
         const includeGrowth =
           (Array.isArray(growthData?.measurements) && growthData.measurements.length > 0) || hasGrowthAnomaly;
         const filteredContextParts = hasGrowthAnomaly && growthSummary
@@ -1452,7 +1459,9 @@ async function fetchGrowthDataForPrompt({
       logAnonFailure('empty growth dataset');
     }
 
-    return { measurements, teeth };
+    const growthData = { measurements, teeth };
+    console.info('[ai/growth] raw growthData', JSON.stringify(growthData, null, 2));
+    return growthData;
   } catch (err) {
     const details = err instanceof HttpError ? err.details : err?.message;
     console.error('[ai/growth] fetch failed', { childId, err, details });
