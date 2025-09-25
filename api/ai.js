@@ -346,8 +346,13 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const hasGrowthAnomalyFromStatus = Array.from(statusTokens).some(
           (status) => status && !isStatusNormal(status)
         );
-        const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(rawGrowthSummary);
-        const growthSummary = hasGrowthAnomaly ? rawGrowthSummary : '';
+        let growthSummary = rawGrowthSummary;
+        if (!growthSummary && hasGrowthAnomalyFromStatus) {
+          growthSummary = sanitizeGrowthSummary(
+            buildGrowthAlertSummaryFromMeasurements(growthData?.measurements)
+          );
+        }
+        const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(growthSummary);
         const growthTermPatterns = [
           /(^|[^a-z0-9])croissance([^a-z0-9]|$)/i,
           /(^|[^a-z0-9])growth([^a-z0-9]|$)/i,
@@ -402,12 +407,17 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Mise à jour (JSON): ${updateText || 'Aucune'}`,
           hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
+          hasGrowthAnomaly && growthSummary ? `Alerte OMS à relayer impérativement: ${growthSummary}` : '',
           ...growthPromptLines,
           ...filteredContextParts,
           includeGrowth && growthSection ? `Section Croissance:\n${growthSection}` : ''
         ].filter(Boolean);
         const summaryMessages = [
-          { role: 'system', content: "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent + données de croissance)." },
+          {
+            role: 'system',
+            content:
+              "Tu es Ped’IA. Résume factuellement la mise à jour fournie en français en 50 mots maximum. Utilise uniquement les informations transmises (mise à jour + commentaire parent + données de croissance). Si les statuts OMS indiquent une anomalie (statut global, taille ou poids différent de \"normal\"), ajoute une phrase d'alerte explicite.",
+          },
           { role: 'user', content: summarySections.join('\n\n') }
         ];
         let summary = '';
@@ -440,13 +450,18 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
           `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
           hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
+          hasGrowthAnomaly && growthSummary ? `Alerte OMS obligatoire pour le commentaire: ${growthSummary}` : '',
           ...growthPromptLines,
           ...filteredContextParts,
           includeGrowth && growthSection ? `Croissance récente:\n${growthSection}` : '',
           parentContextBlock
         ].filter(Boolean);
         const commentMessages = [
-          { role: 'system', content: "Tu es Ped’IA, assistant parental bienveillant. Rédige un commentaire personnalisé (80 mots max) basé uniquement sur la nouvelle mise à jour, le commentaire parent, les données de croissance fournies et les résumés factuels. Prends en compte le contexte parental (stress, fatigue, émotions) pour adapter ton empathie et tes conseils. Ne réutilise jamais d’anciens commentaires IA." },
+          {
+            role: 'system',
+            content:
+              "Tu es Ped’IA, assistant parental bienveillant. Rédige un commentaire personnalisé (80 mots max) basé uniquement sur la nouvelle mise à jour, le commentaire parent, les données de croissance fournies et les résumés factuels. Prends en compte le contexte parental (stress, fatigue, émotions) pour adapter ton empathie et tes conseils. Ne réutilise jamais d’anciens commentaires IA. Si une anomalie OMS est signalée, inclue une phrase d'alerte explicite.",
+          },
           { role: 'user', content: commentSections.join('\n\n') }
         ];
         let comment = '';
@@ -1444,7 +1459,7 @@ async function fetchGrowthDataForPrompt({
   const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
   const limitedTeeth = Math.max(1, Math.min(3, Number(teethLimit) || 3));
   try {
-    const measurementUrl = `${effectiveUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_weight,status_height,status_global&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc.nullslast&limit=${limitedMeasurements}`;
+    const measurementUrl = `${effectiveUrl}/rest/v1/child_growth_with_statut?select=agemos,height_cm,weight_kg,status_weight,status_height,status_global&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc.nullslast&limit=${limitedMeasurements}`;
     const measurementRows = await supabaseRequest(measurementUrl, { headers: effectiveHeaders });
     const measurements = (Array.isArray(measurementRows) ? measurementRows : [])
       .filter(Boolean)
@@ -1497,10 +1512,50 @@ function formatGrowthSectionForPrompt(growthData, { errorMessage = 'Croissance n
   if (teethLine) {
     lines.push(`Dents: ${teethLine}`);
   }
+  const alertSummary = buildGrowthAlertSummaryFromMeasurements(growthData?.measurements);
+  if (alertSummary) {
+    lines.push(`Analyse OMS: ${alertSummary}`);
+  }
   if (!lines.length) {
     return 'Pas de mesure enregistrée.';
   }
   return lines.join('\n').slice(0, 600);
+}
+
+function buildGrowthAlertSummaryFromMeasurements(measurements = []) {
+  if (!Array.isArray(measurements)) return '';
+  for (const entry of measurements.filter(Boolean)) {
+    const statusGlobal = sanitizeGrowthSummary(entry?.status_global);
+    const statusHeight = sanitizeGrowthSummary(entry?.status_height);
+    const statusWeight = sanitizeGrowthSummary(entry?.status_weight);
+    const statuses = [statusGlobal, statusHeight, statusWeight].filter(Boolean);
+    if (!statuses.length) continue;
+    const hasAlert = statuses.some((status) => status && !isStatusLabelNormal(status));
+    if (!hasAlert) continue;
+    let summary = statusGlobal && !isStatusLabelNormal(statusGlobal)
+      ? `⚠️ Croissance: ${statusGlobal}.`
+      : '⚠️ Croissance: anomalie OMS détectée.';
+    if (statusWeight) {
+      const weightText = formatGrowthNumber(entry?.weight_kg, { unit: 'kg', decimals: 2 });
+      if (weightText) summary += ` Poids: ${weightText} (${statusWeight}).`;
+    }
+    if (statusHeight) {
+      const heightText = formatGrowthNumber(entry?.height_cm, { unit: 'cm', decimals: 1 });
+      if (heightText) summary += ` Taille: ${heightText} (${statusHeight}).`;
+    }
+    return summary.trim();
+  }
+  return '';
+}
+
+function isStatusLabelNormal(status) {
+  if (!status) return true;
+  const normalized = String(status)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z]/g, '');
+  return normalized === 'normal' || normalized === 'normale';
 }
 
 function formatGrowthMeasurementsForPrompt(measurements = []) {
