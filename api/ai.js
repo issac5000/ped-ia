@@ -1432,7 +1432,7 @@ async function fetchGrowthDataForPrompt({
   const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
   const limitedTeeth = Math.max(1, Math.min(3, Number(teethLimit) || 3));
   try {
-    const measurementUrl = `${effectiveUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_weight,status_height,status_global&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc.nullslast&limit=${limitedMeasurements}`;
+    const measurementUrl = `${effectiveUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_weight,status_height,status_global,created_at&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc.nullslast&limit=${limitedMeasurements}`;
     const measurementRows = await supabaseRequest(measurementUrl, { headers: effectiveHeaders });
     const measurements = (Array.isArray(measurementRows) ? measurementRows : [])
       .filter(Boolean)
