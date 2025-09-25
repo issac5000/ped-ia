@@ -874,7 +874,12 @@
               <input type="checkbox" name="allowMessages" />
               <span>Autoriser réponses à mes sujets</span>
             </label>
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <div class="submit-with-spinner">
+              <button class="btn btn-primary" type="submit" data-role="parent-submit">Mettre à jour</button>
+              <div class="loading-spinner loading-spinner--inline" data-role="parent-spinner" hidden aria-hidden="true">
+                <div class="loading-spinner-core"></div>
+              </div>
+            </div>
           </form>
 
           <div class="card stack">

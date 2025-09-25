@@ -4217,7 +4217,14 @@ const TIMELINE_MILESTONES = [
           <textarea name="update_note" rows="3" placeholder="Partagez une observation, un détail marquant ou votre ressenti de parent."></textarea>
           <p class="muted">Visible dans l’historique et pris en compte par l’assistant IA.</p>
         </label>
-        <div class="form-actions-center"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
+        <div class="form-actions-center">
+          <div class="submit-with-spinner">
+            <button type="submit" class="btn btn-primary" data-role="child-submit">Mettre à jour</button>
+            <div class="loading-spinner loading-spinner--inline" data-role="child-spinner" hidden aria-hidden="true">
+              <div class="loading-spinner-core"></div>
+            </div>
+          </div>
+        </div>
       </form>
     `;
     const form = container.querySelector('#form-edit-child');
@@ -4254,11 +4261,14 @@ const TIMELINE_MILESTONES = [
     const form = e.currentTarget;
     if (form.dataset.busy === '1') return;
     form.dataset.busy = '1';
-    const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
+    const submitBtn = form.querySelector('[data-role="parent-submit"]')
+      || form.querySelector('button[type="submit"],input[type="submit"]');
+    const submitSpinner = form.querySelector('[data-role="parent-spinner"]');
+    showButtonLoading(submitBtn, submitSpinner);
     const commentControl = form.elements.namedItem('parent_comment');
     let shouldResetComment = false;
     let shouldRefreshFamily = false;
+    let hadError = false;
     try {
       const fd = new FormData(form);
       const pseudo = (fd.get('pseudo') || '').toString().trim();
@@ -4452,9 +4462,14 @@ const TIMELINE_MILESTONES = [
     } catch (err) {
       console.warn('handleSettingsSubmit failed', err);
       alert('Impossible de mettre à jour le profil parent.');
+      hadError = true;
     } finally {
       delete form.dataset.busy;
-      if (submitBtn) submitBtn.disabled = false;
+      resolveButtonLoading(submitBtn, submitSpinner, {
+        failed: hadError,
+        defaultLabel: 'Mettre à jour',
+        failureLabel: 'Réessayer',
+      });
     }
   }
 
@@ -4538,11 +4553,10 @@ const TIMELINE_MILESTONES = [
     const form = e.currentTarget;
     if (form.dataset.busy === '1') return;
     form.dataset.busy = '1';
-    const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Mise à jour en cours…';
-    }
+    const submitBtn = form.querySelector('[data-role="child-submit"]')
+      || form.querySelector('button[type="submit"],input[type="submit"]');
+    const submitSpinner = form.querySelector('[data-role="child-spinner"]');
+    showButtonLoading(submitBtn, submitSpinner);
     const childId = form.getAttribute('data-child-id');
     let hadError = false;
     try {
@@ -4689,10 +4703,11 @@ const TIMELINE_MILESTONES = [
       hadError = true;
     } finally {
       delete form.dataset.busy;
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = hadError ? 'Réessayer' : 'Mettre à jour';
-      }
+      resolveButtonLoading(submitBtn, submitSpinner, {
+        failed: hadError,
+        defaultLabel: 'Mettre à jour',
+        failureLabel: 'Réessayer',
+      });
     }
   }
 
@@ -5204,7 +5219,12 @@ const TIMELINE_MILESTONES = [
       reportBtn.className = 'btn btn-primary';
       reportBtn.textContent = 'Bilan complet';
       reportBtn.dataset.loading = '0';
-      actions.appendChild(reportBtn);
+      const reportSpinner = createLoadingSpinnerNode({ className: 'loading-spinner--inline' });
+      const reportControls = document.createElement('div');
+      reportControls.className = 'submit-with-spinner';
+      reportControls.appendChild(reportBtn);
+      reportControls.appendChild(reportSpinner);
+      actions.appendChild(reportControls);
       hist.appendChild(actions);
 
       const reportContainer = document.createElement('div');
@@ -5263,12 +5283,11 @@ const TIMELINE_MILESTONES = [
           return;
         }
         reportBtn.dataset.loading = '1';
-        const originalText = reportBtn.textContent;
-        reportBtn.disabled = true;
-        reportBtn.textContent = 'Génération…';
+        showButtonLoading(reportBtn, reportSpinner);
         reportMessage.textContent = 'Génération du bilan en cours…';
         reportContent.hidden = true;
         reportContent.textContent = '';
+        let hadError = false;
         try {
           const report = await fetchChildFullReport(safeChild.id, { growthStatus });
           reportMessage.textContent = 'Bilan généré ci-dessous.';
@@ -5278,6 +5297,13 @@ const TIMELINE_MILESTONES = [
           if (typeof reportContent.focus === 'function') {
             try { reportContent.focus({ preventScroll: true }); } catch {}
           }
+          requestAnimationFrame(() => {
+            if (!document.body.contains(reportContent)) return;
+            const scrollTarget = reportContent.closest('.timeline-report-block') || reportContent;
+            if (scrollTarget && typeof scrollTarget.scrollIntoView === 'function') {
+              scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          });
         } catch (err) {
           const msg = err && typeof err.message === 'string'
             ? err.message
@@ -5285,10 +5311,14 @@ const TIMELINE_MILESTONES = [
           reportMessage.textContent = msg;
           reportContent.hidden = true;
           reportContent.textContent = '';
+          hadError = true;
         } finally {
           reportBtn.dataset.loading = '0';
-          reportBtn.disabled = false;
-          reportBtn.textContent = originalText;
+          resolveButtonLoading(reportBtn, reportSpinner, {
+            failed: hadError,
+            defaultLabel: 'Bilan complet',
+            failureLabel: 'Réessayer',
+          });
         }
       });
 
@@ -6068,7 +6098,12 @@ const TIMELINE_MILESTONES = [
             <div class="card stack family-bilan-card">
               <div class="card-header family-bilan-header">
                 <h3>Bilan familial IA</h3>
-                <button type="button" class="btn btn-secondary" id="btn-refresh-family-bilan">Générer le bilan</button>
+                <div class="submit-with-spinner">
+                  <button type="button" class="btn btn-secondary" id="btn-refresh-family-bilan">Générer le bilan</button>
+                  <div class="loading-spinner loading-spinner--inline" id="family-bilan-spinner" hidden aria-hidden="true">
+                    <div class="loading-spinner-core"></div>
+                  </div>
+                </div>
               </div>
               <p class="page-subtitle family-bilan-description">Obtenez en un clic une synthèse personnalisée basée sur vos profils et vos mises à jour partagées.</p>
               ${bilanText}
@@ -6086,22 +6121,25 @@ const TIMELINE_MILESTONES = [
 
   function bindFamilyViewActions(dom) {
     const refreshBtn = dom.querySelector('#btn-refresh-family-bilan');
+    const refreshSpinner = dom.querySelector('#family-bilan-spinner');
     if (refreshBtn) {
       const defaultLabel = 'Générer le bilan';
-      const busyLabel = 'Génération…';
-      const setBusyState = (isBusy, label) => {
+      const applyBusyState = (isBusy, { failed = false } = {}) => {
         refreshBtn.dataset.busy = isBusy ? '1' : '0';
-        refreshBtn.disabled = !!isBusy;
-        if (label) {
-          refreshBtn.textContent = label;
+        if (isBusy) {
+          showButtonLoading(refreshBtn, refreshSpinner);
         } else {
-          refreshBtn.textContent = isBusy ? busyLabel : defaultLabel;
+          resolveButtonLoading(refreshBtn, refreshSpinner, {
+            failed,
+            defaultLabel,
+            failureLabel: 'Réessayer',
+          });
         }
       };
       if (dashboardState.family.regenerating) {
-        setBusyState(true, busyLabel);
+        applyBusyState(true);
       } else {
-        setBusyState(false);
+        applyBusyState(false);
       }
       refreshBtn.addEventListener('click', async () => {
         if (refreshBtn.dataset.busy === '1') return;
@@ -6116,12 +6154,19 @@ const TIMELINE_MILESTONES = [
           });
           return;
         }
-        const originalText = refreshBtn.textContent || defaultLabel;
-        setBusyState(true, busyLabel);
+        applyBusyState(true);
+        let hadError = false;
         try {
           const result = await runFamilyContextRegeneration(profileId || null, { refreshDashboard: true, skipIfRunning: false });
           if (result) {
             showNotification({ title: 'Bilan familial mis à jour', text: 'Un nouveau bilan est disponible.' });
+            const bilanContainer = dom.querySelector('.family-bilan-card');
+            if (bilanContainer) {
+              requestAnimationFrame(() => {
+                if (!document.body.contains(bilanContainer)) return;
+                bilanContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              });
+            }
           }
         } catch (err) {
           console.warn('Family bilan refresh failed', err);
@@ -6129,11 +6174,12 @@ const TIMELINE_MILESTONES = [
             ? err.message
             : 'Impossible de régénérer un nouveau bilan pour le moment.';
           showNotification({ title: 'Génération impossible', text: message });
+          hadError = true;
         } finally {
           if (dashboardState.family.regenerating) {
-            setBusyState(true, busyLabel);
+            applyBusyState(true);
           } else {
-            setBusyState(false, originalText);
+            applyBusyState(false, { failed: hadError });
           }
         }
       });
@@ -8291,6 +8337,38 @@ const TIMELINE_MILESTONES = [
     if (normalized.includes('ok')) return false;
     if (normalized.includes('dans la norme')) return false;
     return true;
+  }
+
+  function showButtonLoading(button, spinner) {
+    if (spinner) spinner.hidden = false;
+    if (button) {
+      button.disabled = true;
+      button.hidden = true;
+    }
+  }
+
+  function resolveButtonLoading(button, spinner, { failed = false, defaultLabel = '', failureLabel = 'Réessayer' } = {}) {
+    if (spinner) spinner.hidden = true;
+    if (button) {
+      button.hidden = false;
+      button.disabled = false;
+      if (failed) {
+        if (failureLabel) button.textContent = failureLabel;
+      } else if (defaultLabel) {
+        button.textContent = defaultLabel;
+      }
+    }
+  }
+
+  function createLoadingSpinnerNode({ className = '', hidden = true } = {}) {
+    const wrapper = document.createElement('div');
+    wrapper.className = ['loading-spinner', className].filter(Boolean).join(' ');
+    if (hidden) wrapper.hidden = true;
+    wrapper.setAttribute('aria-hidden', 'true');
+    const core = document.createElement('div');
+    core.className = 'loading-spinner-core';
+    wrapper.appendChild(core);
+    return wrapper;
   }
 
   function buildGrowthCompositeKey(month, height, weight) {
