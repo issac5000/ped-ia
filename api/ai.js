@@ -318,6 +318,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         );
         const rawGrowthSummary = sanitizeGrowthSummary(growthSummaryFromEntry || growthSummaryFromBody || '');
         const statusTokens = new Set();
+        let primaryGlobalStatus = '';
         const recordStatusesFromEntry = (entry) => {
           if (!entry || typeof entry !== 'object') return;
           const statusValues = [
@@ -325,9 +326,13 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             entry.status_height ?? entry.statusHeight,
             entry.status_weight ?? entry.statusWeight,
           ];
-          statusValues.forEach((value) => {
+          statusValues.forEach((value, idx) => {
             const text = sanitizeGrowthSummary(value);
-            if (text) statusTokens.add(text);
+            if (!text) return;
+            statusTokens.add(text);
+            if (idx === 0 && !primaryGlobalStatus) {
+              primaryGlobalStatus = text;
+            }
           });
         };
         recordStatusesFromEntry(latestGrowthData);
@@ -342,31 +347,35 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .replace(/[^a-z]/g, '');
-          return normalized === 'normal' || normalized === 'normale';
+          return normalized === 'normal' || normalized === 'normale' || normalized === 'ok';
         };
         const hasGrowthAnomalyFromStatus = Array.from(statusTokens).some(
           (status) => status && !isStatusNormal(status)
         );
         let growthSummary = rawGrowthSummary;
-        if (!growthSummary && hasGrowthAnomalyFromStatus) {
-          growthSummary = sanitizeGrowthSummary(
-            buildGrowthAlertSummaryFromMeasurements(growthData?.measurements)
-          );
-        }
-        if (!growthSummary && Array.isArray(growthData?.measurements) && growthData.measurements.length > 0) {
-          growthSummary = sanitizeGrowthSummary(
-            buildGrowthAlertSummaryFromMeasurements(growthData.measurements)
-          );
+        const measurementSummary = sanitizeGrowthSummary(
+          buildGrowthAlertSummaryFromMeasurements(growthData?.measurements)
+        );
+        if (!growthSummary && measurementSummary) {
+          growthSummary = measurementSummary;
         }
         if (growthSummary) {
           console.info('[ai/growth] growthSummary', growthSummary);
         }
-        const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(growthSummary);
+        const summarySignalsAlert = growthSummary
+          ? /⚠️|anomalie|surveill|alerte|danger|critique/i.test(growthSummary)
+          : false;
+        const globalStatusIsAlert = primaryGlobalStatus
+          ? !isStatusNormal(primaryGlobalStatus)
+          : false;
+        const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || summarySignalsAlert || globalStatusIsAlert;
         if (hasGrowthAnomaly) {
           console.warn('[ai/growth] anomaly detected for childId', childId);
         }
         const includeGrowth =
-          (Array.isArray(growthData?.measurements) && growthData.measurements.length > 0) || hasGrowthAnomaly;
+          (Array.isArray(growthData?.measurements) && growthData.measurements.length > 0) ||
+          Boolean(growthSummary) ||
+          Boolean(primaryGlobalStatus);
         const filteredContextParts = hasGrowthAnomaly && growthSummary
           ? contextParts.filter((entry) => !isSameGrowthSummary(entry, growthSummary))
           : contextParts;
@@ -376,11 +385,17 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             )
           : [];
         const growthSection = includeGrowth ? formatGrowthSectionForPrompt(growthData) : '';
+        const globalStatusSentence = primaryGlobalStatus ? `Statut global OMS: ${primaryGlobalStatus}.` : '';
+        const growthSummaryLine = growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '';
+        const growthAlertLine = hasGrowthAnomaly && growthSummary
+          ? `Alerte OMS à relayer impérativement: ${growthSummary}`
+          : '';
         const summarySections = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           `Mise à jour (JSON): ${updateText || 'Aucune'}`,
-          hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
-          hasGrowthAnomaly && growthSummary ? `Alerte OMS à relayer impérativement: ${growthSummary}` : '',
+          globalStatusSentence,
+          growthSummaryLine,
+          growthAlertLine,
           ...growthPromptLines,
           ...filteredContextParts,
           includeGrowth && growthSection ? `Section Croissance:\n${growthSection}` : ''
@@ -422,7 +437,8 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           `Historique des résumés (du plus récent au plus ancien):\n${historyText}`,
           summary ? `Résumé factuel de la nouvelle mise à jour: ${summary}` : '',
           `Nouvelle mise à jour détaillée (JSON): ${updateText || 'Aucune donnée'}`,
-          hasGrowthAnomaly && growthSummary ? `Synthèse croissance (OMS): ${growthSummary}` : '',
+          globalStatusSentence,
+          growthSummaryLine,
           hasGrowthAnomaly && growthSummary ? `Alerte OMS obligatoire pour le commentaire: ${growthSummary}` : '',
           ...growthPromptLines,
           ...filteredContextParts,
@@ -1506,10 +1522,13 @@ function buildGrowthAlertSummaryFromMeasurements(measurements = []) {
     const statuses = [statusGlobal, statusHeight, statusWeight].filter(Boolean);
     if (!statuses.length) continue;
     const hasAlert = statuses.some((status) => status && !isStatusLabelNormal(status));
-    if (!hasAlert) continue;
-    let summary = statusGlobal && !isStatusLabelNormal(statusGlobal)
-      ? `⚠️ Croissance: ${statusGlobal}.`
-      : '⚠️ Croissance: anomalie OMS détectée.';
+    const prefix = hasAlert ? '⚠️ ' : '';
+    const baseLabel = statusGlobal
+      ? `Croissance: ${statusGlobal}.`
+      : hasAlert
+        ? 'Croissance: anomalie OMS détectée.'
+        : 'Croissance: suivi OMS disponible.';
+    let summary = `${prefix}${baseLabel}`;
     if (statusWeight) {
       const weightText = formatGrowthNumber(entry?.weight_kg, { unit: 'kg', decimals: 2 });
       if (weightText) summary += ` Poids: ${weightText} (${statusWeight}).`;
@@ -1530,7 +1549,7 @@ function isStatusLabelNormal(status) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z]/g, '');
-  return normalized === 'normal' || normalized === 'normale';
+  return normalized === 'normal' || normalized === 'normale' || normalized === 'ok';
 }
 
 function formatGrowthMeasurementsForPrompt(measurements = []) {
