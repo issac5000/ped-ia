@@ -8293,15 +8293,6 @@ const TIMELINE_MILESTONES = [
     return true;
   }
 
-  function classifyGlobalGrowthStatus(status) {
-    if (!status) return 'unknown';
-    const normalized = String(status).trim().toLowerCase();
-    if (!normalized) return 'unknown';
-    if (normalized.includes('ok') || normalized.includes('norme')) return 'ok';
-    if (normalized.includes('surveiller')) return 'warning';
-    return statusIsAlert(normalized) ? 'alert' : 'ok';
-  }
-
   function buildGrowthCompositeKey(month, height, weight) {
     const parts = [];
     parts.push(Number.isFinite(month) ? String(Math.round(month)) : 'x');
@@ -8512,7 +8503,7 @@ const TIMELINE_MILESTONES = [
       },
       getAnomalies(limit = 5) {
         return unique
-          .filter((entry) => statusIsAlert(entry.statusGlobal))
+          .filter((entry) => statusIsAlert(entry.statusGlobal) || statusIsAlert(entry.statusHeight) || statusIsAlert(entry.statusWeight))
           .slice(0, Math.max(1, limit));
       },
       describeLatestSummary() {
@@ -8651,25 +8642,26 @@ const TIMELINE_MILESTONES = [
     }
     const helper = growthStatus || createGrowthStatusHelper('', []);
     const latestEntry = helper.entries[0] || null;
-    const toneKey = classifyGlobalGrowthStatus(latestEntry?.statusGlobal);
-    const toneClass = toneKey === 'alert' ? 'is-alert' : toneKey === 'warning' ? 'is-warning' : 'is-ok';
+    const hasAlert = latestEntry
+      ? (statusIsAlert(latestEntry.statusGlobal) || statusIsAlert(latestEntry.statusHeight) || statusIsAlert(latestEntry.statusWeight))
+      : false;
+    const toneClass = hasAlert ? 'is-alert' : 'is-ok';
     const statusLabel = latestEntry?.statusGlobal ? cleanStatusText(latestEntry.statusGlobal) : '';
     const anomalies = helper.getAnomalies(3);
-    const entries = toneKey === 'ok'
-      ? helper.entries.slice(0, 1)
-      : (anomalies.length ? anomalies : helper.entries.slice(0, 1));
+    const entries = hasAlert
+      ? (anomalies.length ? anomalies : (latestEntry ? [latestEntry] : []))
+      : helper.entries.slice(0, 1);
     const listHtml = entries.length
       ? `<ul class="report-highlight-card__list">${entries.map((entry) => `<li>${escapeHtml(helper.describeEntry(entry, { short: true }))}</li>`).join('')}</ul>`
       : '<p class="report-highlight-card__text">Aucune mesure récente disponible.</p>';
-    const icon = toneKey === 'alert' ? '🚨' : toneKey === 'warning' ? '⚠️' : '✅';
+    const icon = hasAlert
+      ? (statusLabel && statusLabel.toLowerCase().includes('trop') ? '🚨' : '⚠️')
+      : '✅';
     const intro = statusLabel
       ? `Analyse OMS : ${statusLabel}.`
-      : 'Analyse OMS : données OMS indisponibles.';
-    const defaultCards = [
-      { icon: '🛌', title: 'Sommeil', text: 'Ajoutez vos observations sommeil pour détecter d’éventuelles perturbations.' },
-      { icon: '🍽️', title: 'Alimentation', text: 'Renseignez les changements alimentaires pour enrichir le bilan.' },
-      { icon: '💬', title: 'Bien-être familial', text: 'Pensez à consigner votre état émotionnel dans le carnet familial.' },
-    ];
+      : hasAlert
+        ? 'Analyse OMS : vigilance recommandée.'
+        : 'Analyse OMS : les dernières mesures sont dans la norme.';
     container.innerHTML = `
       <div class="report-highlight-card ${toneClass}">
         <div class="report-highlight-card__header">
@@ -8679,15 +8671,6 @@ const TIMELINE_MILESTONES = [
         <p class="report-highlight-card__text">${escapeHtml(intro)}</p>
         ${listHtml}
       </div>
-      ${defaultCards.map((card) => `
-        <div class="report-highlight-card is-muted">
-          <div class="report-highlight-card__header">
-            <span class="report-highlight-card__icon">${card.icon}</span>
-            <h4>${escapeHtml(card.title)}</h4>
-          </div>
-          <p class="report-highlight-card__text">${escapeHtml(card.text)}</p>
-        </div>
-      `).join('')}
     `;
   }
 
