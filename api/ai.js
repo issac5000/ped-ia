@@ -352,48 +352,14 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
             buildGrowthAlertSummaryFromMeasurements(growthData?.measurements)
           );
         }
+        if (!growthSummary && Array.isArray(growthData?.measurements) && growthData.measurements.length > 0) {
+          growthSummary = sanitizeGrowthSummary(
+            buildGrowthAlertSummaryFromMeasurements(growthData.measurements)
+          );
+        }
         const hasGrowthAnomaly = hasGrowthAnomalyFromStatus || Boolean(growthSummary);
-        const growthTermPatterns = [
-          /(^|[^a-z0-9])croissance([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])growth([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])taille([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])height([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])poids([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])weight([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])dentition([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])dents([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])dent([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])teeth([^a-z0-9]|$)/i,
-          /(^|[^a-z0-9])tooth([^a-z0-9]|$)/i,
-        ];
-        const containsGrowthTerm = (value) => {
-          if (!value) return false;
-          const text = typeof value === 'string' ? value : String(value);
-          return growthTermPatterns.some((pattern) => pattern.test(text));
-        };
-        const hasGrowthTermInData = (value, depth = 0) => {
-          if (depth > 3 || value == null) return false;
-          if (typeof value === 'string' || typeof value === 'number') {
-            return containsGrowthTerm(value);
-          }
-          if (Array.isArray(value)) {
-            return value.some((entry) => hasGrowthTermInData(entry, depth + 1));
-          }
-          if (typeof value === 'object') {
-            return Object.entries(value).some(([key, val]) => {
-              if (containsGrowthTerm(key)) return true;
-              return hasGrowthTermInData(val, depth + 1);
-            });
-          }
-          return false;
-        };
-        const isGrowthRelatedUpdate =
-          growthStatusEntries.length > 0 ||
-          containsGrowthTerm(updateType) ||
-          containsGrowthTerm(parentComment) ||
-          containsGrowthTerm(updateText) ||
-          hasGrowthTermInData(updateForPrompt);
-        const includeGrowth = (growthData?.measurements?.length > 0) || hasGrowthAnomaly || isGrowthRelatedUpdate;
+        const includeGrowth =
+          (Array.isArray(growthData?.measurements) && growthData.measurements.length > 0) || hasGrowthAnomaly;
         const filteredContextParts = hasGrowthAnomaly && growthSummary
           ? contextParts.filter((entry) => !isSameGrowthSummary(entry, growthSummary))
           : contextParts;
