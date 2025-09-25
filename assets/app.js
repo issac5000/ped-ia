@@ -5186,10 +5186,10 @@ const TIMELINE_MILESTONES = [
       actions.style.flexWrap = 'wrap';
       actions.style.gap = '8px';
 
-      if (timelineEl && updates.length > 2) {
+      if (timelineEl && updates.length > 1) {
         const items = Array.from(timelineEl.children);
         items.forEach((el, idx) => {
-          if (idx >= 2) el.style.display = 'none';
+          if (idx >= 1) el.style.display = 'none';
         });
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -5205,7 +5205,7 @@ const TIMELINE_MILESTONES = [
             btn.dataset.expanded = '1';
             btn.setAttribute('aria-expanded', 'true');
           } else {
-            items.forEach((el, idx) => { if (idx >= 2) el.style.display = 'none'; });
+            items.forEach((el, idx) => { if (idx >= 1) el.style.display = 'none'; });
             btn.textContent = 'Tout afficher';
             btn.dataset.expanded = '0';
             btn.setAttribute('aria-expanded', 'false');
