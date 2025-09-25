@@ -8293,6 +8293,15 @@ const TIMELINE_MILESTONES = [
     return true;
   }
 
+  function classifyGlobalGrowthStatus(status) {
+    if (!status) return 'unknown';
+    const normalized = String(status).trim().toLowerCase();
+    if (!normalized) return 'unknown';
+    if (normalized.includes('ok') || normalized.includes('norme')) return 'ok';
+    if (normalized.includes('surveiller')) return 'warning';
+    return statusIsAlert(normalized) ? 'alert' : 'ok';
+  }
+
   function buildGrowthCompositeKey(month, height, weight) {
     const parts = [];
     parts.push(Number.isFinite(month) ? String(Math.round(month)) : 'x');
@@ -8330,7 +8339,7 @@ const TIMELINE_MILESTONES = [
       childId,
       updateId: row.child_update_id ?? row.update_id ?? row.updateId ?? null,
       measurementId: row.measurement_id ?? row.measurementId ?? null,
-      month: parseFiniteNumber(row.month ?? row.age_month ?? row.age_months),
+      month: parseFiniteNumber(row.agemos ?? row.age_month ?? row.age_months ?? row.month),
       height: parseFiniteNumber(row.height_cm ?? row.height),
       weight: parseFiniteNumber(row.weight_kg ?? row.weight),
       heightRange: {
@@ -8443,6 +8452,8 @@ const TIMELINE_MILESTONES = [
       describeEntry(entry, { short = false } = {}) {
         if (!entry) return '';
         const parts = [];
+        const globalText = cleanStatusText(entry.statusGlobal);
+        if (short && globalText) parts.push(globalText);
         if (Number.isFinite(entry.height)) {
           const components = [];
           if (entry.statusHeight) components.push(cleanStatusText(entry.statusHeight));
@@ -8467,8 +8478,8 @@ const TIMELINE_MILESTONES = [
           const summary = components.length ? `${valueText} (${components.join(', ')})` : valueText;
           if (summary) parts.push(`Poids ${summary}`.trim());
         }
-        if (!short && entry.statusGlobal) parts.push(cleanStatusText(entry.statusGlobal));
-        if (!parts.length && entry.statusGlobal) return cleanStatusText(entry.statusGlobal);
+        if (!short && globalText) parts.push(globalText);
+        if (!parts.length && globalText) return globalText;
         return parts.join(short ? ' / ' : ' • ');
       },
       serializeEntry(entry) {
@@ -8501,7 +8512,7 @@ const TIMELINE_MILESTONES = [
       },
       getAnomalies(limit = 5) {
         return unique
-          .filter((entry) => statusIsAlert(entry.statusGlobal) || statusIsAlert(entry.statusHeight) || statusIsAlert(entry.statusWeight))
+          .filter((entry) => statusIsAlert(entry.statusGlobal))
           .slice(0, Math.max(1, limit));
       },
       describeLatestSummary() {
@@ -8536,15 +8547,19 @@ const TIMELINE_MILESTONES = [
     const supaClient = await childAccess.getClient();
     try {
       const { data, error } = await supaClient
-        .rpc('get_child_growth_with_status', { child_id: remoteChildId });
+        .from('child_growth_with_status')
+        .select('agemos,height_cm,weight_kg,status_weight,status_height,status_global')
+        .eq('child_id', remoteChildId)
+        .order('agemos', { ascending: false, nullsFirst: false })
+        .limit(1);
       if (error) {
-        console.error('Erreur RPC get_child_growth_with_status', error);
+        console.error('Erreur fetch child_growth_with_status', error);
         return { rows: [], notice: unavailableNotice };
       }
       const rows = Array.isArray(data) ? data : [];
       return { rows, notice: null };
     } catch (err) {
-      console.error('Erreur RPC get_child_growth_with_status', err);
+      console.error('Erreur fetch child_growth_with_status', err);
       return { rows: [], notice: unavailableNotice };
     }
   }
@@ -8635,22 +8650,28 @@ const TIMELINE_MILESTONES = [
       return;
     }
     const helper = growthStatus || createGrowthStatusHelper('', []);
+    const latestEntry = helper.entries[0] || null;
+    const toneKey = classifyGlobalGrowthStatus(latestEntry?.statusGlobal);
+    const toneClass = toneKey === 'alert' ? 'is-alert' : toneKey === 'warning' ? 'is-warning' : 'is-ok';
+    const statusLabel = latestEntry?.statusGlobal ? cleanStatusText(latestEntry.statusGlobal) : '';
     const anomalies = helper.getAnomalies(3);
-    const entries = anomalies.length ? anomalies : helper.entries.slice(0, 2);
+    const entries = toneKey === 'ok'
+      ? helper.entries.slice(0, 1)
+      : (anomalies.length ? anomalies : helper.entries.slice(0, 1));
     const listHtml = entries.length
       ? `<ul class="report-highlight-card__list">${entries.map((entry) => `<li>${escapeHtml(helper.describeEntry(entry, { short: true }))}</li>`).join('')}</ul>`
       : '<p class="report-highlight-card__text">Aucune mesure récente disponible.</p>';
-    const icon = anomalies.length ? '⚠️' : '✅';
-    const intro = anomalies.length
-      ? 'Analyse OMS : une vigilance s’impose sur les dernières mesures.'
-      : 'Analyse OMS : les dernières mesures sont dans la norme.';
+    const icon = toneKey === 'alert' ? '🚨' : toneKey === 'warning' ? '⚠️' : '✅';
+    const intro = statusLabel
+      ? `Analyse OMS : ${statusLabel}.`
+      : 'Analyse OMS : données OMS indisponibles.';
     const defaultCards = [
       { icon: '🛌', title: 'Sommeil', text: 'Ajoutez vos observations sommeil pour détecter d’éventuelles perturbations.' },
       { icon: '🍽️', title: 'Alimentation', text: 'Renseignez les changements alimentaires pour enrichir le bilan.' },
       { icon: '💬', title: 'Bien-être familial', text: 'Pensez à consigner votre état émotionnel dans le carnet familial.' },
     ];
     container.innerHTML = `
-      <div class="report-highlight-card ${anomalies.length ? 'is-alert' : 'is-ok'}">
+      <div class="report-highlight-card ${toneClass}">
         <div class="report-highlight-card__header">
           <span class="report-highlight-card__icon">${icon}</span>
           <h4>Croissance</h4>

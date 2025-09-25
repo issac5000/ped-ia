@@ -1102,6 +1102,8 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 }
 .timeline-growth-status__item.is-alert .timeline-growth-status__status,
 .timeline-growth-status__global.is-alert{ color:var(--danger); }
+.timeline-growth-status__item.is-warning .timeline-growth-status__status,
+.timeline-growth-status__global.is-warning{ color:var(--orange-strong); }
 .timeline-growth-status__item.is-ok .timeline-growth-status__status,
 .timeline-growth-status__global.is-ok{ color:var(--ok); }
 .timeline-growth-status__global{
@@ -1158,6 +1160,10 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
 .report-highlight-card.is-alert{
   border-color:rgba(239,71,111,.6);
   background:rgba(239,71,111,.12);
+}
+.report-highlight-card.is-warning{
+  border-color:rgba(255,150,64,.55);
+  background:rgba(255,150,64,.18);
 }
 .report-highlight-card.is-ok{
   border-color:rgba(45,192,122,.45);
