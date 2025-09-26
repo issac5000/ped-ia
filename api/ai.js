@@ -40,6 +40,8 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
       effectiveProfileId = await resolveProfileIdFromCode(normalizedCode, { supaUrl, headers });
       if (!effectiveProfileId) return null;
     }
+  console.log("[AI DEBUG] profile_id:", profileId);
+  console.log("[AI DEBUG] URL:", url);
     const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
       effectiveProfileId
     )}&order=last_generated_at.desc&limit=1`;
@@ -52,6 +54,8 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
   const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
   const effectiveProfileId = normalizedProfileId;
   if (!effectiveProfileId) return null;
+  console.log("[AI DEBUG] profile_id:", profileId);
+  console.log("[AI DEBUG] URL:", url);
   const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
     effectiveProfileId
   )}&order=last_generated_at.desc&limit=1`;
