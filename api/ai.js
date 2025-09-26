@@ -14,6 +14,7 @@ async function resolveProfileIdFromCode(codeUnique, { supaUrl: supaUrlArg, heade
 }
 
 function getAnonSupabaseConfig() {
+  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
   if (!supaUrl) {
     console.error('[ai] Missing Supabase URL for anon config (NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL)');
@@ -32,21 +33,16 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
   if (!normalizedProfileId && !normalizedCode) return null;
 
   if (!normalizedProfileId && normalizedCode) {
-    const { supaUrl: serviceUrl, serviceKey } = getServiceConfig();
-    const serviceHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+    const { supaUrl, serviceKey } = getServiceConfig();
+    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
     normalizedProfileId =
-      (await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers: serviceHeaders })) || '';
+      (await resolveProfileIdFromCode(normalizedCode, { supaUrl, headers })) || '';
   }
 
   const { supaUrl, anonKey } = getAnonSupabaseConfig();
   const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
   const effectiveProfileId = normalizedProfileId;
   if (!effectiveProfileId) return null;
-
-  if (!supaUrl) {
-    console.error('[AI DEBUG] supaUrl is undefined!');
-    return null;
-  }
 
   const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
     effectiveProfileId
@@ -585,7 +581,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
         if (!profileId && codeUnique) {
           try {
-            const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl: supaUrlArg, headers });
+            const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers });
             if (!resolvedId) {
               console.warn('[family-bilan] code_unique resolved to no profile', { codeUnique });
               return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique } });
@@ -612,11 +608,11 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         try {
           const [profileData, childrenData] = await Promise.all([
             supabaseRequest(
-              `${supaUrlArg}/rest/v1/profiles?select=full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+              `${supaUrl}/rest/v1/profiles?select=full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental&id=eq.${encodeURIComponent(profileId)}&limit=1`,
               { headers }
             ),
             supabaseRequest(
-              `${supaUrlArg}/rest/v1/children?select=id,first_name,sex,dob&user_id=eq.${encodeURIComponent(profileId)}&order=dob.asc`,
+              `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob&user_id=eq.${encodeURIComponent(profileId)}&order=dob.asc`,
               { headers }
             ),
           ]);
@@ -637,7 +633,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           const inParam = childIds.map((id) => `${encodeURIComponent(id)}`).join(',');
           try {
             const updates = await supabaseRequest(
-              `${supaUrlArg}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=40`,
+              `${supaUrl}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=40`,
               { headers }
             );
             childUpdates = Array.isArray(updates) ? updates : [];
@@ -647,7 +643,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         }
         try {
           const parentRows = await supabaseRequest(
-            `${supaUrlArg}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
+            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
             { headers }
           );
           parentUpdates = Array.isArray(parentRows) ? parentRows : [];
@@ -774,7 +770,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }];
         try {
           await supabaseRequest(
-            `${supaUrlArg}/rest/v1/family_context?on_conflict=profile_id`,
+            `${supaUrl}/rest/v1/family_context?on_conflict=profile_id`,
             {
               method: 'POST',
               headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
