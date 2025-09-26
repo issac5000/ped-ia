@@ -446,6 +446,13 @@ const TIMELINE_MILESTONES = [
     return str.slice(0, 2000);
   }
 
+  function sanitizeFamilyBilanPreview(value) {
+    if (value == null) return '';
+    const str = String(value).trim();
+    if (!str) return '';
+    return str.slice(0, 400);
+  }
+
   function buildParentSnapshot(userInfo = {}, context = {}) {
     const pseudo = sanitizeParentText(userInfo.pseudo);
     const role = sanitizeParentText(userInfo.role);
@@ -614,45 +621,66 @@ const TIMELINE_MILESTONES = [
   }
 
   async function generateParentUpdateAiComment({ updateType, updateContent, parentComment }) {
+    const payload = {
+      type: 'parent-update',
+      updateType: typeof updateType === 'string' ? updateType : String(updateType || ''),
+      updateContent,
+      parentComment,
+      parentContext: buildParentContextForPrompt(),
+    };
+    const profileId = getActiveProfileId();
+    if (profileId) {
+      const normalizedProfileId = String(profileId).trim();
+      if (normalizedProfileId) {
+        payload.profileId = normalizedProfileId;
+      }
+    }
+    const codeUnique = activeProfile?.code_unique
+      ? String(activeProfile.code_unique).trim().toUpperCase()
+      : '';
+    if (codeUnique) {
+      payload.code_unique = codeUnique;
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timeoutId = null;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    };
+    if (controller) {
+      options.signal = controller.signal;
+      timeoutId = setTimeout(() => {
+        try { controller.abort(); }
+        catch {}
+      }, 20000);
+    }
+
     try {
-      const payload = {
-        type: 'parent-update',
-        updateType: typeof updateType === 'string' ? updateType : String(updateType || ''),
-        updateContent,
-        parentComment,
-        parentContext: buildParentContextForPrompt(),
-      };
-      const profileId = getActiveProfileId();
-      if (profileId) {
-        const normalizedProfileId = String(profileId).trim();
-        if (normalizedProfileId) {
-          payload.profileId = normalizedProfileId;
-          payload.profile_id = normalizedProfileId;
-        }
+      const res = await fetch('/api/ai', options);
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {}
+      if (!res.ok) {
+        const message = data?.error || 'AI error';
+        throw new Error(message);
       }
-      const codeUnique = activeProfile?.code_unique
-        ? String(activeProfile.code_unique).trim().toUpperCase()
-        : '';
-      if (codeUnique) {
-        payload.code_unique = codeUnique;
-      }
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) return '';
-      const data = await res.json();
       if (data?.status === 'unavailable') {
-        showNotification({ title: 'IA indisponible', text: data.message || 'Fonction IA désactivée.' });
-        return '';
+        throw new Error(data?.message || 'IA indisponible');
       }
-      let text = sanitizeParentAiFeedback(data?.comment ?? data?.text ?? '');
-      if (!text) return '';
-      return text;
+      const comment = sanitizeParentAiFeedback(data?.comment ?? data?.text ?? '');
+      const usedAiBilan = Boolean(data?.used_ai_bilan);
+      const familyBilanPreview = sanitizeFamilyBilanPreview(data?.familyBilanPreview);
+      return { comment, usedAiBilan, familyBilanPreview };
     } catch (err) {
       console.warn('generateParentUpdateAiComment request failed', err);
-      return '';
+      throw err;
+    } finally {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
@@ -4360,15 +4388,23 @@ const TIMELINE_MILESTONES = [
             : false;
           const shouldRequestAi = hasParentNote || hasStructuredChanges;
           let aiFeedback = '';
+          let aiFeedbackMeta = null;
           if (shouldRequestAi) {
             try {
-              aiFeedback = await generateParentUpdateAiComment({
+              const aiResult = await generateParentUpdateAiComment({
                 updateType: snapshotRow.update_type,
                 updateContent,
                 parentComment: sanitizedComment || '',
               });
+              aiFeedback = aiResult?.comment || '';
+              aiFeedbackMeta = aiResult || null;
             } catch (aiErr) {
               console.warn('generateParentUpdateAiComment failed', aiErr);
+              showNotification({
+                title: 'Commentaire non généré',
+                text: 'Impossible de générer un commentaire pour l’instant.',
+                durationMs: 6000,
+              });
             }
           }
           const rowForInsert = { ...snapshotRow };
@@ -4381,6 +4417,13 @@ const TIMELINE_MILESTONES = [
                   catch { return {}; }
                 })();
             const updatedContent = { ...baseContent, ai_commentaire: aiFeedback };
+            if (aiFeedbackMeta?.usedAiBilan) {
+              updatedContent.ai_bilan_used = true;
+            }
+            const previewText = sanitizeFamilyBilanPreview(aiFeedbackMeta?.familyBilanPreview);
+            if (previewText) {
+              updatedContent.ai_bilan_preview = previewText;
+            }
             if (!hasParentNote) updatedContent.comment_origin = 'ai';
             rowForInsert.update_content = JSON.stringify(updatedContent);
           }
@@ -5806,6 +5849,8 @@ const TIMELINE_MILESTONES = [
     const changes = [];
     let source = null;
     let commentOrigin = null;
+    let usedAiBilan = false;
+    let familyBilanPreview = '';
     if (typeof parsed === 'string') {
       summary = parsed;
     } else if (parsed && typeof parsed === 'object') {
@@ -5832,11 +5877,38 @@ const TIMELINE_MILESTONES = [
       }
       if (typeof parsed.source === 'string') source = parsed.source;
       if (typeof parsed.comment_origin === 'string') commentOrigin = parsed.comment_origin;
+      const applyAiMetaCandidate = (candidate) => {
+        if (!candidate || typeof candidate !== 'object') return;
+        if (typeof candidate.usedAiBilan === 'boolean') usedAiBilan = usedAiBilan || candidate.usedAiBilan;
+        if (typeof candidate.used_ai_bilan === 'boolean') usedAiBilan = usedAiBilan || candidate.used_ai_bilan;
+        if (typeof candidate.aiBilanUsed === 'boolean') usedAiBilan = usedAiBilan || candidate.aiBilanUsed;
+        if (typeof candidate.familyBilanPreview === 'string' && !familyBilanPreview) {
+          const preview = sanitizeFamilyBilanPreview(candidate.familyBilanPreview);
+          if (preview) familyBilanPreview = preview;
+        }
+        if (typeof candidate.ai_bilan_preview === 'string' && !familyBilanPreview) {
+          const preview = sanitizeFamilyBilanPreview(candidate.ai_bilan_preview);
+          if (preview) familyBilanPreview = preview;
+        }
+      };
+      applyAiMetaCandidate(parsed.ai_meta);
+      applyAiMetaCandidate(parsed.aiMeta);
+      applyAiMetaCandidate(parsed.ai_commentaire_meta);
+      if (typeof parsed.ai_bilan_used === 'boolean') usedAiBilan = usedAiBilan || parsed.ai_bilan_used;
+      if (typeof parsed.used_ai_bilan === 'boolean') usedAiBilan = usedAiBilan || parsed.used_ai_bilan;
+      if (typeof parsed.usedAiBilan === 'boolean') usedAiBilan = usedAiBilan || parsed.usedAiBilan;
+      if (typeof parsed.ai_bilan_preview === 'string' && !familyBilanPreview) {
+        const preview = sanitizeFamilyBilanPreview(parsed.ai_bilan_preview);
+        if (preview) familyBilanPreview = preview;
+      }
     }
     if (!commentOrigin) {
       if (source === 'ai') commentOrigin = 'ai';
       else if (source === 'parent') commentOrigin = 'parent';
     }
+    const aiMeta = usedAiBilan || familyBilanPreview
+      ? { usedAiBilan, familyBilanPreview }
+      : null;
     return {
       raw: parsed,
       summary,
@@ -5845,6 +5917,7 @@ const TIMELINE_MILESTONES = [
       changes,
       source,
       commentOrigin,
+      aiMeta,
     };
   }
 
@@ -5932,6 +6005,15 @@ const TIMELINE_MILESTONES = [
       ...otherBlocks.map((block) => renderNote(block.label, block.text)),
     ].filter(Boolean);
     const commentHtml = blocksHtml.join('');
+    const aiMeta = parsed.aiMeta || null;
+    const contextBadgeHtml = aiMeta?.usedAiBilan && commentHtml
+      ? `
+        <div class="parent-update-ai-context">
+          <span class="badge">Contexte enfants pris en compte</span>
+          ${aiMeta.familyBilanPreview ? `<span class="parent-update-ai-context-info" role="img" aria-label="Contexte enfants pris en compte" title="${escapeHtml(aiMeta.familyBilanPreview)}">ℹ️</span>` : ''}
+        </div>
+      `
+      : '';
     const itemClasses = ['parent-update-item'];
     if (extraClass) itemClasses.push(extraClass);
     return `
@@ -5942,6 +6024,7 @@ const TIMELINE_MILESTONES = [
         </div>
         <div class="parent-update-summary">${escapeHtml(summary)}</div>
         ${detailsHtml}
+        ${contextBadgeHtml}
         ${commentHtml}
       </li>
     `;

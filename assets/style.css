@@ -1215,6 +1215,33 @@ section[data-route="/"] .card{position:relative; overflow:hidden}
   line-height:1.5;
   color:#ffffff;
 }
+.parent-update-ai-context{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:4px;
+  font-size:12px;
+  color:rgba(226,233,255,.85);
+}
+.parent-update-ai-context .badge{
+  background:rgba(110,163,255,.18);
+  border-color:rgba(110,163,255,.32);
+  color:#e2e9ff;
+  font-weight:600;
+}
+.parent-update-ai-context-info{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:18px;
+  height:18px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  color:rgba(226,233,255,.85);
+  font-size:12px;
+  font-weight:700;
+  cursor:help;
+}
 .parent-update-item .timeline-comment{
   background:rgba(110,163,255,.16);
   border:1px solid rgba(110,163,255,.26);
