@@ -784,6 +784,14 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }
         const childSummaries = childUpdates.map(summarizeChildUpdateForReport);
 
+        let childBaselineRow = null;
+        try {
+          childBaselineRow = await fetchChildBaselineRow({ supaUrl, headers: supabaseHeaders, childId });
+        } catch (err) {
+          console.warn('[ai] child-full-report baseline fetch failed', { childId, err });
+        }
+        const mergedChildData = mergeChildBaselineData(childBaselineRow, childUpdates);
+
         let parentUpdates = [];
         if (profileId) {
           try {
@@ -823,6 +831,10 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const hasTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
         console.info('[ai] growth presence', { hasMeasurements, hasTeeth });
 
+        if (mergedChildData) {
+          enrichChildGrowthFromMeasurements(mergedChildData, growthData);
+        }
+
         const childFirstName = await fetchChildFirstName({ supaUrl, headers: supabaseHeaders, childId }).catch((err) => {
           console.warn('[ai] child-full-report first name fetch failed', { childId, err });
           return '';
@@ -844,7 +856,11 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           parentSummaries,
         });
 
-        const userPrompt = [resumeSection, growthSection, detailsSection].join('\n---\n');
+        const baselineSection = buildChildBaselineSection({ childData: mergedChildData });
+        const promptSections = [resumeSection];
+        if (baselineSection) promptSections.push(baselineSection);
+        promptSections.push(growthSection, detailsSection);
+        const userPrompt = promptSections.join('\n---\n');
         console.info('[ai] prompt sizes', { userChars: userPrompt.length });
 
         const system = `Tu es Ped’IA, assistant parental. À partir des informations résumées ci-dessous, rédige un bilan complet en français (maximum 500 mots). Structure ta réponse avec exactement les sections suivantes : Croissance (taille, poids, dents), Sommeil, Alimentation, Jalons de développement, Remarques parentales, Recommandations pratiques. Utilise uniquement les données résumées fournies, sans extrapoler. Pour chaque section sans information fiable, écris « À compléter ». Analyse la croissance en t'appuyant sur les mesures et statuts fournis. Ton style est factuel, positif et accessible.`;
@@ -1273,6 +1289,551 @@ function summarizeParentUpdateForReport(row = {}) {
     parent_comment,
     ai_commentaire,
   };
+}
+
+async function fetchChildBaselineRow({ supaUrl, headers, childId }) {
+  if (!supaUrl || !headers || !childId) return null;
+  try {
+    const query = `${supaUrl}/rest/v1/children?select=*&id=eq.${encodeURIComponent(childId)}&limit=1`;
+    const data = await supabaseRequest(query, { headers });
+    const row = Array.isArray(data) ? data[0] : data;
+    return row || null;
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+function mergeChildBaselineData(baseRow, updateRows = []) {
+  const state = mapChildRowToState(baseRow);
+  const updates = Array.isArray(updateRows) ? [...updateRows] : [];
+  updates.sort((a, b) => {
+    const aTime = new Date(a?.created_at || 0).getTime();
+    const bTime = new Date(b?.created_at || 0).getTime();
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+    if (Number.isNaN(aTime)) return -1;
+    if (Number.isNaN(bTime)) return 1;
+    return aTime - bTime;
+  });
+  updates.forEach((row) => applyChildUpdateToState(state, row));
+  return state;
+}
+
+function createEmptyChildSleep() {
+  return {
+    falling: '',
+    sleepsThrough: null,
+    nightWakings: '',
+    wakeDuration: '',
+    bedtime: '',
+  };
+}
+
+function createEmptyChildContext() {
+  return {
+    allergies: '',
+    history: '',
+    care: '',
+    languages: '',
+    feedingType: '',
+    eatingStyle: '',
+    sleep: createEmptyChildSleep(),
+  };
+}
+
+function createEmptyChildState() {
+  return {
+    firstName: '',
+    dob: '',
+    sex: '',
+    context: createEmptyChildContext(),
+    milestones: [],
+    growth: {
+      heightCm: null,
+      weightKg: null,
+      teethCount: null,
+    },
+  };
+}
+
+function sanitizeChildTextValue(value, { maxLength = 200 } = {}) {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    return truncateForPrompt(trimmed, maxLength);
+  }
+  try {
+    const text = String(value);
+    return sanitizeChildTextValue(text, { maxLength });
+  } catch {
+    return '';
+  }
+}
+
+function normalizeSexValue(value) {
+  if (value == null) return '';
+  if (typeof value === 'number') {
+    if (value === 0) return 'fille';
+    if (value === 1) return 'garçon';
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    const normalized = trimmed
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (['0', 'f', 'fille', 'girl', 'female', 'feminin'].includes(normalized)) return 'fille';
+    if (['1', 'g', 'm', 'garcon', 'garçon', 'boy', 'male', 'masculin'].includes(normalized)) return 'garçon';
+    return truncateForPrompt(trimmed, 40);
+  }
+  return truncateForPrompt(String(value), 40);
+}
+
+function normalizeBooleanInput(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return null;
+    if (['1', 'true', 'yes', 'oui'].includes(trimmed)) return true;
+    if (['0', 'false', 'no', 'non'].includes(trimmed)) return false;
+  }
+  return null;
+}
+
+function mergeChildSleepValues(base, updates) {
+  const sleep = base && typeof base === 'object' ? { ...base } : createEmptyChildSleep();
+  if (!updates || typeof updates !== 'object') return sleep;
+  const keys = ['falling', 'nightWakings', 'wakeDuration', 'bedtime'];
+  keys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(updates, key)) {
+      const raw = updates[key];
+      const text = sanitizeChildTextValue(raw, { maxLength: 80 });
+      sleep[key] = text == null ? '' : text;
+    }
+  });
+  if (Object.prototype.hasOwnProperty.call(updates, 'sleepsThrough')) {
+    const bool = updates.sleepsThrough;
+    sleep.sleepsThrough = typeof bool === 'boolean'
+      ? bool
+      : normalizeBooleanInput(bool);
+  }
+  return sleep;
+}
+
+function mergeChildContextValues(base, updates) {
+  const context = base && typeof base === 'object' ? { ...base } : createEmptyChildContext();
+  if (!updates || typeof updates !== 'object') return context;
+  const assignments = [
+    ['allergies', 200],
+    ['history', 200],
+    ['care', 200],
+    ['languages', 200],
+    ['feedingType', 120],
+    ['eatingStyle', 120],
+  ];
+  assignments.forEach(([key, limit]) => {
+    if (Object.prototype.hasOwnProperty.call(updates, key)) {
+      const raw = updates[key];
+      const text = sanitizeChildTextValue(raw, { maxLength: limit });
+      if (key === 'feedingType' || key === 'eatingStyle') {
+        context[key] = text == null ? '' : text;
+      } else {
+        context[key] = text == null ? '' : text;
+      }
+    }
+  });
+  if (Object.prototype.hasOwnProperty.call(updates, 'sleep')) {
+    context.sleep = mergeChildSleepValues(context.sleep, updates.sleep);
+  }
+  return context;
+}
+
+function mergeChildGrowthValues(base, updates) {
+  const growth = base && typeof base === 'object'
+    ? { ...base }
+    : { heightCm: null, weightKg: null, teethCount: null };
+  if (!updates || typeof updates !== 'object') return growth;
+  if (Object.prototype.hasOwnProperty.call(updates, 'heightCm')) {
+    const val = Number(updates.heightCm);
+    growth.heightCm = Number.isFinite(val) ? val : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'weightKg')) {
+    const val = Number(updates.weightKg);
+    growth.weightKg = Number.isFinite(val) ? val : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'teethCount')) {
+    const val = Number(updates.teethCount);
+    growth.teethCount = Number.isFinite(val) ? Math.max(0, Math.round(val)) : null;
+  }
+  return growth;
+}
+
+function mergeChildStateValues(state, updates) {
+  if (!state || typeof state !== 'object' || !updates || typeof updates !== 'object') return state;
+  if (Object.prototype.hasOwnProperty.call(updates, 'firstName')) {
+    const text = sanitizeChildTextValue(updates.firstName, { maxLength: 120 });
+    state.firstName = text == null ? '' : text;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'dob')) {
+    const text = sanitizeChildTextValue(updates.dob, { maxLength: 40 });
+    state.dob = text == null ? '' : text;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'sex')) {
+    state.sex = normalizeSexValue(updates.sex);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'context')) {
+    state.context = mergeChildContextValues(state.context, updates.context);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'milestones')) {
+    state.milestones = Array.isArray(updates.milestones)
+      ? updates.milestones.slice(0, 120).map((entry) => !!entry)
+      : state.milestones;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'growth')) {
+    state.growth = mergeChildGrowthValues(state.growth, updates.growth);
+  }
+  return state;
+}
+
+function mapChildRowToState(row) {
+  const state = createEmptyChildState();
+  if (!row || typeof row !== 'object') return state;
+  if (Object.prototype.hasOwnProperty.call(row, 'first_name') || Object.prototype.hasOwnProperty.call(row, 'firstName')) {
+    const text = sanitizeChildTextValue(row.first_name ?? row.firstName, { maxLength: 120 });
+    state.firstName = text == null ? '' : text;
+  }
+  if (Object.prototype.hasOwnProperty.call(row, 'dob')) {
+    const text = sanitizeChildTextValue(row.dob, { maxLength: 40 });
+    state.dob = text == null ? '' : text;
+  }
+  if (Object.prototype.hasOwnProperty.call(row, 'sex')) {
+    state.sex = normalizeSexValue(row.sex);
+  }
+  const contextPayload = {
+    allergies: row.context_allergies,
+    history: row.context_history,
+    care: row.context_care,
+    languages: row.context_languages,
+    feedingType: row.feeding_type,
+    eatingStyle: row.eating_style,
+    sleep: {
+      falling: row.sleep_falling,
+      sleepsThrough: typeof row.sleep_sleeps_through === 'boolean'
+        ? row.sleep_sleeps_through
+        : normalizeBooleanInput(row.sleep_sleeps_through),
+      nightWakings: row.sleep_night_wakings,
+      wakeDuration: row.sleep_wake_duration,
+      bedtime: row.sleep_bedtime,
+    },
+  };
+  state.context = mergeChildContextValues(state.context, contextPayload);
+  if (Array.isArray(row.milestones)) {
+    state.milestones = row.milestones.slice(0, 120).map((entry) => !!entry);
+  }
+  const growthPayload = {};
+  if (Object.prototype.hasOwnProperty.call(row, 'height_cm')) growthPayload.heightCm = row.height_cm;
+  if (Object.prototype.hasOwnProperty.call(row, 'weight_kg')) growthPayload.weightKg = row.weight_kg;
+  if (Object.prototype.hasOwnProperty.call(row, 'teeth_count')) growthPayload.teethCount = row.teeth_count;
+  state.growth = mergeChildGrowthValues(state.growth, growthPayload);
+  return state;
+}
+
+function readStringCandidate(source, keys, { maxLength = 200 } = {}) {
+  if (!source || typeof source !== 'object') return { found: false };
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const value = source[key];
+      const text = sanitizeChildTextValue(value, { maxLength });
+      return { found: true, value: text == null ? '' : text };
+    }
+  }
+  return { found: false };
+}
+
+function readBooleanCandidate(source, keys) {
+  if (!source || typeof source !== 'object') return { found: false };
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      return { found: true, value: normalizeBooleanInput(source[key]) };
+    }
+  }
+  return { found: false };
+}
+
+function readNumberCandidate(source, keys) {
+  if (!source || typeof source !== 'object') return { found: false };
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const raw = source[key];
+      if (raw == null || raw === '') return { found: true, value: null };
+      const num = Number(raw);
+      if (Number.isFinite(num)) return { found: true, value: num };
+      return { found: true, value: null };
+    }
+  }
+  return { found: false };
+}
+
+function readSexCandidate(source) {
+  if (!source || typeof source !== 'object') return { found: false };
+  if (Object.prototype.hasOwnProperty.call(source, 'sex')) {
+    return { found: true, value: normalizeSexValue(source.sex) };
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'gender')) {
+    return { found: true, value: normalizeSexValue(source.gender) };
+  }
+  return { found: false };
+}
+
+function extractSleepFromCandidate(source) {
+  if (!source || typeof source !== 'object') return null;
+  const sleepSources = [];
+  if (source.sleep && typeof source.sleep === 'object') sleepSources.push(source.sleep);
+  if (source.context && typeof source.context === 'object' && source.context.sleep && typeof source.context.sleep === 'object') {
+    sleepSources.push(source.context.sleep);
+  }
+  sleepSources.push(source);
+  let result = null;
+  sleepSources.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    if (!result) result = {};
+    const falling = readStringCandidate(entry, ['falling', 'sleep_falling', 'endormissement'], { maxLength: 80 });
+    if (falling.found) result.falling = falling.value;
+    const night = readStringCandidate(entry, ['nightWakings', 'sleep_night_wakings', 'reveils'], { maxLength: 80 });
+    if (night.found) result.nightWakings = night.value;
+    const wake = readStringCandidate(entry, ['wakeDuration', 'sleep_wake_duration', 'duree_eveil'], { maxLength: 80 });
+    if (wake.found) result.wakeDuration = wake.value;
+    const bedtime = readStringCandidate(entry, ['bedtime', 'sleep_bedtime', 'heure_coucher'], { maxLength: 40 });
+    if (bedtime.found) result.bedtime = bedtime.value;
+    const through = readBooleanCandidate(entry, ['sleepsThrough', 'sleep_sleeps_through', 'sleepThrough', 'fait_ses_nuits']);
+    if (through.found) result.sleepsThrough = through.value;
+  });
+  return result;
+}
+
+function extractContextFromCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const sources = [];
+  sources.push(candidate);
+  if (candidate.context && typeof candidate.context === 'object') sources.push(candidate.context);
+  if (candidate.profile && typeof candidate.profile === 'object' && candidate.profile.context && typeof candidate.profile.context === 'object') {
+    sources.push(candidate.profile.context);
+  }
+  let context = null;
+  sources.forEach((source) => {
+    if (!source || typeof source !== 'object') return;
+    const allergies = readStringCandidate(source, ['allergies', 'context_allergies'], { maxLength: 200 });
+    const history = readStringCandidate(source, ['history', 'context_history', 'antecedents'], { maxLength: 200 });
+    const care = readStringCandidate(source, ['care', 'context_care', 'mode_de_garde'], { maxLength: 200 });
+    const languages = readStringCandidate(source, ['languages', 'context_languages'], { maxLength: 200 });
+    const feeding = readStringCandidate(source, ['feedingType', 'feeding_type', 'alimentation'], { maxLength: 120 });
+    const eating = readStringCandidate(source, ['eatingStyle', 'eating_style', 'appetit'], { maxLength: 120 });
+    const sleep = extractSleepFromCandidate(source);
+    if (allergies.found || history.found || care.found || languages.found || feeding.found || eating.found || sleep) {
+      if (!context) context = {};
+      if (allergies.found) context.allergies = allergies.value;
+      if (history.found) context.history = history.value;
+      if (care.found) context.care = care.value;
+      if (languages.found) context.languages = languages.value;
+      if (feeding.found) context.feedingType = feeding.value;
+      if (eating.found) context.eatingStyle = eating.value;
+      if (sleep) {
+        const baseSleep = context.sleep && typeof context.sleep === 'object' ? context.sleep : undefined;
+        context.sleep = mergeChildSleepValues(baseSleep, sleep);
+      }
+    }
+  });
+  return context;
+}
+
+function extractGrowthFromCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const sources = [];
+  if (candidate.growth && typeof candidate.growth === 'object') sources.push(candidate.growth);
+  if (candidate.snapshot && typeof candidate.snapshot === 'object' && candidate.snapshot.growth) sources.push(candidate.snapshot.growth);
+  if (candidate.next && typeof candidate.next === 'object' && candidate.next.growth) sources.push(candidate.next.growth);
+  sources.push(candidate);
+  let growth = null;
+  sources.forEach((source) => {
+    if (!source || typeof source !== 'object') return;
+    const height = readNumberCandidate(source, ['heightCm', 'height_cm', 'height']);
+    const weight = readNumberCandidate(source, ['weightKg', 'weight_kg', 'weight']);
+    const teeth = readNumberCandidate(source, ['teethCount', 'teeth_count', 'teeth']);
+    if (height.found || weight.found || teeth.found) {
+      if (!growth) growth = {};
+      if (height.found) growth.heightCm = height.value;
+      if (weight.found) growth.weightKg = weight.value;
+      if (teeth.found) {
+        growth.teethCount = teeth.value == null ? null : Math.max(0, Math.round(teeth.value));
+      }
+    }
+  });
+  return growth;
+}
+
+function extractChildStateFromCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const out = {};
+  const firstName = readStringCandidate(candidate, ['firstName', 'first_name'], { maxLength: 120 });
+  if (firstName.found) out.firstName = firstName.value;
+  const dob = readStringCandidate(candidate, ['dob', 'birthdate', 'birth_date'], { maxLength: 40 });
+  if (dob.found) out.dob = dob.value;
+  const sex = readSexCandidate(candidate);
+  if (sex.found) out.sex = sex.value;
+  if (Array.isArray(candidate.milestones)) {
+    out.milestones = candidate.milestones.slice(0, 120).map((entry) => !!entry);
+  }
+  const context = extractContextFromCandidate(candidate);
+  if (context) out.context = context;
+  const growth = extractGrowthFromCandidate(candidate);
+  if (growth) out.growth = growth;
+  return Object.keys(out).length ? out : null;
+}
+
+function applyChildUpdateToState(state, updateRow) {
+  if (!updateRow) return;
+  const parsed = parseUpdateContentForPrompt(updateRow?.update_content);
+  if (!parsed || typeof parsed !== 'object') return;
+  const candidates = [parsed];
+  const keys = ['next', 'child', 'snapshot', 'profile', 'current', 'data', 'context'];
+  keys.forEach((key) => {
+    const value = parsed[key];
+    if (value && typeof value === 'object') candidates.push(value);
+  });
+  candidates.forEach((candidate) => {
+    const extracted = extractChildStateFromCandidate(candidate);
+    if (extracted) mergeChildStateValues(state, extracted);
+  });
+}
+
+function enrichChildGrowthFromMeasurements(childData, growthData) {
+  if (!childData || typeof childData !== 'object') return;
+  if (!childData.growth || typeof childData.growth !== 'object') {
+    childData.growth = { heightCm: null, weightKg: null, teethCount: null };
+  }
+  if (growthData && Array.isArray(growthData.measurements) && growthData.measurements.length) {
+    const latestMeasurement = growthData.measurements.find((entry) => {
+      const height = Number(entry?.height_cm ?? entry?.height);
+      const weight = Number(entry?.weight_kg ?? entry?.weight);
+      return Number.isFinite(height) || Number.isFinite(weight);
+    });
+    if (latestMeasurement) {
+      const height = Number(latestMeasurement.height_cm ?? latestMeasurement.height);
+      const weight = Number(latestMeasurement.weight_kg ?? latestMeasurement.weight);
+      if (Number.isFinite(height)) childData.growth.heightCm = height;
+      if (Number.isFinite(weight)) childData.growth.weightKg = weight;
+    }
+  }
+  if (growthData && Array.isArray(growthData.teeth) && growthData.teeth.length) {
+    const latestTeeth = growthData.teeth.find((entry) => Number.isFinite(Number(entry?.count)));
+    if (latestTeeth) {
+      const teethCount = Number(latestTeeth.count);
+      if (Number.isFinite(teethCount)) childData.growth.teethCount = Math.max(0, Math.round(teethCount));
+    }
+  }
+}
+
+function labelChildFeedingType(value) {
+  if (value == null) return '';
+  const map = {
+    'allaitement_exclusif': 'Allaitement exclusif',
+    'mixte_allaitement_biberon': 'Mixte allaitement + biberon',
+    'allaitement_diversification': 'Diversification + allaitement',
+    'biberon_diversification': 'Biberon + diversification',
+    'lait_poudre_vache': 'Lait en poudre / vache',
+  };
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key) return '';
+  if (Object.prototype.hasOwnProperty.call(map, key)) return map[key];
+  return truncateForPrompt(key, 120);
+}
+
+function labelChildEatingStyle(value) {
+  if (value == null) return '';
+  const map = {
+    'mange_tres_bien': 'Mange très bien',
+    'appetit_variable': 'Appétit variable',
+    'selectif_difficile': 'Sélectif / difficile',
+    'petites_portions': 'Petites portions',
+  };
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key) return '';
+  if (Object.prototype.hasOwnProperty.call(map, key)) return map[key];
+  return truncateForPrompt(key, 120);
+}
+
+function formatChildSleepForBaseline(sleep) {
+  if (!sleep || typeof sleep !== 'object') return '';
+  const parts = [];
+  const falling = sanitizeChildTextValue(sleep.falling, { maxLength: 80 });
+  if (falling) parts.push(`endormissement ${falling}`);
+  if (typeof sleep.sleepsThrough === 'boolean') {
+    parts.push(sleep.sleepsThrough ? 'fait ses nuits' : 'réveils nocturnes');
+  }
+  const night = sanitizeChildTextValue(sleep.nightWakings, { maxLength: 80 });
+  if (night) parts.push(`réveils: ${night}`);
+  const wake = sanitizeChildTextValue(sleep.wakeDuration, { maxLength: 80 });
+  if (wake) parts.push(`durée éveil: ${wake}`);
+  const bedtime = sanitizeChildTextValue(sleep.bedtime, { maxLength: 40 });
+  if (bedtime) parts.push(`coucher ${bedtime}`);
+  return parts.join(' • ');
+}
+
+function describeMilestoneSummary(milestones) {
+  if (!Array.isArray(milestones) || !milestones.length) return '';
+  const total = milestones.length;
+  const completed = milestones.filter(Boolean).length;
+  return `${completed}/${total} jalons validés`;
+}
+
+function buildChildBaselineSection({ childData }) {
+  if (!childData || typeof childData !== 'object') return '';
+  const lines = ['Profil enfant'];
+  const identityParts = [];
+  if (childData.firstName) identityParts.push(`Prénom: ${truncateForPrompt(childData.firstName, 80)}`);
+  if (childData.sex) identityParts.push(`Sexe: ${truncateForPrompt(childData.sex, 40)}`);
+  if (childData.dob) {
+    const formattedDob = formatDateForPrompt(childData.dob) || truncateForPrompt(childData.dob, 40);
+    if (formattedDob) identityParts.push(`Naissance: ${formattedDob}`);
+  }
+  if (identityParts.length) lines.push(identityParts.join(' • '));
+  const context = childData.context || {};
+  const contextParts = [];
+  if (context.allergies) contextParts.push(`Allergies: ${truncateForPrompt(context.allergies, 200)}`);
+  if (context.history) contextParts.push(`Antécédents: ${truncateForPrompt(context.history, 200)}`);
+  if (context.care) contextParts.push(`Mode de garde: ${truncateForPrompt(context.care, 200)}`);
+  if (context.languages) contextParts.push(`Langues: ${truncateForPrompt(context.languages, 200)}`);
+  const feedingLabel = labelChildFeedingType(context.feedingType);
+  if (feedingLabel) contextParts.push(`Alimentation: ${feedingLabel}`);
+  const eatingLabel = labelChildEatingStyle(context.eatingStyle);
+  if (eatingLabel) contextParts.push(`Appétit: ${eatingLabel}`);
+  const sleepText = formatChildSleepForBaseline(context.sleep);
+  if (sleepText) contextParts.push(`Sommeil: ${sleepText}`);
+  contextParts.forEach((part) => lines.push(`- ${part}`));
+  const milestoneLine = describeMilestoneSummary(childData.milestones);
+  if (milestoneLine) lines.push(`Jalons: ${milestoneLine}`);
+  const growth = childData.growth || {};
+  const growthParts = [];
+  if (Number.isFinite(growth.heightCm)) {
+    growthParts.push(`taille ${formatGrowthNumber(growth.heightCm, { unit: 'cm', decimals: 1 })}`);
+  }
+  if (Number.isFinite(growth.weightKg)) {
+    growthParts.push(`poids ${formatGrowthNumber(growth.weightKg, { unit: 'kg', decimals: 1 })}`);
+  }
+  if (Number.isFinite(growth.teethCount)) {
+    growthParts.push(`${Math.max(0, Math.round(growth.teethCount))} dents`);
+  }
+  if (growthParts.length) {
+    lines.push(`Mesures: ${growthParts.join(' • ')}`);
+  }
+  if (lines.length <= 1) return '';
+  return lines.join('\n');
 }
 
 function buildReportResumeSection({ firstName, childCount, parentCount }) {
