@@ -7184,7 +7184,7 @@ const TIMELINE_MILESTONES = [
       (async () => {
         try {
           if (isAnonProfile()) {
-            const res = await anonCommunityRequest('list', {});
+            const res = await withRetry(() => anonCommunityRequest('list', {}));
             const topics = Array.isArray(res.topics) ? res.topics : [];
             const repliesArr = Array.isArray(res.replies) ? res.replies : [];
             const authorsRaw = res.authors || {};
@@ -7195,7 +7195,7 @@ const TIMELINE_MILESTONES = [
               authorsMap.set(String(id), entry);
             });
             const repliesMap = new Map();
-            repliesArr.forEach(r => {
+            repliesArr.forEach((r) => {
               if (!r || !r.topic_id) return;
               const key = String(r.topic_id);
               const arr = repliesMap.get(key) || [];
@@ -7210,121 +7210,160 @@ const TIMELINE_MILESTONES = [
             console.warn('Aucun user_id disponible pour forum_topics/forum_replies/profiles (fetch)');
             const forum = store.get(K.forum, { topics: [] });
             const repliesMap = new Map();
-            forum.topics.forEach(t=> repliesMap.set(t.id, t.replies||[]));
+            forum.topics.forEach((t) => repliesMap.set(t.id, t.replies || []));
             const authors = new Map();
             renderTopics(forum.topics.slice().reverse(), repliesMap, authors);
             return;
           }
-          const { data: topics } = await supabase.from('forum_topics').select('id,user_id,title,content,created_at').order('created_at',{ascending:false});
-          const ids = (topics||[]).map(t=>t.id);
-          const { data: reps } = ids.length? await supabase.from('forum_replies').select('id,topic_id,user_id,content,created_at').in('topic_id', ids) : { data: [] };
-          const userIds = new Set([...(topics||[]).map(t=>t.user_id), ...(reps||[]).map(r=>r.user_id)]);
+          const loadTopics = async () => {
+            const { data, error } = await supabase
+              .from('forum_topics')
+              .select('id,user_id,title,content,created_at')
+              .order('created_at', { ascending: false });
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+          };
+          const topics = await withRetry(() => loadTopics());
+          const topicIds = topics.map((t) => t?.id).filter((id) => id != null);
+          const loadMessages = async () => {
+            if (!topicIds.length) return [];
+            const { data, error } = await supabase
+              .from('forum_replies')
+              .select('id,topic_id,user_id,content,created_at')
+              .in('topic_id', topicIds);
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+          };
+          const replies = await withRetry(() => loadMessages());
+          const userIds = new Set([
+            ...topics.map((t) => t?.user_id).filter((id) => id != null),
+            ...replies.map((r) => r?.user_id).filter((id) => id != null),
+          ]);
           let authorsMap = new Map();
           if (userIds.size) {
-            const idArray = Array.from(userIds);
-            const viewCandidates = ['community_profiles_meta', 'community_profiles_public', 'profiles_public_meta'];
-            let viewLoaded = false;
-            for (const viewName of viewCandidates) {
-              if (!viewName || viewLoaded) break;
-              try {
-                const { data: rows, error: viewError } = await supabase
-                  .from(viewName)
-                  .select('id,full_name,name,children_count,child_count,show_children_count,showChildCount,show_stats,showStats')
-                  .in('id', idArray);
-                if (viewError) throw viewError;
-                if (Array.isArray(rows) && rows.length) {
-                  authorsMap = new Map(rows.map((row) => {
-                    const id = row?.id != null ? String(row.id) : '';
-                    if (!id) return null;
-                    const entry = normalizeAuthorMeta({
-                      name: row.full_name || row.name || 'Utilisateur',
-                      child_count: row.children_count ?? row.child_count ?? row.childCount ?? null,
-                      show_children_count:
-                        row.show_children_count ?? row.showChildCount ?? row.show_stats ?? row.showStats,
-                    }) || { name: row.full_name || row.name || 'Utilisateur', childCount: null, showChildCount: false };
-                    return [id, entry];
-                  }).filter(Boolean));
-                  viewLoaded = true;
-                }
-              } catch {
-                continue;
-              }
-            }
-            if (!viewLoaded || !authorsMap.size) {
-              try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const token = session?.access_token || '';
-                const r = await fetch('/api/profiles/by-ids', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                  body: JSON.stringify({ ids: idArray })
-                });
-                if (r.ok) {
-                  const j = await r.json();
-                  authorsMap = new Map((j.profiles||[]).map((p)=>{
-                    const id = p?.id != null ? String(p.id) : '';
-                    if (!id) return null;
-                    const entry = normalizeAuthorMeta({
-                      name: p.full_name || p.name || 'Utilisateur',
-                      child_count: p.child_count ?? p.children_count ?? null,
-                      show_children_count: p.show_children_count ?? p.showChildCount ?? p.show_stats ?? p.showStats
-                    }) || { name: p.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                    return [id, entry];
-                  }).filter(Boolean));
-                } else {
-                  const { data: profs } = await supabase.from('profiles').select('id,full_name,show_children_count').in('id', idArray);
-                  let childRows = [];
-                  try {
-                    const { data: rows } = await supabase.from('children').select('user_id').in('user_id', idArray);
-                    childRows = rows || [];
-                  } catch {}
-                  const counts = new Map();
-                  childRows.forEach((row)=>{
-                    const key = row?.user_id != null ? String(row.user_id) : '';
-                    if (!key) return;
-                    counts.set(key, (counts.get(key)||0)+1);
-                  });
-                  authorsMap = new Map((profs||[]).map((p)=>{
-                    const id = p?.id != null ? String(p.id) : '';
-                    if (!id) return null;
-                    const entry = normalizeAuthorMeta({
-                      name: p.full_name || 'Utilisateur',
-                      child_count: counts.get(id) ?? null,
-                      show_children_count: p.show_children_count
-                    }) || { name: p.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                    return [id, entry];
-                  }).filter(Boolean));
-                }
-              } catch {
-                const { data: profs } = await supabase.from('profiles').select('id,full_name,show_children_count').in('id', idArray);
-                let childRows = [];
+            const loadCommunityProfiles = async () => {
+              const idArray = Array.from(userIds)
+                .map((value) => (value != null ? String(value) : ''))
+                .filter(Boolean);
+              if (!idArray.length) return new Map();
+              const viewCandidates = ['community_profiles_meta', 'community_profiles_public', 'profiles_public_meta'];
+              for (const viewName of viewCandidates) {
+                if (!viewName) continue;
                 try {
-                  const { data: rows } = await supabase.from('children').select('user_id').in('user_id', idArray);
-                  childRows = rows || [];
-                } catch {}
-                const counts = new Map();
-                childRows.forEach((row)=>{
-                  const key = row?.user_id != null ? String(row.user_id) : '';
-                  if (!key) return;
-                  counts.set(key, (counts.get(key)||0)+1);
-                });
-                authorsMap = new Map((profs||[]).map((p)=>{
-                  const id = p?.id != null ? String(p.id) : '';
-                  if (!id) return null;
-                  const entry = normalizeAuthorMeta({
-                    name: p.full_name || 'Utilisateur',
-                    child_count: counts.get(id) ?? null,
-                    show_children_count: p.show_children_count
-                  }) || { name: p.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                  return [id, entry];
-                }).filter(Boolean));
+                  const { data: rows, error: viewError } = await supabase
+                    .from(viewName)
+                    .select('id,full_name,name,children_count,child_count,show_children_count,showChildCount,show_stats,showStats')
+                    .in('id', idArray);
+                  if (viewError) throw viewError;
+                  if (Array.isArray(rows) && rows.length) {
+                    return new Map(
+                      rows
+                        .map((row) => {
+                          const id = row?.id != null ? String(row.id) : '';
+                          if (!id) return null;
+                          const entry = normalizeAuthorMeta({
+                            name: row.full_name || row.name || 'Utilisateur',
+                            child_count: row.children_count ?? row.child_count ?? row.childCount ?? null,
+                            show_children_count:
+                              row.show_children_count ?? row.showChildCount ?? row.show_stats ?? row.showStats,
+                          }) || { name: row.full_name || row.name || 'Utilisateur', childCount: null, showChildCount: false };
+                          return [id, entry];
+                        })
+                        .filter(Boolean)
+                    );
+                  }
+                } catch (err) {
+                  console.warn('community profiles view load failed', err);
+                }
               }
-            }
+              try {
+                const { data: authData } = await supabase.auth.getSession();
+                const token = authData?.session?.access_token || '';
+                if (token) {
+                  const response = await fetch('/api/profiles/by-ids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ ids: idArray }),
+                  });
+                  if (response.ok) {
+                    const payload = await response.json().catch(() => null);
+                    if (payload?.profiles) {
+                      const entries = payload.profiles
+                        .map((profile) => {
+                          const id = profile?.id != null ? String(profile.id) : '';
+                          if (!id) return null;
+                          const entry = normalizeAuthorMeta({
+                            name: profile.full_name || profile.name || 'Utilisateur',
+                            child_count: profile.child_count ?? profile.children_count ?? null,
+                            show_children_count:
+                              profile.show_children_count ?? profile.showChildCount ?? profile.show_stats ?? profile.showStats,
+                          }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                          return [id, entry];
+                        })
+                        .filter(Boolean);
+                      if (entries.length) {
+                        return new Map(entries);
+                      }
+                    }
+                  }
+                }
+              } catch (err) {
+                console.warn('community profiles API fallback failed', err);
+              }
+              const { data: profs, error: profsError } = await supabase
+                .from('profiles')
+                .select('id,full_name,show_children_count')
+                .in('id', idArray);
+              if (profsError) throw profsError;
+              let childRows = [];
+              try {
+                const { data: rows, error: childrenError } = await supabase
+                  .from('children')
+                  .select('user_id')
+                  .in('user_id', idArray);
+                if (childrenError) throw childrenError;
+                childRows = Array.isArray(rows) ? rows : [];
+              } catch (err) {
+                console.warn('community profiles children fetch failed', err);
+                childRows = [];
+              }
+              const counts = new Map();
+              childRows.forEach((row) => {
+                const key = row?.user_id != null ? String(row.user_id) : '';
+                if (!key) return;
+                counts.set(key, (counts.get(key) || 0) + 1);
+              });
+              return new Map(
+                (Array.isArray(profs) ? profs : [])
+                  .map((profile) => {
+                    const id = profile?.id != null ? String(profile.id) : '';
+                    if (!id) return null;
+                    const entry = normalizeAuthorMeta({
+                      name: profile.full_name || 'Utilisateur',
+                      child_count: counts.get(id) ?? null,
+                      show_children_count: profile.show_children_count,
+                    }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                    return [id, entry];
+                  })
+                  .filter(Boolean)
+              );
+            };
+            authorsMap = await withRetry(() => loadCommunityProfiles());
           }
           const repliesMap = new Map();
-          (reps||[]).forEach(r=>{ const key = String(r.topic_id); const arr = repliesMap.get(key)||[]; arr.push(r); repliesMap.set(key, arr); });
-          renderTopics(topics||[], repliesMap, authorsMap);
-        } catch (e) { showEmpty(); }
+          replies.forEach((reply) => {
+            const key = reply?.topic_id != null ? String(reply.topic_id) : '';
+            if (!key) return;
+            const arr = repliesMap.get(key) || [];
+            arr.push(reply);
+            repliesMap.set(key, arr);
+          });
+          renderTopics(topics, repliesMap, authorsMap);
+        } catch (e) {
+          console.error('renderCommunity load failed', e);
+          showEmpty();
+          showError('Impossible de charger la communauté. Vérifiez votre connexion ou réessayez plus tard.');
+        }
       })();
     } else {
       const forum = store.get(K.forum, { topics: [] });
