@@ -13,6 +13,53 @@ async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
   return resolved || null;
 }
 
+function getAnonSupabaseConfig() {
+  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+  if (!supaUrl) {
+    console.error('[ai] Missing Supabase URL for anon config (NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL)');
+    throw new HttpError(500, 'Missing SUPABASE_URL');
+  }
+  if (!anonKey) {
+    console.error('[ai] Missing Supabase anon key (NEXT_PUBLIC_SUPABASE_ANON_KEY/SUPABASE_ANON_KEY)');
+    throw new HttpError(500, 'Missing SUPABASE_ANON_KEY');
+  }
+  return { supaUrl, anonKey };
+}
+
+async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
+  const normalizedProfileId = profileId == null ? '' : String(profileId).trim();
+  const normalizedCode = codeUnique == null ? '' : String(codeUnique).trim().toUpperCase();
+  if (!normalizedProfileId && !normalizedCode) return null;
+
+  if (normalizedCode) {
+    const { supaUrl, serviceKey } = getServiceConfig();
+    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+    let effectiveProfileId = normalizedProfileId;
+    if (!effectiveProfileId) {
+      effectiveProfileId = await resolveProfileIdFromCode(normalizedCode, { supaUrl, headers });
+      if (!effectiveProfileId) return null;
+    }
+    const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
+      effectiveProfileId
+    )}&order=last_generated_at.desc&limit=1`;
+    const data = await supabaseRequest(url, { headers });
+    const row = Array.isArray(data) ? data[0] : data;
+    return row?.ai_bilan ?? null;
+  }
+
+  const { supaUrl, anonKey } = getAnonSupabaseConfig();
+  const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+  const effectiveProfileId = normalizedProfileId;
+  if (!effectiveProfileId) return null;
+  const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
+    effectiveProfileId
+  )}&order=last_generated_at.desc&limit=1`;
+  const data = await supabaseRequest(url, { headers });
+  const row = Array.isArray(data) ? data[0] : data;
+  return row?.ai_bilan ?? null;
+}
+
 const PARENT_CONTEXT_FIELD_LABELS = {
   full_name: 'Pseudo',
   parent_role: 'Rôle affiché',
@@ -212,6 +259,31 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           : '';
         const parentContext = sanitizeParentContextInput(body.parentContext);
         const parentContextLines = parentContextToPromptLines(parentContext);
+        const profileCandidates = [
+          typeof body.profileId === 'string' ? body.profileId.trim() : '',
+          typeof body.profile_id === 'string' ? body.profile_id.trim() : '',
+        ];
+        const profileId = profileCandidates.find((candidate) => candidate) || '';
+        const codeCandidates = [
+          typeof body.code_unique === 'string' ? body.code_unique.trim().toUpperCase() : '',
+          typeof body.code === 'string' ? body.code.trim().toUpperCase() : '',
+        ];
+        const codeUnique = codeCandidates.find((candidate) => candidate) || '';
+        let familyBilanText = '';
+        if (profileId || codeUnique) {
+          try {
+            const aiBilan = await fetchFamilyBilanForPrompt({ profileId, codeUnique });
+            familyBilanText = formatFamilyAiBilanForPrompt(aiBilan);
+          } catch (err) {
+            const status = err instanceof HttpError ? err.status : null;
+            console.warn('[ai/parent-update] unable to fetch family_context.ai_bilan', {
+              profileId: profileId || null,
+              codeUnique: codeUnique || null,
+              status,
+              details: err?.details || err?.message || String(err || ''),
+            });
+          }
+        }
         const updateFacts = formatParentUpdateFacts(updateType, updatePayload);
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
@@ -222,6 +294,9 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         ];
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
+        }
+        if (familyBilanText) {
+          userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
         const userContent = userParts.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
         const system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (80 mots max).
@@ -2289,6 +2364,82 @@ function formatParentUpdateFacts(updateType, rawContent) {
     if (fallback) lines.push(fallback);
   }
   return lines.join(' ; ').slice(0, 600);
+}
+
+function limitFamilyText(value, max = 200) {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (trimmed.length <= max) return trimmed;
+    return `${trimmed.slice(0, Math.max(0, max - 1))}…`;
+  }
+  try {
+    return limitFamilyText(String(value), max);
+  } catch {
+    return '';
+  }
+}
+
+function formatFamilyAiBilanForPrompt(aiBilan) {
+  if (!aiBilan) return '';
+  const candidates = Array.isArray(aiBilan)
+    ? aiBilan
+    : Array.isArray(aiBilan?.children)
+      ? aiBilan.children
+      : [aiBilan];
+  const entries = [];
+  candidates
+    .filter(Boolean)
+    .slice(0, 5)
+    .forEach((child, index) => {
+      if (!child || typeof child !== 'object') return;
+      const name = limitFamilyText(
+        child.prenom ?? child.first_name ?? child.name ?? `Enfant ${index + 1}`,
+        60
+      ) || `Enfant ${index + 1}`;
+      const summary = limitFamilyText(child.summary ?? child.resume ?? '', 240);
+      const status = limitFamilyText(child?.growth?.status_global ?? '', 60);
+      const lastUpdate = child?.last_update && typeof child.last_update === 'object'
+        ? child.last_update
+        : null;
+      const lastSummary = limitFamilyText(
+        lastUpdate?.ai_summary ?? lastUpdate?.summary ?? lastUpdate?.content ?? '',
+        240
+      );
+      const lastDate = formatDateForPrompt(
+        typeof lastUpdate?.created_at === 'string'
+          ? lastUpdate.created_at
+          : typeof lastUpdate?.createdAt === 'string'
+            ? lastUpdate.createdAt
+            : typeof lastUpdate?.date === 'string'
+              ? lastUpdate.date
+              : ''
+      );
+      const parts = [];
+      parts.push(summary ? `Résumé: ${summary}` : 'Résumé: non précisé.');
+      if (status) parts.push(`Statut croissance: ${status}`);
+      if (lastSummary) {
+        parts.push(lastDate ? `Dernière mise à jour (${lastDate}): ${lastSummary}` : `Dernière mise à jour: ${lastSummary}`);
+      } else if (lastDate) {
+        parts.push(`Dernière mise à jour: ${lastDate}`);
+      }
+      const line = `- ${name} • ${parts.join(' | ')}`;
+      entries.push(limitFamilyText(line, 400));
+    });
+
+  if (!entries.length && typeof aiBilan === 'string') {
+    return limitFamilyText(aiBilan, 400);
+  }
+
+  if (!entries.length) {
+    try {
+      return limitFamilyText(JSON.stringify(aiBilan), 400);
+    } catch {
+      return '';
+    }
+  }
+  return entries.join('\n').slice(0, 1200);
 }
 
 function enforceWordLimit(text, maxWords = 80) {

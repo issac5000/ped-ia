@@ -622,6 +622,20 @@ const TIMELINE_MILESTONES = [
         parentComment,
         parentContext: buildParentContextForPrompt(),
       };
+      const profileId = getActiveProfileId();
+      if (profileId) {
+        const normalizedProfileId = String(profileId).trim();
+        if (normalizedProfileId) {
+          payload.profileId = normalizedProfileId;
+          payload.profile_id = normalizedProfileId;
+        }
+      }
+      const codeUnique = activeProfile?.code_unique
+        ? String(activeProfile.code_unique).trim().toUpperCase()
+        : '';
+      if (codeUnique) {
+        payload.code_unique = codeUnique;
+      }
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
