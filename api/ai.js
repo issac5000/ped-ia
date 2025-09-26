@@ -41,10 +41,8 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
       if (!effectiveProfileId) return null;
     }
   console.log("[AI DEBUG] profile_id:", profileId);
-  const url = `${supaUrl}/rest/v1/family_context?select=ai_bilanconsole.log("[AI DEBUG] URL:", url);profile_id=eq.${encodeURIComponent(profileId)}console.log("[AI DEBUG] URL:", url);order=last_generated_at.descconsole.log("[AI DEBUG] URL:", url);limit=1`;
 console.log("[AI DEBUG] profile_id:", profileId);
 console.log("[AI DEBUG] URL:", url);
-    const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
       effectiveProfileId
     )}&order=last_generated_at.desc&limit=1`;
     const data = await supabaseRequest(url, { headers });
@@ -57,10 +55,8 @@ console.log("[AI DEBUG] URL:", url);
   const effectiveProfileId = normalizedProfileId;
   if (!effectiveProfileId) return null;
   console.log("[AI DEBUG] profile_id:", profileId);
-  const url = `${supaUrl}/rest/v1/family_context?select=ai_bilanconsole.log("[AI DEBUG] URL:", url);profile_id=eq.${encodeURIComponent(profileId)}console.log("[AI DEBUG] URL:", url);order=last_generated_at.descconsole.log("[AI DEBUG] URL:", url);limit=1`;
 console.log("[AI DEBUG] profile_id:", profileId);
 console.log("[AI DEBUG] URL:", url);
-  const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
     effectiveProfileId
   )}&order=last_generated_at.desc&limit=1`;
   const data = await supabaseRequest(url, { headers });
