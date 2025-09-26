@@ -43,6 +43,11 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
   const effectiveProfileId = normalizedProfileId;
   if (!effectiveProfileId) return null;
 
+  if (!supaUrl) {
+    console.error('[AI DEBUG] supaUrl is undefined!');
+    return null;
+  }
+
   const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
     effectiveProfileId
   )}&order=last_generated_at.desc&limit=1`;
