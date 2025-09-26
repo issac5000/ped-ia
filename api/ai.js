@@ -1,10 +1,10 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
 import { buildGrowthPromptLines, summarizeGrowthStatus } from '../assets/ia.js';
 
-async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
+async function resolveProfileIdFromCode(codeUnique, { supaUrl: supaUrlArg, headers }) {
   if (!codeUnique) return null;
   const lookup = await supabaseRequest(
-    `${supaUrl}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
+    `${supaUrlArg}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
     { headers }
   );
   const row = Array.isArray(lookup) ? lookup[0] : lookup;
@@ -14,7 +14,6 @@ async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
 }
 
 function getAnonSupabaseConfig() {
-  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
   if (!supaUrl) {
     console.error('[ai] Missing Supabase URL for anon config (NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL)');
@@ -28,41 +27,36 @@ function getAnonSupabaseConfig() {
 }
 
 async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
-  const normalizedProfileId = profileId == null ? '' : String(profileId).trim();
+  let normalizedProfileId = profileId == null ? '' : String(profileId).trim();
   const normalizedCode = codeUnique == null ? '' : String(codeUnique).trim().toUpperCase();
   if (!normalizedProfileId && !normalizedCode) return null;
 
-  if (normalizedCode) {
-    const { supaUrl, serviceKey } = getServiceConfig();
-    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
-    let effectiveProfileId = normalizedProfileId;
-    if (!effectiveProfileId) {
-      effectiveProfileId = await resolveProfileIdFromCode(normalizedCode, { supaUrl, headers });
-      if (!effectiveProfileId) return null;
-    }
-  console.log("[AI DEBUG] profile_id:", profileId);
-console.log("[AI DEBUG] profile_id:", profileId);
-console.log("[AI DEBUG] URL:", url);
-      effectiveProfileId
-    )}&order=last_generated_at.desc&limit=1`;
-    const data = await supabaseRequest(url, { headers });
-    const row = Array.isArray(data) ? data[0] : data;
-    return row?.ai_bilan ?? null;
+  if (!normalizedProfileId && normalizedCode) {
+    const { supaUrl: serviceUrl, serviceKey } = getServiceConfig();
+    const serviceHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+    normalizedProfileId =
+      (await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers: serviceHeaders })) || '';
   }
 
   const { supaUrl, anonKey } = getAnonSupabaseConfig();
   const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
   const effectiveProfileId = normalizedProfileId;
   if (!effectiveProfileId) return null;
-  console.log("[AI DEBUG] profile_id:", profileId);
-console.log("[AI DEBUG] profile_id:", profileId);
-console.log("[AI DEBUG] URL:", url);
+
+  const url = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
     effectiveProfileId
   )}&order=last_generated_at.desc&limit=1`;
+
+  console.log("[AI DEBUG] profile_id:", effectiveProfileId);
+  console.log("[AI DEBUG] URL:", url);
+
   const data = await supabaseRequest(url, { headers });
+  console.log("[AI DEBUG] family_context response:", data);
+
   const row = Array.isArray(data) ? data[0] : data;
   return row?.ai_bilan ?? null;
 }
+
 
 const PARENT_CONTEXT_FIELD_LABELS = {
   full_name: 'Pseudo',
@@ -586,7 +580,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
         if (!profileId && codeUnique) {
           try {
-            const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers });
+            const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl: supaUrlArg, headers });
             if (!resolvedId) {
               console.warn('[family-bilan] code_unique resolved to no profile', { codeUnique });
               return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique } });
@@ -613,11 +607,11 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         try {
           const [profileData, childrenData] = await Promise.all([
             supabaseRequest(
-              `${supaUrl}/rest/v1/profiles?select=full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+              `${supaUrlArg}/rest/v1/profiles?select=full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental&id=eq.${encodeURIComponent(profileId)}&limit=1`,
               { headers }
             ),
             supabaseRequest(
-              `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob&user_id=eq.${encodeURIComponent(profileId)}&order=dob.asc`,
+              `${supaUrlArg}/rest/v1/children?select=id,first_name,sex,dob&user_id=eq.${encodeURIComponent(profileId)}&order=dob.asc`,
               { headers }
             ),
           ]);
@@ -638,7 +632,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           const inParam = childIds.map((id) => `${encodeURIComponent(id)}`).join(',');
           try {
             const updates = await supabaseRequest(
-              `${supaUrl}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=40`,
+              `${supaUrlArg}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=40`,
               { headers }
             );
             childUpdates = Array.isArray(updates) ? updates : [];
@@ -648,7 +642,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         }
         try {
           const parentRows = await supabaseRequest(
-            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
+            `${supaUrlArg}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
             { headers }
           );
           parentUpdates = Array.isArray(parentRows) ? parentRows : [];
@@ -775,7 +769,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }];
         try {
           await supabaseRequest(
-            `${supaUrl}/rest/v1/family_context?on_conflict=profile_id`,
+            `${supaUrlArg}/rest/v1/family_context?on_conflict=profile_id`,
             {
               method: 'POST',
               headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
@@ -1303,7 +1297,7 @@ async function fetchChildUpdatesForReport({ supaUrl, headers, childId, limit = 1
     throw new HttpError(500, 'Missing Supabase parameters');
   }
   const effectiveLimit = Math.max(1, Math.min(15, Number(limit) || 15));
-  const url = `${supaUrl}/rest/v1/child_updates?select=id,child_id,update_type,update_content,created_at,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${effectiveLimit}`;
+  const url = `${supaUrlArg}/rest/v1/child_updates?select=id,child_id,update_type,update_content,created_at,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${effectiveLimit}`;
   const data = await supabaseRequest(url, { headers });
   return Array.isArray(data) ? data : [];
 }
@@ -1313,7 +1307,7 @@ async function fetchParentUpdatesForReport({ supaUrl, headers, childId, profileI
     throw new HttpError(500, 'Missing Supabase parameters');
   }
   const effectiveLimit = Math.max(1, Math.min(5, Number(limit) || 5));
-  const query = `${supaUrl}/rest/v1/parent_updates?select=id,profile_id,child_id,update_type,update_content,parent_comment,ai_commentaire,created_at&child_id=eq.${encodeURIComponent(childId)}&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=${effectiveLimit}`;
+  const query = `${supaUrlArg}/rest/v1/parent_updates?select=id,profile_id,child_id,update_type,update_content,parent_comment,ai_commentaire,created_at&child_id=eq.${encodeURIComponent(childId)}&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=${effectiveLimit}`;
   const data = await supabaseRequest(query, { headers });
   return Array.isArray(data) ? data : [];
 }
@@ -1322,7 +1316,7 @@ async function fetchChildFirstName({ supaUrl, headers, childId }) {
   if (!supaUrl || !headers || !childId) return '';
   try {
     const data = await supabaseRequest(
-      `${supaUrl}/rest/v1/children?select=first_name&id=eq.${encodeURIComponent(childId)}&limit=1`,
+      `${supaUrlArg}/rest/v1/children?select=first_name&id=eq.${encodeURIComponent(childId)}&limit=1`,
       { headers }
     );
     const row = Array.isArray(data) ? data[0] : data;
@@ -1373,7 +1367,7 @@ function summarizeParentUpdateForReport(row = {}) {
 async function fetchChildBaselineRow({ supaUrl, headers, childId }) {
   if (!supaUrl || !headers || !childId) return null;
   try {
-    const query = `${supaUrl}/rest/v1/children?select=*&id=eq.${encodeURIComponent(childId)}&limit=1`;
+    const query = `${supaUrlArg}/rest/v1/children?select=*&id=eq.${encodeURIComponent(childId)}&limit=1`;
     const data = await supabaseRequest(query, { headers });
     const row = Array.isArray(data) ? data[0] : data;
     return row || null;
