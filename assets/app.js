@@ -75,6 +75,27 @@ const TIMELINE_MILESTONES = [
     try { return new URLSearchParams(query); }
     catch { return null; }
   };
+  async function withRetry(fn, { retries = 3, timeout = 3000 } = {}) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      let timerId = null;
+      try {
+        const result = await Promise.race([
+          Promise.resolve().then(() => fn()),
+          new Promise((_, reject) => {
+            timerId = setTimeout(() => reject(new Error('Timeout')), timeout);
+          }),
+        ]);
+        if (timerId != null) clearTimeout(timerId);
+        return result;
+      } catch (err) {
+        if (timerId != null) clearTimeout(timerId);
+        console.warn(`Retry ${attempt}/${retries} failed`, err);
+        if (attempt === retries) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    throw new Error('withRetry exhausted without executing function');
+  }
   let aiFocusCleanupTimer = null;
   const aiFocusMap = {
     chat: 'form-ai-chat',
@@ -694,7 +715,7 @@ const TIMELINE_MILESTONES = [
       try {
         if (isAnonProfile()) {
           const childAccess = dataProxy.children();
-          const res = await childAccess.callAnon('list', {});
+          const res = await withRetry(() => childAccess.callAnon('list', {}));
           const rows = Array.isArray(res.children) ? res.children : [];
           working.children = rows
             .map((row) => {
@@ -708,7 +729,7 @@ const TIMELINE_MILESTONES = [
           if (primaryRow?.id != null) working.primaryId = primaryRow.id;
           try {
             const parentAccess = dataProxy.parentUpdates();
-            const profileRes = await parentAccess.callAnon('profile', {});
+            const profileRes = await withRetry(() => parentAccess.callAnon('profile', {}));
             const profileRow = profileRes?.profile || null;
             if (profileRow) {
               const pseudo = profileRow.full_name || working.user.pseudo || '';
@@ -758,7 +779,7 @@ const TIMELINE_MILESTONES = [
         } else {
           const uid = getActiveProfileId();
           if (uid) {
-            const [profileRes, childrenRes] = await Promise.all([
+            const [profileRes, childrenRes] = await withRetry(() => Promise.all([
               supabase
                 .from('profiles')
                 .select('id,full_name,avatar_url,parent_role,code_unique,show_children_count,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental')
@@ -769,7 +790,7 @@ const TIMELINE_MILESTONES = [
                 .select('*')
                 .eq('user_id', uid)
                 .order('created_at', { ascending: true }),
-            ]);
+            ]));
             if (!profileRes.error && profileRes.data) {
               const profileRow = profileRes.data;
               const pseudo = profileRow.full_name || working.user.pseudo || '';
@@ -1734,6 +1755,13 @@ const TIMELINE_MILESTONES = [
         });
       }
     } catch {}
+  }
+
+  function showError(message) {
+    const text = typeof message === 'string' && message.trim()
+      ? message.trim()
+      : 'Une erreur est survenue. Veuillez réessayer plus tard.';
+    showNotification({ title: 'Erreur', text, actionLabel: 'Fermer', durationMs: 6000 });
   }
 
   // Badges sur les liens de navigation (messages + communauté)
@@ -5537,7 +5565,7 @@ const TIMELINE_MILESTONES = [
         try {
           if (isAnonProfile()) {
             const childAccess = dataProxy.children();
-            const listRes = await childAccess.callAnon('list', {});
+            const listRes = await withRetry(() => childAccess.callAnon('list', {}));
             const rows = Array.isArray(listRes.children) ? listRes.children : [];
             if (!rows.length) {
               if (rid !== renderDashboard._rid) return;
@@ -5549,7 +5577,7 @@ const TIMELINE_MILESTONES = [
             if (rid !== renderDashboard._rid) return;
             renderChildSwitcher(dom.parentElement || dom, slimRemote, selId, () => renderDashboard());
             const primary = rows.find(r => r.id === selId) || rows[0];
-            const detail = await childAccess.callAnon('get', { childId: primary.id });
+            const detail = await withRetry(() => childAccess.callAnon('get', { childId: primary.id }));
             const data = detail.child;
             if (!data) throw new Error('Profil introuvable');
             const mapped = mapRowToChild(data);
@@ -5591,7 +5619,13 @@ const TIMELINE_MILESTONES = [
               await renderForChild(child);
               return;
             }
-            const { data: rows, error: rowsErr } = await supabase.from('children').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+            const { data: rows, error: rowsErr } = await withRetry(() =>
+              supabase
+                .from('children')
+                .select('*')
+                .eq('user_id', uid)
+                .order('created_at', { ascending: true })
+            );
             if (rowsErr) throw rowsErr;
             if (!rows || !rows.length) {
               if (rid !== renderDashboard._rid) return;
@@ -5627,7 +5661,7 @@ const TIMELINE_MILESTONES = [
               milestones: Array.isArray(primary.milestones)? primary.milestones : [],
               growth: { measurements: [], sleep: [], teeth: [] }
             };
-            const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await Promise.all([
+            const [{ data: gm, error: gmErrLocal }, { data: gs }, { data: gt }] = await withRetry(() => Promise.all([
               supabase
                 .from('growth_measurements')
                 .select('month, height_cm, weight_kg, created_at')
@@ -5635,7 +5669,7 @@ const TIMELINE_MILESTONES = [
                 .order('month', { ascending: true }),
               supabase.from('growth_sleep').select('month,hours').eq('child_id', primary.id),
               supabase.from('growth_teeth').select('month,count').eq('child_id', primary.id),
-            ]);
+            ]));
             gmErr = gmErrLocal;
             const measurements = (gm || []).map(m => {
               const h = m.height_cm == null ? null : Number(m.height_cm);
@@ -5655,7 +5689,9 @@ const TIMELINE_MILESTONES = [
           }
         } catch (e) {
           if (rid !== renderDashboard._rid) return;
-          setDashboardHtml(`<div class="card">Erreur de chargement Supabase. Réessayez.</div>`);
+          console.warn('renderDashboard remote load failed', e);
+          showError('Impossible de charger le profil. Veuillez actualiser la page ou réessayer plus tard.');
+          setDashboardHtml(`<div class="card stack"><p>Impossible de charger le profil. Veuillez actualiser la page ou réessayer plus tard.</p></div>`);
           return;
         }
         if (rid !== renderDashboard._rid) return;
@@ -6272,7 +6308,7 @@ const TIMELINE_MILESTONES = [
           let children = [];
           try {
             const childAccess = dataProxy.children();
-            const res = await childAccess.callAnon('list', {});
+            const res = await withRetry(() => childAccess.callAnon('list', {}));
             const rows = Array.isArray(res.children) ? res.children : [];
             children = rows.map((row) => normalizeChild(row)).filter(Boolean);
           } catch (err) {
@@ -6294,7 +6330,7 @@ const TIMELINE_MILESTONES = [
           let familyContext = state.data?.familyContext || null;
           try {
             const parentAccess = dataProxy.parentUpdates();
-            const updatesRes = await parentAccess.callAnon('list', { limit: PARENT_UPDATES_LIMIT });
+            const updatesRes = await withRetry(() => parentAccess.callAnon('list', { limit: PARENT_UPDATES_LIMIT }));
             if (Array.isArray(updatesRes.parentUpdates)) {
               parentUpdates = updatesRes.parentUpdates;
             }
@@ -6393,7 +6429,7 @@ const TIMELINE_MILESTONES = [
       state.loading = true;
       state.error = null;
       try {
-        const [profileRes, childrenRes, familyRes, parentUpdatesRes] = await Promise.all([
+        const [profileRes, childrenRes, familyRes, parentUpdatesRes] = await withRetry(() => Promise.all([
           supabase
             .from('profiles')
             .select('full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental')
@@ -6416,7 +6452,7 @@ const TIMELINE_MILESTONES = [
             .eq('profile_id', uid)
             .order('created_at', { ascending: false })
             .limit(PARENT_UPDATES_LIMIT),
-        ]);
+        ]));
         if (profileRes.error) throw profileRes.error;
         if (childrenRes.error) throw childrenRes.error;
         if (familyRes.error) throw familyRes.error;
@@ -7969,15 +8005,17 @@ const TIMELINE_MILESTONES = [
     try {
       const childAccess = dataProxy.children();
       if (childAccess.isAnon) {
-        const res = await childAccess.callAnon('list-updates', { childId });
+        const res = await withRetry(() => childAccess.callAnon('list-updates', { childId }));
         return Array.isArray(res.updates) ? res.updates : [];
       }
       const supaClient = await childAccess.getClient();
-      const { data, error } = await supaClient
-        .from('child_updates')
-        .select('*')
-        .eq('child_id', childId)
-        .order('created_at', { ascending: false });
+      const { data, error } = await withRetry(() =>
+        supaClient
+          .from('child_updates')
+          .select('*')
+          .eq('child_id', childId)
+          .order('created_at', { ascending: false })
+      );
       if (error) throw error;
       return Array.isArray(data) ? data : [];
     } catch (e) {
@@ -8043,7 +8081,7 @@ const TIMELINE_MILESTONES = [
       try {
         const childAccess = dataProxy.children();
         if (childAccess.isAnon) {
-          const res = await childAccess.callAnon('list', {});
+          const res = await withRetry(() => childAccess.callAnon('list', {}));
           const rows = Array.isArray(res.children) ? res.children : [];
           return rows.map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
         }
@@ -8053,11 +8091,13 @@ const TIMELINE_MILESTONES = [
           throw new Error('Pas de user_id');
         }
         const supaClient = await childAccess.getClient();
-        const { data: rows } = await supaClient
-          .from('children')
-          .select('id,first_name,dob,is_primary')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: true });
+        const { data: rows } = await withRetry(() =>
+          supaClient
+            .from('children')
+            .select('id,first_name,dob,is_primary')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: true })
+        );
         return (rows || []).map(r => ({ id: r.id, firstName: r.first_name, dob: r.dob, isPrimary: !!r.is_primary }));
       } catch { /* fallback local below */ }
     }
@@ -8602,7 +8642,7 @@ const TIMELINE_MILESTONES = [
     const childAccess = dataProxy.children();
     if (childAccess.isAnon) {
       try {
-        const res = await childAccess.callAnon('growth-status', { childId, limit: 20 });
+        const res = await withRetry(() => childAccess.callAnon('growth-status', { childId, limit: 20 }));
         const rows = Array.isArray(res?.rows) ? res.rows : [];
         const notice = res?.notice && typeof res.notice === 'object' ? res.notice : null;
         return { rows, notice };
@@ -8615,12 +8655,14 @@ const TIMELINE_MILESTONES = [
     const remoteChildId = assertValidChildId(childId);
     const supaClient = await childAccess.getClient();
     try {
-      const { data, error } = await supaClient
-        .from('child_growth_with_status')
-        .select('agemos,height_cm,weight_kg,status_weight,status_height,status_global')
-        .eq('child_id', remoteChildId)
-        .order('agemos', { ascending: false, nullsFirst: false })
-        .limit(1);
+      const { data, error } = await withRetry(() =>
+        supaClient
+          .from('child_growth_with_status')
+          .select('agemos,height_cm,weight_kg,status_weight,status_height,status_global')
+          .eq('child_id', remoteChildId)
+          .order('agemos', { ascending: false, nullsFirst: false })
+          .limit(1)
+      );
       if (error) {
         console.error('Erreur fetch child_growth_with_status', error);
         return { rows: [], notice: unavailableNotice };
