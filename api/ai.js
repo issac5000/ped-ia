@@ -109,6 +109,40 @@ const PARENT_CONTEXT_VALUE_LABELS = {
 
 const AI_UNAVAILABLE_RESPONSE = { status: 'unavailable', message: 'Fonction IA désactivée' };
 
+function normalizeSpaces(s = '') {
+  return s.replace(/\s+/g, ' ').replace(/\s+([,.!?;:])/g, '$1').trim();
+}
+
+function endsWithSentencePunct(s = '') {
+  return /[.!?…]\s*$/.test(s);
+}
+
+function trimToWordsAndSentences(text, maxWords = 80, softMaxWords = 92) {
+  if (!text) return '';
+  const preserved = text.replace(/[ \t]+/g, ' ').replace(/\r/g, '');
+  const words = preserved.split(/\s+/);
+  if (words.length <= maxWords && endsWithSentencePunct(preserved)) {
+    return preserved;
+  }
+
+  const limit = Math.min(words.length, softMaxWords);
+  let candidate = words.slice(0, limit).join(' ').trim();
+
+  const lastPunct = Math.max(
+    candidate.lastIndexOf('.'),
+    candidate.lastIndexOf('!'),
+    candidate.lastIndexOf('?'),
+    candidate.lastIndexOf('…')
+  );
+
+  if (lastPunct >= 0 && lastPunct >= candidate.length - 60) {
+    return candidate.slice(0, lastPunct + 1).trim();
+  }
+
+  const hard = words.slice(0, maxWords).join(' ').trim();
+  return endsWithSentencePunct(hard) ? hard : `${hard}…`;
+}
+
 function respondAiUnavailable(res) {
   try {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -268,10 +302,11 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           typeof body.code === 'string' ? body.code.trim().toUpperCase() : '',
         ];
         const codeUnique = codeCandidates.find((candidate) => candidate) || '';
+        let aiBilan = null;
         let familyBilanText = '';
         if (profileId || codeUnique) {
           try {
-            const aiBilan = await fetchFamilyBilanForPrompt({ profileId, codeUnique });
+            aiBilan = await fetchFamilyBilanForPrompt({ profileId, codeUnique });
             familyBilanText = formatFamilyAiBilanForPrompt(aiBilan);
           } catch (err) {
             const status = err instanceof HttpError ? err.status : null;
@@ -284,6 +319,30 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           }
         }
         const updateFacts = formatParentUpdateFacts(updateType, updatePayload);
+        function makeFamilyBilanPreview(bilan) {
+          if (!Array.isArray(bilan) || bilan.length === 0) return { used: false, preview: '' };
+          const lines = bilan.slice(0, 2).map((c) => {
+            const name = (c?.name || 'Enfant').toString().slice(0, 40);
+            const status = (c?.growth?.status_global || '—').toString().slice(0, 60);
+            const lu = c?.last_update || {};
+            const luContent = (lu?.ai_summary || lu?.content || '').toString().slice(0, 120);
+            const parts = [
+              `• ${name}: statut OMS ${status}`,
+              luContent ? `   Dernière note: ${luContent}` : null
+            ].filter(Boolean);
+            return parts.join('\n');
+          });
+          const preview = lines.join('\n').slice(0, 220);
+          return { used: true, preview };
+        }
+
+        const bilanArray = Array.isArray(aiBilan)
+          ? aiBilan
+          : Array.isArray(aiBilan?.children)
+            ? aiBilan.children
+            : [];
+        const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
+        const usedAiBilan = Boolean(familyBilanText);
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           updateFacts ? `Données factuelles de la mise à jour: ${updateFacts}` : '',
@@ -298,9 +357,14 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
         const userContent = userParts.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
-        const system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (80 mots max).
+        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (80 mots max).
 Ton ton est empathique, rassurant et constructif.
 Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éclairage nouveau.`;
+        if (usedAiBilan) {
+          system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
+        }
+        console.log('[AI DEBUG] usedAiBilan:', usedAiBilan);
+        if (usedAiBilan) console.log('[AI DEBUG] familyBilanPreview:', familyBilanPreview);
         const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -310,6 +374,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           body: JSON.stringify({
             model: 'gpt-4o-mini',
             temperature: 0.35,
+            max_tokens: 300,
             messages: [
               { role: 'system', content: system },
               { role: 'user', content: userContent }
@@ -321,16 +386,25 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           return res.status(502).json({ error: 'OpenAI error', details: errText });
         }
         const aiJson = await aiRes.json();
-        let comment = aiJson.choices?.[0]?.message?.content?.trim() || '';
-        comment = enforceWordLimit(comment, 80);
-        comment = comment.slice(0, 2000);
+        const choice = aiJson?.choices?.[0] || {};
+        const finishReason = choice?.finish_reason || '';
+        let comment = (choice?.message?.content || '').trim();
+        if (finishReason === 'length') {
+          comment = `${comment}…`;
+        }
+        comment = trimToWordsAndSentences(comment, 80, 92);
+        if (comment.length > 2000) comment = comment.slice(0, 2000).trim();
         if (!comment || areTextsTooSimilar(comment, parentComment)) {
           comment = fallbackParentAiComment(parentComment);
         }
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        return res.status(200).send(JSON.stringify({ comment }));
+        return res.status(200).send(JSON.stringify({
+          comment,
+          used_ai_bilan: usedAiBilan,
+          familyBilanPreview
+        }));
       }
       case 'child-update': {
         const apiKey = process.env.OPENAI_API_KEY;
@@ -2439,13 +2513,6 @@ function formatFamilyAiBilanForPrompt(aiBilan) {
     }
   }
   return entries.join('\n').slice(0, 1200);
-}
-
-function enforceWordLimit(text, maxWords = 80) {
-  if (!text) return '';
-  const words = text.trim().split(/\s+/);
-  if (words.length <= maxWords) return text.trim();
-  return `${words.slice(0, maxWords).join(' ')}…`;
 }
 
 function normalizeForComparison(text) {
