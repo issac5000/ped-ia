@@ -228,6 +228,7 @@ const TIMELINE_MILESTONES = [
     messages: 'pedia_messages',
     notifs: 'pedia_notifs'
   };
+  const LAST_FAMILY_BILAN_KEY = 'lastFamilyBilan';
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Chargement des informations Supabase et du client JS
@@ -1025,6 +1026,79 @@ const TIMELINE_MILESTONES = [
     }
     return !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
   };
+
+  function getFamilyBilanCacheIdentity() {
+    const profileId = dashboardState.profileId || getActiveProfileId();
+    const normalizedProfileId = profileId != null ? String(profileId).trim() : '';
+    const codeUnique = isAnonProfile()
+      ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
+      : '';
+    return { profileId: normalizedProfileId, codeUnique };
+  }
+
+  function persistFamilyBilanCache({ bilan, lastGeneratedAt } = {}) {
+    try {
+      const { profileId, codeUnique } = getFamilyBilanCacheIdentity();
+      const payload = {
+        profileId,
+        codeUnique,
+        bilan: typeof bilan === 'string' ? bilan : '',
+        lastGeneratedAt: lastGeneratedAt || null,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(LAST_FAMILY_BILAN_KEY, JSON.stringify(payload));
+    } catch (err) {
+      console.warn('Unable to persist family bilan cache', err);
+    }
+  }
+
+  function loadFamilyBilanCache() {
+    try {
+      const raw = localStorage.getItem(LAST_FAMILY_BILAN_KEY);
+      if (!raw) return null;
+      let parsed = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = { bilan: raw };
+      }
+      if (!parsed || typeof parsed !== 'object') return null;
+      const { profileId, codeUnique } = getFamilyBilanCacheIdentity();
+      if (profileId) {
+        if (parsed.profileId && parsed.profileId !== profileId) return null;
+      } else if (parsed.profileId) {
+        return null;
+      }
+      if (codeUnique) {
+        if (parsed.codeUnique && parsed.codeUnique !== codeUnique) return null;
+      } else if (parsed.codeUnique && profileId) {
+        if (parsed.profileId !== profileId) return null;
+      }
+      const bilan = typeof parsed.bilan === 'string' ? parsed.bilan : '';
+      if (!bilan) return null;
+      const lastGeneratedAt = parsed.lastGeneratedAt || parsed.last_generated_at || null;
+      return { bilan, lastGeneratedAt: lastGeneratedAt || null };
+    } catch (err) {
+      console.warn('Unable to load family bilan cache', err);
+      return null;
+    }
+  }
+
+  function syncFamilyBilanCacheFromContext(familyContext) {
+    if (!familyContext || typeof familyContext !== 'object') return;
+    const bilan = typeof familyContext.ai_bilan === 'string' ? familyContext.ai_bilan : '';
+    if (!bilan) return;
+    const lastGeneratedAt = familyContext.last_generated_at || familyContext.lastGeneratedAt || null;
+    persistFamilyBilanCache({ bilan, lastGeneratedAt });
+  }
+
+  function clearFamilyBilanCache() {
+    try {
+      localStorage.removeItem(LAST_FAMILY_BILAN_KEY);
+    } catch (err) {
+      console.warn('Unable to clear family bilan cache', err);
+    }
+  }
 
   restoreAnonSession();
 
@@ -3088,6 +3162,7 @@ const TIMELINE_MILESTONES = [
     try { if (authSession?.user) { await supabase?.auth.signOut(); } } catch {}
     setActiveProfile(null);
     authSession = null;
+    clearFamilyBilanCache();
     try { if (supabase) { for (const ch of notifChannels) await supabase.removeChannel(ch); } } catch {}
     notifChannels = [];
     alert('Déconnecté.');
@@ -4542,7 +4617,7 @@ const TIMELINE_MILESTONES = [
       }
 
       if (useRemote() && !isAnonProfile() && shouldRefreshFamily) {
-        scheduleFamilyContextRefresh();
+        dashboardState.family.pendingRefresh = true;
       }
     } catch (err) {
       console.warn('handleSettingsSubmit failed', err);
@@ -6208,13 +6283,20 @@ const TIMELINE_MILESTONES = [
         ${childrenList}
       </div>
     `;
-    const bilanRaw = typeof data.familyContext?.ai_bilan === 'string' ? data.familyContext.ai_bilan.trim() : '';
+    const familyContext = data.familyContext || {};
+    const supaBilanRaw = typeof familyContext.ai_bilan === 'string' ? familyContext.ai_bilan.trim() : '';
+    const cachedBilan = loadFamilyBilanCache();
+    const bilanRaw = supaBilanRaw || (cachedBilan?.bilan ? cachedBilan.bilan.trim() : '');
     const bilanText = bilanRaw
       ? `<div class="family-bilan-text"><p>${escapeHtml(bilanRaw).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p></div>`
       : '<div class="empty-state muted">Aucun bilan généré pour l’instant.</div>';
+    const effectiveGeneratedAt = familyContext.last_generated_at
+      || familyContext.lastGeneratedAt
+      || cachedBilan?.lastGeneratedAt
+      || null;
     let generatedInfo = '';
-    if (data.familyContext?.last_generated_at) {
-      const date = new Date(data.familyContext.last_generated_at);
+    if (effectiveGeneratedAt) {
+      const date = new Date(effectiveGeneratedAt);
       if (!Number.isNaN(date.getTime())) {
         generatedInfo = `<p class="family-bilan-meta muted">Dernière génération : ${escapeHtml(date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }))}</p>`;
       }
@@ -6499,6 +6581,7 @@ const TIMELINE_MILESTONES = [
             parentUpdates,
             growthAlerts,
           };
+          syncFamilyBilanCacheFromContext(familyContext);
           state.data = result;
           state.lastFetchedAt = Date.now();
           return result;
@@ -6577,6 +6660,7 @@ const TIMELINE_MILESTONES = [
         } catch (err) {
           console.warn('collectGrowthAlerts failed', err);
         }
+        syncFamilyBilanCacheFromContext(familyRow);
         return {
           parentContext,
           parentInfo,
@@ -6678,6 +6762,7 @@ const TIMELINE_MILESTONES = [
         };
         state.data = { ...previousData, familyContext: nextFamilyContext };
         state.lastFetchedAt = Date.now();
+        persistFamilyBilanCache({ bilan, lastGeneratedAt: generatedAt });
         if (refreshDashboard && dashboardState.viewMode === 'family') {
           try {
             await renderDashboard();
@@ -6705,19 +6790,6 @@ const TIMELINE_MILESTONES = [
     })();
     state.regenerationPromise = promise;
     return promise;
-  }
-
-  async function scheduleFamilyContextRefresh() {
-    try {
-      const profileId = dashboardState.profileId || getActiveProfileId();
-      const anonCode = isAnonProfile()
-        ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
-        : '';
-      if (!profileId && !anonCode) return;
-      await runFamilyContextRegeneration(profileId || null, { refreshDashboard: true, skipIfRunning: true });
-    } catch (err) {
-      console.warn('scheduleFamilyContextRefresh failed', err);
-    }
   }
 
   function normalizeMeasures(entries) {
@@ -7934,7 +8006,7 @@ const TIMELINE_MILESTONES = [
       }
     }
     invalidateGrowthStatus(remoteChildId);
-    scheduleFamilyContextRefresh();
+    dashboardState.family.pendingRefresh = true;
   }
 
   async function logChildUpdateViaApi({ childId, updateType, updateContent, aiSummary, aiCommentaire }) {
