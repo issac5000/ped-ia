@@ -684,6 +684,12 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (contextText) {
           userContentBlocks.push(`Contextes fournis (à intégrer sans les recopier mot pour mot) :\n${contextText}`);
         }
+        if (growthAnomalyChildren.length) {
+          const anomalySummary = growthAnomalyChildren
+            .map((entry) => `${entry.name}: ${entry.growth}`)
+            .join('; ');
+          userContentBlocks.push(`Anomalies de croissance détectées:\n${anomalySummary}`);
+        }
         userContentBlocks.push(userParts.filter(Boolean).join('\n\n'));
         const userContent = userContentBlocks.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
 
