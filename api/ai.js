@@ -195,6 +195,9 @@ function normalizeGrowthStatus(entry) {
 }
 
 const CRITICAL_GROWTH_KEYWORDS = ['trop bas', 'trop eleve', 'a surveiller', 'retard', 'hors norme'];
+const GROWTH_ALERT_KEYWORDS = ['a surveiller', 'retard', 'hors norme'];
+const EATING_ALERT_KEYWORDS = ['selectif', 'selective', 'difficile', 'difficil', 'picky', 'neophob', 'avers', 'capricieux'];
+const SLEEP_ALERT_THRESHOLD = 3;
 
 function normalizeWithoutDiacritics(text) {
   if (typeof text !== 'string') return '';
@@ -202,6 +205,116 @@ function normalizeWithoutDiacritics(text) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+function parseNightWakingsCount(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed.replace(',', '.'));
+    if (Number.isFinite(numeric)) return numeric;
+    const normalized = normalizeWithoutDiacritics(trimmed);
+    if (/\b3\s*\+/.test(normalized)) return 3;
+    const digitsMatch = trimmed.match(/\d+/);
+    if (digitsMatch) {
+      const parsed = Number(digitsMatch[0]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }
+  return null;
+}
+
+function formatSleepDescription(value) {
+  const normalized = normalizeNightWakings(value);
+  if (normalized === 'non renseigné') return 'non renseigné';
+  if (normalized === '3+' || /\b3\s*\+/.test(normalizeWithoutDiacritics(normalized))) {
+    return 'Réveils fréquents (3+)';
+  }
+  return normalized;
+}
+
+function containsGrowthAlertKeyword(text) {
+  const normalized = normalizeWithoutDiacritics(text);
+  if (!normalized) return false;
+  return GROWTH_ALERT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function containsEatingDifficulty(text) {
+  const normalized = normalizeWithoutDiacritics(text);
+  if (!normalized) return false;
+  return EATING_ALERT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function shouldFlagSleepAlert(value) {
+  const count = parseNightWakingsCount(value);
+  if (count != null && count >= SLEEP_ALERT_THRESHOLD) return true;
+  const normalized = normalizeNightWakings(value);
+  if (normalized === '3+') return true;
+  if (typeof normalized === 'string') {
+    const normalizedLower = normalizeWithoutDiacritics(normalized);
+    if (/\b3\s*\+/.test(normalizedLower)) return true;
+    const numeric = Number(normalized.replace(',', '.'));
+    if (Number.isFinite(numeric) && numeric >= SLEEP_ALERT_THRESHOLD) return true;
+  }
+  return false;
+}
+
+function makeChildContextEntry({ name, growthText, nightWakingsValue, eatingStyle }) {
+  const normalizedName = normalizeFieldValue(name, 80) || 'non renseigné';
+  const normalizedGrowth = normalizeFieldValue(growthText, 160) || 'non renseigné';
+  const normalizedNightWakings = normalizeNightWakings(nightWakingsValue);
+  const alimentation = normalizeFieldValue(eatingStyle, 120) || 'non renseigné';
+  const sommeil = formatSleepDescription(nightWakingsValue);
+  const alerts = [];
+  if (containsGrowthAlertKeyword(normalizedGrowth)) alerts.push('croissance à surveiller');
+  if (shouldFlagSleepAlert(nightWakingsValue)) alerts.push('sommeil perturbé');
+  if (containsEatingDifficulty(alimentation)) alerts.push('alimentation difficile');
+  return {
+    name: normalizedName,
+    growth: normalizedGrowth,
+    night_wakings: normalizedNightWakings,
+    appetit: alimentation,
+    alimentation,
+    sommeil,
+    alerts,
+  };
+}
+
+function enrichChildContextEntry(child) {
+  if (!child || typeof child !== 'object') {
+    return makeChildContextEntry({ name: '', growthText: '', nightWakingsValue: null, eatingStyle: null });
+  }
+  const base = makeChildContextEntry({
+    name: child.name ?? child.first_name ?? child.firstName ?? '',
+    growthText: child.growth ?? child.status_global ?? child.status ?? '',
+    nightWakingsValue: Object.prototype.hasOwnProperty.call(child, 'sleep_night_wakings')
+      ? child.sleep_night_wakings
+      : child.night_wakings,
+    eatingStyle: Object.prototype.hasOwnProperty.call(child, 'eating_style')
+      ? child.eating_style
+      : child.alimentation ?? child.appetit,
+  });
+  const merged = { ...child, ...base };
+  const existingAlerts = Array.isArray(child.alerts)
+    ? child.alerts.filter(Boolean).map((entry) => String(entry))
+    : [];
+  if (existingAlerts.length) {
+    const unique = new Set([...base.alerts, ...existingAlerts]);
+    merged.alerts = Array.from(unique);
+  } else {
+    merged.alerts = base.alerts;
+  }
+  if (!merged.appetit) merged.appetit = merged.alimentation;
+  if (!merged.alimentation) merged.alimentation = merged.appetit || 'non renseigné';
+  if (!merged.sommeil) merged.sommeil = base.sommeil;
+  if (!merged.night_wakings) merged.night_wakings = base.night_wakings;
+  return merged;
 }
 
 function containsCriticalGrowthKeywords(text) {
@@ -366,7 +479,16 @@ async function buildContext(profileId, { codeUnique } = {}) {
         });
       }
 
-      context.children = Array.isArray(childrenFallback) ? childrenFallback : [];
+      context.children = Array.isArray(childrenFallback)
+        ? childrenFallback.map((entry) =>
+            makeChildContextEntry({
+              name: entry?.name,
+              growthText: entry?.growth,
+              nightWakingsValue: null,
+              eatingStyle: null,
+            })
+          )
+        : [];
       console.log('[AI DEBUG] fallback children from ai_bilan:', context.children);
 
       return context;
@@ -396,12 +518,13 @@ async function buildContext(profileId, { codeUnique } = {}) {
     context.children = childrenRows.map((child) => {
       const childId = child?.id == null ? '' : String(child.id).trim();
       const growthEntry = childId ? growthMap.get(childId) : null;
-      return {
-        name: normalizeFieldValue(child?.first_name, 80) || 'non renseigné',
-        growth: normalizeGrowthStatus(growthEntry),
-        night_wakings: normalizeNightWakings(child?.sleep_night_wakings),
-        appetit: normalizeFieldValue(child?.eating_style, 120) || 'non renseigné',
-      };
+      const growthText = normalizeGrowthStatus(growthEntry);
+      return makeChildContextEntry({
+        name: child?.first_name,
+        growthText,
+        nightWakingsValue: child?.sleep_night_wakings,
+        eatingStyle: child?.eating_style,
+      });
     });
 
     return context;
@@ -708,6 +831,10 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         }
 
         const summarizedContext = await buildContext(effectiveProfileId, { codeUnique });
+        const contextChildren = Array.isArray(summarizedContext?.children)
+          ? summarizedContext.children.map((child) => enrichChildContextEntry(child))
+          : [];
+        summarizedContext.children = contextChildren;
         console.log(
           "[AI DEBUG] summarizedContext.children:",
           summarizedContext?.children || []
@@ -722,9 +849,6 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             : []
         );
         const summarizedContextJson = JSON.stringify(summarizedContext);
-        const contextChildren = Array.isArray(summarizedContext?.children)
-          ? summarizedContext.children
-          : [];
         let growthAnomalyChildren = contextChildren
           .map((child, index) => {
             if (!child || typeof child !== 'object') return null;
