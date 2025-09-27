@@ -62,7 +62,7 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
   const normalizedProfileId = typeof profileId === 'string' ? profileId.trim() : '';
   const normalizedCode = typeof codeUnique === 'string' ? codeUnique.trim().toUpperCase() : '';
   if (!normalizedProfileId && !normalizedCode) {
-    return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+    return { childSummary: '', childUpdatesSummary: '', childGrowthSummary: '', childNames: [] };
   }
 
   let supaUrl = '';
@@ -81,11 +81,11 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
       headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
       usingService = true;
       const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers });
-      if (!resolved) return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+      if (!resolved) return { childSummary: '', childUpdatesSummary: '', childGrowthSummary: '', childNames: [] };
       effectiveProfileId = resolved;
     }
 
-    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '', childGrowthSummary: '', childNames: [] };
 
     const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob,ai_preview,user_id&user_id=eq.${encodeURIComponent(
       effectiveProfileId
@@ -107,7 +107,7 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
 
     const childIds = children.map((child) => child?.id).filter(Boolean).map(String);
     if (!childIds.length) {
-      return { childSummary, childUpdatesSummary: '', childNames };
+      return { childSummary, childUpdatesSummary: '', childGrowthSummary: '', childNames };
     }
 
     const inParam = childIds.map((id) => encodeURIComponent(id)).join(',');
@@ -126,10 +126,40 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
     const updatesList = formatChildUpdatesForFamilyPrompt(updatesRows, children).slice(0, 6);
     const childUpdatesSummary = updatesList.length ? updatesList.join('\n').slice(0, 900) : '';
 
-    return { childSummary, childUpdatesSummary, childNames };
+    const growthSummaries = [];
+    for (const child of children) {
+      if (!child?.id) continue;
+      try {
+        const growthData = await fetchGrowthDataForPrompt({
+          childId: child.id,
+          measurementLimit: 3,
+          teethLimit: 2,
+          supaUrl,
+          headers,
+          profileId: normalizedProfileId,
+          codeUnique: normalizedCode,
+        });
+        const growthText = formatGrowthSectionForPrompt(growthData, {
+          errorMessage: 'Pas de données de croissance enregistrées.',
+        });
+        if (growthText) {
+          growthSummaries.push(`• ${child?.first_name || 'Enfant'}:\n${growthText}`);
+        }
+      } catch (err) {
+        console.warn('[ai] fetchChildrenContextForPrompt growth failed', {
+          childId: child.id,
+          profileId: effectiveProfileId,
+          usingService,
+          details: err?.message || err,
+        });
+      }
+    }
+    const childGrowthSummary = growthSummaries.length ? growthSummaries.join('\n\n').slice(0, 1200) : '';
+
+    return { childSummary, childUpdatesSummary, childGrowthSummary, childNames };
   } catch (err) {
     console.warn('[ai] fetchChildrenContextForPrompt unexpected error', err);
-    return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+    return { childSummary: '', childUpdatesSummary: '', childGrowthSummary: '', childNames: [] };
   }
 }
 
@@ -418,7 +448,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
 
-        const { childSummary, childUpdatesSummary, childNames } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
+        const { childSummary, childUpdatesSummary, childGrowthSummary, childNames } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
 
         const rawAiPreview = (() => {
           if (!aiBilan) return '';
@@ -445,6 +475,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (aiPreview) contextParts.push(`--- CONTEXTE ENFANTS ---\n${aiPreview}`);
         if (childSummary) contextParts.push(`--- FICHE ENFANTS (BDD) ---\n${childSummary}`);
         if (childUpdatesSummary) contextParts.push(`--- MISES À JOUR ENFANTS RÉCENTES ---\n${childUpdatesSummary}`);
+        if (childGrowthSummary) contextParts.push(`--- CROISSANCE (mesures & analyses OMS) ---\n${childGrowthSummary}`);
         const contextText = contextParts.join('\n\n');
         const contextChildNames = new Set(
           bilanArray
@@ -460,6 +491,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           aiPreview ||
           childSummary ||
           childUpdatesSummary ||
+          childGrowthSummary ||
           contextChildNames.size
         );
         const userParts = [
@@ -474,6 +506,9 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         }
         if (familyBilanText) {
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
+        }
+        if (childGrowthSummary) {
+          userParts.push(`Synthèse croissance détaillée:\n${childGrowthSummary}`);
         }
         if (contextChildNames.size) {
           const namesList = Array.from(contextChildNames).join(', ');
@@ -494,19 +529,20 @@ Propose des recommandations précises et actionnables plutôt que des générali
         if (usedAiBilan) {
           system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
         }
-        if (contextChildNames.size) {
-          const namesList = Array.from(contextChildNames).join(', ');
-          system += `\nLES ENFANTS À COUVRIR: ${namesList}. Pour chacun, décris concrètement l'état de santé/croissance, rappelle les points critiques et fournis une action ou un suivi clair.`;
+        const contextChildNamesArray = Array.from(contextChildNames);
+        if (contextChildNamesArray.length) {
+          const namesList = contextChildNamesArray.join(', ');
+          system += `\nLES ENFANTS À COUVRIR: ${namesList}. Pour chacun, décris clairement son état de santé/croissance actuel, rappelle les points à risque et propose une action concrète (suivi médical, surveillance, routine).`;
         }
         const parentCommentLower = parentComment.toLowerCase();
         const wantsChildFocus = /enfant|croissance|sant[eé]/i.test(parentComment) && /(uniquement|juste|parle.*enfant|rien.*parent)/i.test(parentCommentLower);
         if (wantsChildFocus) {
-          system += `\n[FOCUS ENFANTS] Limite toute mention du parent à la manière dont il peut soutenir ses enfants. Ne renvoie pas la discussion sur l’adulte.`;
+          system += `\n[FOCUS ENFANTS] Le parent demande un avis centré sur les enfants : limite toute mention du parent à la manière dont il peut soutenir leurs besoins.`;
         }
-        const criticalTextAggregate = `${familyBilanText}\n${familyBilanPreview}\n${aiPreview}\n${childUpdatesSummary}`;
+        const criticalTextAggregate = `${familyBilanText}\n${familyBilanPreview}\n${aiPreview}\n${childUpdatesSummary}\n${childGrowthSummary}`;
         const hasCriticalAlert = /fractur|pl[aâ]tre|bronchiol|bronchit|hospital|urgence|déshydrat|statut\s*oms\s*:\s*(?!.*(ok|normal))/i.test(criticalTextAggregate);
         if (hasCriticalAlert) {
-          system += `\n[CRITIQUE] Des anomalies importantes sont signalées : cite-les explicitement (motifs, prénoms) et propose une action médicale concrète (consultation, examen, surveillance renforcée).`;
+          system += `\n[CRITIQUE] Des anomalies importantes sont signalées : cite-les précisément (prénom, nature) et recommande une action médicale appropriée (consultation, examen, surveillance renforcée).`;
         }
         if (contextText) console.log('[AI DEBUG] contextText:', contextText);
         console.log('[AI DEBUG] usedAiBilan:', usedAiBilan);
