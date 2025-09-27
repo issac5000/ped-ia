@@ -596,6 +596,29 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
 
         const summarizedContext = await buildContext(effectiveProfileId);
         const summarizedContextJson = JSON.stringify(summarizedContext);
+        const growthAnomalyChildren = Array.isArray(summarizedContext?.children)
+          ? summarizedContext.children
+              .map((child, index) => {
+                if (!child || typeof child !== 'object') return null;
+                const rawName = typeof child.name === 'string' ? child.name.trim() : '';
+                const displayName = rawName || `Enfant #${index + 1}`;
+                const growthText = typeof child.growth === 'string' ? child.growth.trim() : '';
+                if (!growthText) return null;
+                const normalizedGrowth = growthText
+                  .toLowerCase()
+                  .normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '');
+                const hasRetard = /\bretard\b/.test(normalizedGrowth) &&
+                  !/(pas\s+de|aucun|sans)\s+retard/.test(normalizedGrowth);
+                const hasSurveillance = /(a|à)\s*surveiller/.test(normalizedGrowth);
+                const hasHorsNorme = /hors\s*norme/.test(normalizedGrowth);
+                if (hasRetard || hasSurveillance || hasHorsNorme) {
+                  return { name: displayName, growth: growthText };
+                }
+                return null;
+              })
+              .filter(Boolean)
+          : [];
 
         const rawAiPreview = (() => {
           if (!aiBilan) return '';
@@ -670,6 +693,12 @@ Relie explicitement les informations concernant les enfants (prénoms, croissanc
 Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
 Propose des recommandations précises et actionnables plutôt que des généralités.`;
         system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental. Sois concret et bienveillant, 150 mots max.`;
+        if (growthAnomalyChildren.length) {
+          const anomalyLines = growthAnomalyChildren
+            .map((entry) => `- ${entry.name}: ${entry.growth}`)
+            .join('\n');
+          system += `\n[CRITIQUE] Des anomalies de croissance ont été détectées : \n${anomalyLines}\nTu dois les citer explicitement et recommander un suivi médical clair (consultation, surveillance ou examen).`;
+        }
         if (usedAiBilan) {
           system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
         }
@@ -683,7 +712,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
           system += `\n[FOCUS ENFANTS] Limite toute mention du parent à la manière dont il peut soutenir ses enfants. Ne renvoie pas la discussion sur l’adulte.`;
         }
         const criticalTextAggregate = `${familyBilanText}\n${familyBilanPreview}\n${aiPreview}\n${childUpdatesSummary}`;
-        const hasCriticalAlert = /fractur|pl[aâ]tre|bronchiol|bronchit|hospital|urgence|déshydrat|statut\s*oms\s*:\s*(?!.*(ok|normal))/i.test(criticalTextAggregate);
+        const hasCriticalAlert = /fractur|pl[aâ]tre|bronchiol|bronchit|hospital|urgence|déshydrat|statut\s*oms\s*:\s*(?!.*(ok|normal))|(a|à)\s*surveiller|hors\s*norme|\bretard\b|croissance[\s\S]{0,80}anormal/i.test(criticalTextAggregate);
         if (hasCriticalAlert) {
           system += `\n[CRITIQUE] Des anomalies importantes sont signalées : cite-les explicitement (motifs, prénoms) et propose une action médicale concrète (consultation, examen, surveillance renforcée).`;
         }
