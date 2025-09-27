@@ -62,7 +62,7 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
   const normalizedProfileId = typeof profileId === 'string' ? profileId.trim() : '';
   const normalizedCode = typeof codeUnique === 'string' ? codeUnique.trim().toUpperCase() : '';
   if (!normalizedProfileId && !normalizedCode) {
-    return { childSummary: '', childUpdatesSummary: '' };
+    return { childSummary: '', childUpdatesSummary: '', childNames: [] };
   }
 
   let supaUrl = '';
@@ -81,11 +81,11 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
       headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
       usingService = true;
       const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers });
-      if (!resolved) return { childSummary: '', childUpdatesSummary: '' };
+      if (!resolved) return { childSummary: '', childUpdatesSummary: '', childNames: [] };
       effectiveProfileId = resolved;
     }
 
-    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '' };
+    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '', childNames: [] };
 
     const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob,ai_preview,user_id&user_id=eq.${encodeURIComponent(
       effectiveProfileId
@@ -100,10 +100,14 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
     });
     const children = Array.isArray(childrenRows) ? childrenRows.filter(Boolean) : [];
     const childSummary = children.length ? formatChildrenForPrompt(children).slice(0, 800) : '';
+    const childNames = children
+      .map((child) => (child?.first_name ? String(child.first_name).trim() : ''))
+      .filter(Boolean)
+      .slice(0, 10);
 
     const childIds = children.map((child) => child?.id).filter(Boolean).map(String);
     if (!childIds.length) {
-      return { childSummary, childUpdatesSummary: '' };
+      return { childSummary, childUpdatesSummary: '', childNames };
     }
 
     const inParam = childIds.map((id) => encodeURIComponent(id)).join(',');
@@ -122,10 +126,10 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
     const updatesList = formatChildUpdatesForFamilyPrompt(updatesRows, children).slice(0, 6);
     const childUpdatesSummary = updatesList.length ? updatesList.join('\n').slice(0, 900) : '';
 
-    return { childSummary, childUpdatesSummary };
+    return { childSummary, childUpdatesSummary, childNames };
   } catch (err) {
     console.warn('[ai] fetchChildrenContextForPrompt unexpected error', err);
-    return { childSummary: '', childUpdatesSummary: '' };
+    return { childSummary: '', childUpdatesSummary: '', childNames: [] };
   }
 }
 
@@ -414,7 +418,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
 
-        const { childSummary, childUpdatesSummary } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
+        const { childSummary, childUpdatesSummary, childNames } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
 
         const rawAiPreview = (() => {
           if (!aiBilan) return '';
@@ -442,7 +446,22 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (childSummary) contextParts.push(`--- FICHE ENFANTS (BDD) ---\n${childSummary}`);
         if (childUpdatesSummary) contextParts.push(`--- MISES À JOUR ENFANTS RÉCENTES ---\n${childUpdatesSummary}`);
         const contextText = contextParts.join('\n\n');
-        const usedAiBilan = Boolean(familyBilanText || familyBilanPreview || aiPreview || childSummary || childUpdatesSummary);
+        const contextChildNames = new Set(
+          bilanArray
+            .map((entry) => (entry?.name ? String(entry.name).trim() : ''))
+            .filter(Boolean)
+        );
+        childNames.forEach((name) => {
+          if (name) contextChildNames.add(name);
+        });
+        const usedAiBilan = Boolean(
+          familyBilanText ||
+          familyBilanPreview ||
+          aiPreview ||
+          childSummary ||
+          childUpdatesSummary ||
+          contextChildNames.size
+        );
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           updateFacts ? `Données factuelles de la mise à jour: ${updateFacts}` : '',
@@ -456,6 +475,10 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (familyBilanText) {
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
+        if (contextChildNames.size) {
+          const namesList = Array.from(contextChildNames).join(', ');
+          userParts.push(`Analyse attendue: fournir un état de santé détaillé pour ${namesList} et relier ces informations aux recommandations pratiques pour la famille.`);
+        }
         const userContentBlocks = [];
         if (contextText) {
           userContentBlocks.push(`Contextes fournis (à intégrer sans les recopier mot pour mot) :\n${contextText}`);
@@ -463,13 +486,27 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         userContentBlocks.push(userParts.filter(Boolean).join('\n\n'));  
         const userContent = userContentBlocks.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
 
-        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (110 mots max).
+        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (120 mots max).
 Ton ton reste chaleureux, mais privilégie l'analyse factuelle et les actions concrètes.
 Relie explicitement les informations concernant les enfants (prénoms, croissance, incidents, santé) aux conseils que tu donnes.
 Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
 Propose des recommandations précises et actionnables plutôt que des généralités.`;
         if (usedAiBilan) {
           system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
+        }
+        if (contextChildNames.size) {
+          const namesList = Array.from(contextChildNames).join(', ');
+          system += `\nLES ENFANTS À COUVRIR: ${namesList}. Pour chacun, décris concrètement l'état de santé/croissance, rappelle les points critiques et fournis une action ou un suivi clair.`;
+        }
+        const parentCommentLower = parentComment.toLowerCase();
+        const wantsChildFocus = /enfant|croissance|sant[eé]/i.test(parentComment) && /(uniquement|juste|parle.*enfant|rien.*parent)/i.test(parentCommentLower);
+        if (wantsChildFocus) {
+          system += `\n[FOCUS ENFANTS] Limite toute mention du parent à la manière dont il peut soutenir ses enfants. Ne renvoie pas la discussion sur l’adulte.`;
+        }
+        const criticalTextAggregate = `${familyBilanText}\n${familyBilanPreview}\n${aiPreview}\n${childUpdatesSummary}`;
+        const hasCriticalAlert = /fractur|pl[aâ]tre|bronchiol|bronchit|hospital|urgence|déshydrat|statut\s*oms\s*:\s*(?!.*(ok|normal))/i.test(criticalTextAggregate);
+        if (hasCriticalAlert) {
+          system += `\n[CRITIQUE] Des anomalies importantes sont signalées : cite-les explicitement (motifs, prénoms) et propose une action médicale concrète (consultation, examen, surveillance renforcée).`;
         }
         if (contextText) console.log('[AI DEBUG] contextText:', contextText);
         console.log('[AI DEBUG] usedAiBilan:', usedAiBilan);
@@ -483,7 +520,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
           body: JSON.stringify({
             model: 'gpt-4o-mini',
             temperature: 0.35,
-            max_tokens: 380,
+            max_tokens: 420,
             messages: [
               { role: 'system', content: system },
               { role: 'user', content: userContent }
@@ -501,7 +538,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         if (finishReason === 'length') {
           comment = `${comment}…`;
         }
-        comment = trimToWordsAndSentences(comment, 110, 128);
+        comment = trimToWordsAndSentences(comment, 130, 150);
         if (comment.length > 2000) comment = comment.slice(0, 2000).trim();
         if (!comment || areTextsTooSimilar(comment, parentComment)) {
           comment = fallbackParentAiComment(parentComment);
