@@ -595,6 +595,19 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         }
 
         const summarizedContext = await buildContext(effectiveProfileId);
+        console.log(
+          "[AI DEBUG] summarizedContext.children:",
+          summarizedContext?.children || []
+        );
+        console.log(
+          "[AI DEBUG] growthAnomalyChildren (avant filtrage):",
+          Array.isArray(summarizedContext?.children)
+            ? summarizedContext.children.map((c) => ({
+                name: c?.name,
+                growth: c?.growth,
+              }))
+            : []
+        );
         const summarizedContextJson = JSON.stringify(summarizedContext);
         const growthAnomalyChildren = Array.isArray(summarizedContext?.children)
           ? summarizedContext.children
