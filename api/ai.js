@@ -1518,7 +1518,7 @@ async function fetchChildUpdatesForReport({ supaUrl, headers, childId, limit = 1
     throw new HttpError(500, 'Missing Supabase parameters');
   }
   const effectiveLimit = Math.max(1, Math.min(15, Number(limit) || 15));
-  const url = `${supaUrlArg}/rest/v1/child_updates?select=id,child_id,update_type,update_content,created_at,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${effectiveLimit}`;
+  const url = `${supaUrl}/rest/v1/child_updates?select=id,child_id,update_type,update_content,created_at,ai_summary,ai_commentaire&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc&limit=${effectiveLimit}`;
   const data = await supabaseRequest(url, { headers });
   return Array.isArray(data) ? data : [];
 }
