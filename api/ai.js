@@ -214,74 +214,37 @@ function extractChildrenFromAiBilanText(text) {
   if (typeof text !== 'string') return [];
   const lines = text.split(/\r?\n/);
   const results = [];
-  for (const rawLine of lines) {
+  const childHeaderRegex = /^-\s*\*\*(.+?)\*\*/;
+  for (let i = 0; i < lines.length; i += 1) {
+    const rawLine = lines[i];
+    if (typeof rawLine !== 'string') continue;
     const line = rawLine.trim();
-    if (!line.startsWith('-')) continue;
-    const match = /^-\s*\*\*(.+?)\*\*\s*[:\-–—]?\s*(.+)$/.exec(line);
-    if (!match) continue;
-    const name = match[1]?.trim().slice(0, 80) || 'Enfant';
-    const growth = match[2]?.trim();
-    if (!growth) continue;
-    if (!containsCriticalGrowthKeywords(growth)) continue;
-    results.push({ name, growth });
-  }
-  return results;
-}
-
-function buildFallbackChildrenFromAiBilan(aiBilan) {
-  if (!aiBilan) return [];
-  const children = [];
-
-  const tryPushEntry = (entry) => {
-    if (!entry) return;
-    const name = typeof entry.name === 'string' ? entry.name.trim().slice(0, 80) : '';
-    let growthText = '';
-    if (typeof entry.growth === 'string') {
-      growthText = entry.growth.trim();
-    } else if (entry.growth && typeof entry.growth === 'object') {
-      const growthCandidates = [
-        entry.growth.status_global,
-        entry.growth.statusGlobal,
-        entry.growth.summary,
-        entry.growth.comment,
-      ];
-      for (const candidate of growthCandidates) {
-        if (typeof candidate === 'string' && candidate.trim()) {
-          growthText = candidate.trim();
+    if (!line) continue;
+    const headerMatch = childHeaderRegex.exec(line);
+    if (!headerMatch) continue;
+    const name = headerMatch[1]?.trim().slice(0, 80) || 'Enfant';
+    let growth = line.replace(childHeaderRegex, '').trim();
+    growth = growth.replace(/^[:\-–—]\s*/, '').trim();
+    if (!growth) {
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const candidateRaw = lines[j];
+        if (typeof candidateRaw !== 'string') continue;
+        const candidate = candidateRaw.trim();
+        if (!candidate) continue;
+        if (childHeaderRegex.test(candidate)) {
+          break;
+        }
+        growth = candidate.replace(/^[:\-–—]\s*/, '').trim();
+        if (growth) {
           break;
         }
       }
     }
-    if (!growthText || !containsCriticalGrowthKeywords(growthText)) return;
-    children.push({ name: name || 'Enfant', growth: growthText });
-  };
-
-  if (Array.isArray(aiBilan)) {
-    aiBilan.forEach(tryPushEntry);
-    if (children.length) return children;
+    if (!growth) continue;
+    const limitedGrowth = growth.slice(0, 240);
+    results.push({ name, growth: limitedGrowth });
   }
-
-  if (aiBilan && typeof aiBilan === 'object') {
-    if (Array.isArray(aiBilan.children)) {
-      aiBilan.children.forEach(tryPushEntry);
-      if (children.length) return children;
-    }
-    if (typeof aiBilan.text === 'string' && aiBilan.text.trim()) {
-      const parsed = extractChildrenFromAiBilanText(aiBilan.text);
-      if (parsed.length) return parsed;
-    }
-    if (typeof aiBilan.ai_preview === 'string' && aiBilan.ai_preview.trim()) {
-      const parsed = extractChildrenFromAiBilanText(aiBilan.ai_preview);
-      if (parsed.length) return parsed;
-    }
-  }
-
-  const textCandidate = typeof aiBilan === 'string' ? aiBilan : '';
-  if (textCandidate) {
-    return extractChildrenFromAiBilanText(textCandidate);
-  }
-
-  return children;
+  return results;
 }
 
 function buildDefaultParentChildContext() {
@@ -291,7 +254,7 @@ function buildDefaultParentChildContext() {
   };
 }
 
-async function buildContext(profileId) {
+async function buildContext(profileId, { codeUnique } = {}) {
   const normalized = typeof profileId === 'string' ? profileId.trim() : '';
   if (!normalized) {
     return buildDefaultParentChildContext();
@@ -328,9 +291,7 @@ async function buildContext(profileId) {
       normalized
     )}&order=dob.asc`;
 
-    let childrenRequestFailed = false;
     const childrenPromise = supabaseRequest(childrenUrl, { headers }).catch((err) => {
-      childrenRequestFailed = true;
       console.warn('[ai] buildContext children fallback triggered', {
         profileId: normalized,
         details: err?.message || err,
@@ -356,24 +317,48 @@ async function buildContext(profileId) {
     };
 
     if (!childrenRows.length) {
-      let fallbackChildren = [];
+      let childrenFallback = [];
       try {
-        const familyContextUrl = `${supaUrl}/rest/v1/family_context?select=ai_bilan&profile_id=eq.${encodeURIComponent(
-          normalized
-        )}&order=last_generated_at.desc&limit=1`;
-        const familyContextRows = await supabaseRequest(familyContextUrl, { headers }).catch((err) => {
-          if (!childrenRequestFailed) {
-            console.warn('[ai] buildContext family_context fallback fetch failed', {
-              profileId: normalized,
-              details: err?.message || err,
-            });
+        const aiBilan = await fetchFamilyBilanForPrompt({ profileId: normalized, codeUnique });
+        const textCandidates = [];
+        if (typeof aiBilan === 'string' && aiBilan.trim()) {
+          const trimmed = aiBilan.trim();
+          textCandidates.push(trimmed);
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object') {
+              if (typeof parsed.text === 'string' && parsed.text.trim()) {
+                textCandidates.push(parsed.text);
+              }
+              if (typeof parsed.ai_preview === 'string' && parsed.ai_preview.trim()) {
+                textCandidates.push(parsed.ai_preview);
+              }
+            }
+          } catch (_err) {
+            // ignore JSON parse errors, raw text will be used
           }
-          return [];
-        });
-        const familyContextRow = Array.isArray(familyContextRows)
-          ? familyContextRows[0]
-          : familyContextRows;
-        fallbackChildren = buildFallbackChildrenFromAiBilan(familyContextRow?.ai_bilan);
+        }
+        if (aiBilan && typeof aiBilan === 'object') {
+          if (typeof aiBilan.text === 'string' && aiBilan.text.trim()) {
+            textCandidates.push(aiBilan.text);
+          }
+          if (typeof aiBilan.ai_preview === 'string' && aiBilan.ai_preview.trim()) {
+            textCandidates.push(aiBilan.ai_preview);
+          }
+        }
+        const seenTexts = new Set();
+        for (const candidate of textCandidates) {
+          const candidateText = typeof candidate === 'string' ? candidate.trim() : '';
+          if (!candidateText || seenTexts.has(candidateText)) {
+            continue;
+          }
+          seenTexts.add(candidateText);
+          const parsed = extractChildrenFromAiBilanText(candidateText);
+          if (parsed.length) {
+            childrenFallback = parsed;
+            break;
+          }
+        }
       } catch (err) {
         console.warn('[ai] buildContext unable to build fallback children', {
           profileId: normalized,
@@ -381,10 +366,8 @@ async function buildContext(profileId) {
         });
       }
 
-      if (fallbackChildren.length) {
-        context.children = fallbackChildren;
-        console.log('[AI DEBUG] fallback children used:', context.children);
-      }
+      context.children = Array.isArray(childrenFallback) ? childrenFallback : [];
+      console.log('[AI DEBUG] fallback children from ai_bilan:', context.children);
 
       return context;
     }
@@ -724,7 +707,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           effectiveProfileId = resolvedChildProfileId;
         }
 
-        const summarizedContext = await buildContext(effectiveProfileId);
+        const summarizedContext = await buildContext(effectiveProfileId, { codeUnique });
         console.log(
           "[AI DEBUG] summarizedContext.children:",
           summarizedContext?.children || []
@@ -750,15 +733,14 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             const growthText = typeof child.growth === 'string' ? child.growth.trim() : '';
             if (!growthText) return null;
             const normalizedGrowth = normalizeWithoutDiacritics(growthText);
-            const hasRetard = /\bretard\b/.test(normalizedGrowth) &&
-              !/(pas\s+de|aucun|sans)\s+retard/.test(normalizedGrowth);
-            const hasSurveillance = /a\s*surveiller/.test(normalizedGrowth);
-            const hasHorsNorme = /hors\s*norme/.test(normalizedGrowth);
-            const hasCritical = hasRetard || hasSurveillance || hasHorsNorme || containsCriticalGrowthKeywords(growthText);
-            if (hasCritical) {
-              return { name: displayName, growth: growthText };
+            const hasAnomalyKeyword = CRITICAL_GROWTH_KEYWORDS.some((keyword) =>
+              normalizedGrowth.includes(keyword)
+            );
+            if (!hasAnomalyKeyword) return null;
+            if (/(pas\s+de|aucun|sans)\s+retard/.test(normalizedGrowth)) {
+              return null;
             }
-            return null;
+            return { name: displayName, growth: growthText };
           })
           .filter(Boolean);
 
