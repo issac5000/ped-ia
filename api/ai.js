@@ -62,7 +62,7 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
   const normalizedProfileId = typeof profileId === 'string' ? profileId.trim() : '';
   const normalizedCode = typeof codeUnique === 'string' ? codeUnique.trim().toUpperCase() : '';
   if (!normalizedProfileId && !normalizedCode) {
-    return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+    return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: '' };
   }
 
   let supaUrl = '';
@@ -81,11 +81,11 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
       headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
       usingService = true;
       const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers });
-      if (!resolved) return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+      if (!resolved) return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: '' };
       effectiveProfileId = resolved;
     }
 
-    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: '' };
 
     const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob,ai_preview,user_id&user_id=eq.${encodeURIComponent(
       effectiveProfileId
@@ -107,7 +107,7 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
 
     const childIds = children.map((child) => child?.id).filter(Boolean).map(String);
     if (!childIds.length) {
-      return { childSummary, childUpdatesSummary: '', childNames };
+      return { childSummary, childUpdatesSummary: '', childNames, effectiveProfileId };
     }
 
     const inParam = childIds.map((id) => encodeURIComponent(id)).join(',');
@@ -126,10 +126,175 @@ async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
     const updatesList = formatChildUpdatesForFamilyPrompt(updatesRows, children).slice(0, 6);
     const childUpdatesSummary = updatesList.length ? updatesList.join('\n').slice(0, 900) : '';
 
-    return { childSummary, childUpdatesSummary, childNames };
+    return { childSummary, childUpdatesSummary, childNames, effectiveProfileId };
   } catch (err) {
     console.warn('[ai] fetchChildrenContextForPrompt unexpected error', err);
-    return { childSummary: '', childUpdatesSummary: '', childNames: [] };
+    return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: normalizedProfileId };
+  }
+}
+
+const DEFAULT_PARENT_CHILD_CONTEXT = Object.freeze({
+  parent: {
+    name: 'non renseigné',
+    role: 'non renseigné',
+    stress: 'non renseigné',
+    fatigue: 'non renseigné',
+    emploi: 'non renseigné',
+  },
+  children: [],
+});
+
+function normalizeFieldValue(value, maxLength = 160) {
+  if (value == null) return '';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return '';
+    return String(value);
+  }
+  const str = typeof value === 'string' ? value.trim() : String(value).trim();
+  if (!str) return '';
+  return str.slice(0, maxLength);
+}
+
+function normalizeNightWakings(value) {
+  if (value == null) return 'non renseigné';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value >= 3) return '3+';
+    if (value <= 0) return '0';
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 'non renseigné';
+    const numeric = Number(trimmed.replace(',', '.'));
+    if (Number.isFinite(numeric)) {
+      if (numeric >= 3) return '3+';
+      if (numeric <= 0) return '0';
+      return String(numeric);
+    }
+    return trimmed.slice(0, 60);
+  }
+  const normalized = normalizeFieldValue(value, 60);
+  return normalized || 'non renseigné';
+}
+
+function normalizeGrowthStatus(entry) {
+  if (!entry || typeof entry !== 'object') return 'non renseigné';
+  const candidates = [
+    entry.status_global,
+    entry.statusGlobal,
+    entry.status_height,
+    entry.statusHeight,
+    entry.status_weight,
+    entry.statusWeight,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeFieldValue(candidate, 80);
+    if (normalized) return normalized;
+  }
+  return 'non renseigné';
+}
+
+function buildDefaultParentChildContext() {
+  return {
+    parent: { ...DEFAULT_PARENT_CHILD_CONTEXT.parent },
+    children: [],
+  };
+}
+
+async function buildContext(profileId) {
+  const normalized = typeof profileId === 'string' ? profileId.trim() : '';
+  if (!normalized) {
+    return buildDefaultParentChildContext();
+  }
+
+  try {
+    let supaUrl = '';
+    let headers = null;
+    try {
+      const { supaUrl: anonUrl, anonKey } = getAnonSupabaseConfig();
+      if (anonUrl && anonKey) {
+        supaUrl = anonUrl;
+        headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+      }
+    } catch (err) {
+      // ignore, will try service config below
+    }
+    if (!headers) {
+      const { supaUrl: serviceUrl, serviceKey } = getServiceConfig();
+      if (!serviceUrl || !serviceKey) {
+        return buildDefaultParentChildContext();
+      }
+      supaUrl = serviceUrl;
+      headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+    }
+    if (!supaUrl || !headers) {
+      return buildDefaultParentChildContext();
+    }
+
+    const profileUrl = `${supaUrl}/rest/v1/profiles?select=full_name,parent_role,parental_stress,parental_fatigue,parental_employment&id=eq.${encodeURIComponent(
+      normalized
+    )}&limit=1`;
+    const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,eating_style,sleep_night_wakings&user_id=eq.${encodeURIComponent(
+      normalized
+    )}&order=dob.asc`;
+
+    const [profileRowRaw, childrenRowsRaw] = await Promise.all([
+      supabaseRequest(profileUrl, { headers }).catch(() => null),
+      supabaseRequest(childrenUrl, { headers }).catch(() => []),
+    ]);
+
+    const profileRow = Array.isArray(profileRowRaw) ? profileRowRaw[0] : profileRowRaw;
+    const childrenRows = Array.isArray(childrenRowsRaw) ? childrenRowsRaw.filter(Boolean) : [];
+
+    const context = buildDefaultParentChildContext();
+    context.parent = {
+      name: normalizeFieldValue(profileRow?.full_name, 120) || 'non renseigné',
+      role: normalizeFieldValue(profileRow?.parent_role, 80) || 'non renseigné',
+      stress: normalizeFieldValue(profileRow?.parental_stress, 80) || 'non renseigné',
+      fatigue: normalizeFieldValue(profileRow?.parental_fatigue, 80) || 'non renseigné',
+      emploi: normalizeFieldValue(profileRow?.parental_employment, 80) || 'non renseigné',
+    };
+
+    if (!childrenRows.length) {
+      return context;
+    }
+
+    const childIds = childrenRows
+      .map((child) => (child?.id == null ? null : String(child.id).trim()))
+      .filter(Boolean);
+
+    let growthMap = new Map();
+    if (childIds.length) {
+      const limit = Math.min(60, Math.max(childIds.length * 2, 10));
+      const growthUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,status_global,status_height,status_weight&child_id=in.(${childIds
+        .map((id) => encodeURIComponent(id))
+        .join(',')})&order=child_id.asc&order=agemos.desc.nullslast&limit=${limit}`;
+      const growthRowsRaw = await supabaseRequest(growthUrl, { headers }).catch(() => []);
+      const growthRows = Array.isArray(growthRowsRaw) ? growthRowsRaw : [];
+      growthMap = new Map();
+      for (const row of growthRows) {
+        if (!row || row.child_id == null) continue;
+        const childId = String(row.child_id).trim();
+        if (!childId || growthMap.has(childId)) continue;
+        growthMap.set(childId, row);
+      }
+    }
+
+    context.children = childrenRows.map((child) => {
+      const childId = child?.id == null ? '' : String(child.id).trim();
+      const growthEntry = childId ? growthMap.get(childId) : null;
+      return {
+        name: normalizeFieldValue(child?.first_name, 80) || 'non renseigné',
+        growth: normalizeGrowthStatus(growthEntry),
+        night_wakings: normalizeNightWakings(child?.sleep_night_wakings),
+        appetit: normalizeFieldValue(child?.eating_style, 120) || 'non renseigné',
+      };
+    });
+
+    return context;
+  } catch (err) {
+    console.warn('[ai] buildContext failed', { profileId: normalized, error: err?.message || err });
+    return buildDefaultParentChildContext();
   }
 }
 
@@ -372,6 +537,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           typeof body.profile_id === 'string' ? body.profile_id.trim() : '',
         ];
         const profileId = profileCandidates.find((candidate) => candidate) || '';
+        let effectiveProfileId = profileId;
         const codeCandidates = [
           typeof body.code_unique === 'string' ? body.code_unique.trim().toUpperCase() : '',
           typeof body.code === 'string' ? body.code.trim().toUpperCase() : '',
@@ -418,7 +584,18 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
 
-        const { childSummary, childUpdatesSummary, childNames } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
+        const {
+          childSummary,
+          childUpdatesSummary,
+          childNames,
+          effectiveProfileId: resolvedChildProfileId,
+        } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
+        if (resolvedChildProfileId) {
+          effectiveProfileId = resolvedChildProfileId;
+        }
+
+        const summarizedContext = await buildContext(effectiveProfileId);
+        const summarizedContextJson = JSON.stringify(summarizedContext);
 
         const rawAiPreview = (() => {
           if (!aiBilan) return '';
@@ -465,9 +642,6 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           updateFacts ? `Données factuelles de la mise à jour: ${updateFacts}` : '',
-          parentComment
-            ? `Commentaire libre du parent: ${parentComment}`
-            : 'Commentaire libre du parent: aucun commentaire transmis.'
         ];
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
@@ -480,17 +654,22 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           userParts.push(`Analyse attendue: fournir un état de santé détaillé pour ${namesList} et relier ces informations aux recommandations pratiques pour la famille.`);
         }
         const userContentBlocks = [];
+        const globalContextBlock = `Contexte global:\n${summarizedContextJson}`;
+        const parentCommentBlock = `Commentaire parent:\n${parentComment || '(aucun commentaire transmis)'}`;
+        userContentBlocks.push(globalContextBlock);
+        userContentBlocks.push(parentCommentBlock);
         if (contextText) {
           userContentBlocks.push(`Contextes fournis (à intégrer sans les recopier mot pour mot) :\n${contextText}`);
         }
-        userContentBlocks.push(userParts.filter(Boolean).join('\n\n'));  
+        userContentBlocks.push(userParts.filter(Boolean).join('\n\n'));
         const userContent = userContentBlocks.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
 
-        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (120 mots max).
+        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (150 mots max).
 Ton ton reste chaleureux, mais privilégie l'analyse factuelle et les actions concrètes.
 Relie explicitement les informations concernant les enfants (prénoms, croissance, incidents, santé) aux conseils que tu donnes.
 Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
 Propose des recommandations précises et actionnables plutôt que des généralités.`;
+        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental. Sois concret et bienveillant, 150 mots max.`;
         if (usedAiBilan) {
           system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
         }
@@ -548,6 +727,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         return res.status(200).send(JSON.stringify({
           comment,
+          aiCommentaire: comment,
           used_ai_bilan: usedAiBilan,
           familyBilanPreview
         }));
