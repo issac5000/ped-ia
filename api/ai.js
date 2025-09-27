@@ -342,7 +342,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             ? aiBilan.children
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
-        const usedAiBilan = Boolean(familyBilanText);
+        const usedAiBilan = Boolean(familyBilanText || familyBilanPreview);
 
         const rawAiPreview = (() => {
           if (!aiBilan) return '';
@@ -375,19 +375,24 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             ? `Commentaire libre du parent: ${parentComment}`
             : 'Commentaire libre du parent: aucun commentaire transmis.'
         ];
-        if (contextText) {
-          userParts.unshift(contextText);
-        }
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
         }
         if (familyBilanText) {
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
-        const userContent = userParts.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
-        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (80 mots max).
-Ton ton est empathique, rassurant et constructif.
-Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éclairage nouveau.`;
+        const userContentBlocks = [];
+        if (contextText) {
+          userContentBlocks.push(`Contextes fournis (à intégrer sans les recopier mot pour mot) :\n${contextText}`);
+        }
+        userContentBlocks.push(userParts.filter(Boolean).join('\n\n'));  
+        const userContent = userContentBlocks.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
+
+        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (110 mots max).
+Ton ton reste chaleureux, mais privilégie l'analyse factuelle et les actions concrètes.
+Relie explicitement les informations concernant les enfants (prénoms, croissance, incidents, santé) aux conseils que tu donnes.
+Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
+Propose des recommandations précises et actionnables plutôt que des généralités.`;
         if (usedAiBilan) {
           system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
         }
@@ -403,7 +408,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
           body: JSON.stringify({
             model: 'gpt-4o-mini',
             temperature: 0.35,
-            max_tokens: 300,
+            max_tokens: 380,
             messages: [
               { role: 'system', content: system },
               { role: 'user', content: userContent }
@@ -421,7 +426,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         if (finishReason === 'length') {
           comment = `${comment}…`;
         }
-        comment = trimToWordsAndSentences(comment, 80, 92);
+        comment = trimToWordsAndSentences(comment, 110, 128);
         if (comment.length > 2000) comment = comment.slice(0, 2000).trim();
         if (!comment || areTextsTooSimilar(comment, parentComment)) {
           comment = fallbackParentAiComment(parentComment);
