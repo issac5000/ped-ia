@@ -343,6 +343,31 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
         const usedAiBilan = Boolean(familyBilanText);
+
+        const rawAiPreview = (() => {
+          if (!aiBilan) return '';
+          if (typeof aiBilan === 'string') return aiBilan.trim();
+          if (Array.isArray(aiBilan)) {
+            const candidate = aiBilan.find((entry) => entry && typeof entry.ai_preview === 'string' && entry.ai_preview.trim());
+            return candidate ? candidate.ai_preview.trim() : '';
+          }
+          if (typeof aiBilan === 'object') {
+            if (typeof aiBilan.ai_preview === 'string' && aiBilan.ai_preview.trim()) {
+              return aiBilan.ai_preview.trim();
+            }
+            if (Array.isArray(aiBilan.children)) {
+              const childCandidate = aiBilan.children.find((entry) => entry && typeof entry.ai_preview === 'string' && entry.ai_preview.trim());
+              if (childCandidate) return childCandidate.ai_preview.trim();
+            }
+          }
+          return '';
+        })();
+        const aiPreview = rawAiPreview ? rawAiPreview.split('\n').slice(0, 6).join('\n').slice(0, 400) : '';
+
+        const contextParts = [];
+        if (familyBilanPreview) contextParts.push(`--- CONTEXTE FAMILIAL ---\n${familyBilanPreview}`);
+        if (aiPreview) contextParts.push(`--- CONTEXTE ENFANTS ---\n${aiPreview}`);
+        const contextText = contextParts.join('\n\n');
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           updateFacts ? `Données factuelles de la mise à jour: ${updateFacts}` : '',
@@ -350,6 +375,9 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             ? `Commentaire libre du parent: ${parentComment}`
             : 'Commentaire libre du parent: aucun commentaire transmis.'
         ];
+        if (contextText) {
+          userParts.unshift(contextText);
+        }
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
         }
@@ -363,6 +391,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
         if (usedAiBilan) {
           system += `\n[IMPORTANT] Un bloc "Contexte global des enfants (ai_bilan)" est fourni : tu DOIS en tenir compte et y faire explicitement référence au moins une fois dans ta réponse.`;
         }
+        if (contextText) console.log('[AI DEBUG] contextText:', contextText);
         console.log('[AI DEBUG] usedAiBilan:', usedAiBilan);
         if (usedAiBilan) console.log('[AI DEBUG] familyBilanPreview:', familyBilanPreview);
         const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
