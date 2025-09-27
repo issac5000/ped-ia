@@ -58,6 +58,77 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
   return row?.ai_bilan ?? null;
 }
 
+async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
+  const normalizedProfileId = typeof profileId === 'string' ? profileId.trim() : '';
+  const normalizedCode = typeof codeUnique === 'string' ? codeUnique.trim().toUpperCase() : '';
+  if (!normalizedProfileId && !normalizedCode) {
+    return { childSummary: '', childUpdatesSummary: '' };
+  }
+
+  let supaUrl = '';
+  let headers = null;
+  let effectiveProfileId = normalizedProfileId;
+  let usingService = false;
+
+  try {
+    if (normalizedProfileId) {
+      const { supaUrl: anonUrl, anonKey } = getAnonSupabaseConfig();
+      supaUrl = anonUrl;
+      headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+    } else {
+      const { supaUrl: serviceUrl, serviceKey } = getServiceConfig();
+      supaUrl = serviceUrl;
+      headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+      usingService = true;
+      const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers });
+      if (!resolved) return { childSummary: '', childUpdatesSummary: '' };
+      effectiveProfileId = resolved;
+    }
+
+    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '' };
+
+    const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob,ai_preview,user_id&user_id=eq.${encodeURIComponent(
+      effectiveProfileId
+    )}&order=dob.asc`;
+    const childrenRows = await supabaseRequest(childrenUrl, { headers }).catch((err) => {
+      console.warn('[ai] fetchChildrenContextForPrompt children failed', {
+        profileId: effectiveProfileId,
+        usingService,
+        details: err?.message || err,
+      });
+      return [];
+    });
+    const children = Array.isArray(childrenRows) ? childrenRows.filter(Boolean) : [];
+    const childSummary = children.length ? formatChildrenForPrompt(children).slice(0, 800) : '';
+
+    const childIds = children.map((child) => child?.id).filter(Boolean).map(String);
+    if (!childIds.length) {
+      return { childSummary, childUpdatesSummary: '' };
+    }
+
+    const inParam = childIds.map((id) => encodeURIComponent(id)).join(',');
+    const updatesUrl = `${supaUrl}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=${Math.min(
+      15,
+      childIds.length * 3
+    )}`;
+    const updatesRows = await supabaseRequest(updatesUrl, { headers }).catch((err) => {
+      console.warn('[ai] fetchChildrenContextForPrompt updates failed', {
+        profileId: effectiveProfileId,
+        usingService,
+        details: err?.message || err,
+      });
+      return [];
+    });
+    const updatesList = formatChildUpdatesForFamilyPrompt(updatesRows, children).slice(0, 6);
+    const childUpdatesSummary = updatesList.length ? updatesList.join('\n').slice(0, 900) : '';
+
+    return { childSummary, childUpdatesSummary };
+  } catch (err) {
+    console.warn('[ai] fetchChildrenContextForPrompt unexpected error', err);
+    return { childSummary: '', childUpdatesSummary: '' };
+  }
+}
+
 
 const PARENT_CONTEXT_FIELD_LABELS = {
   full_name: 'Pseudo',
@@ -342,7 +413,8 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             ? aiBilan.children
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
-        const usedAiBilan = Boolean(familyBilanText || familyBilanPreview);
+
+        const { childSummary, childUpdatesSummary } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
 
         const rawAiPreview = (() => {
           if (!aiBilan) return '';
@@ -367,7 +439,10 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         const contextParts = [];
         if (familyBilanPreview) contextParts.push(`--- CONTEXTE FAMILIAL ---\n${familyBilanPreview}`);
         if (aiPreview) contextParts.push(`--- CONTEXTE ENFANTS ---\n${aiPreview}`);
+        if (childSummary) contextParts.push(`--- FICHE ENFANTS (BDD) ---\n${childSummary}`);
+        if (childUpdatesSummary) contextParts.push(`--- MISES À JOUR ENFANTS RÉCENTES ---\n${childUpdatesSummary}`);
         const contextText = contextParts.join('\n\n');
+        const usedAiBilan = Boolean(familyBilanText || familyBilanPreview || aiPreview || childSummary || childUpdatesSummary);
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
           updateFacts ? `Données factuelles de la mise à jour: ${updateFacts}` : '',
