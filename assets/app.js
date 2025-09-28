@@ -7136,14 +7136,14 @@ const TIMELINE_MILESTONES = [
         label,
         isAi,
         isSelf,
+        isInitial,
       }) => {
         const highlight = !!(isAi || isSelf);
-        const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
-        const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
-        const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
         const safeInitials = escapeHtml(initials || '✦');
         const safeAuthor = escapeHtml(authorName || 'Anonyme');
-        const safeLabel = escapeHtml(label || (isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`));
+        const safeLabel = escapeHtml(
+          label || (isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`)
+        );
         const timeHtml = timeLabel
           ? `<time datetime="${escapeHtml(timeIso || '')}">${escapeHtml(timeLabel)}</time>`
           : '';
@@ -7154,6 +7154,31 @@ const TIMELINE_MILESTONES = [
         if (highlight) entryClass += ' topic-entry--highlight';
         if (isAi) entryClass += ' topic-entry--ai';
         if (isSelf) entryClass += ' topic-entry--self';
+        if (isInitial) entryClass += ' topic-entry--origin';
+        if (isInitial) {
+          return `
+            <article class="${entryClass}">
+              <div class="topic-entry__head">
+                <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
+                <div class="topic-entry__meta">
+                  <div class="topic-entry__author">
+                    <span class="topic-entry__author-name">${safeAuthor}</span>
+                    ${authorMetaHtml || ''}
+                  </div>
+                  ${timeHtml}
+                </div>
+                ${actionsHtml}
+              </div>
+              <div class="topic-initial">
+                <span class="topic-initial__badge">${safeLabel}</span>
+                <div class="topic-initial__content">${contentHtml}</div>
+              </div>
+            </article>
+          `;
+        }
+        const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
+        const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
+        const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
         return `
           <article class="${entryClass}">
             <div class="topic-entry__head">
@@ -7219,9 +7244,10 @@ const TIMELINE_MILESTONES = [
           timeIso: createdIso,
           contentHtml: normalizeContent(t.content),
           messageBtn: '',
-          label: topicIsAi ? 'Message de Ped’IA' : 'Publication initiale',
+          label: topicIsAi ? 'Message de Ped’IA' : 'Présentation de la publication',
           isAi: topicIsAi,
           isSelf: topicIsSelf,
+          isInitial: true,
         });
         const repliesHtml = rs.map(r=>{
           const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
