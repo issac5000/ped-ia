@@ -2038,7 +2038,6 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         if (!bilan) {
           return res.status(502).json({ error: 'Bilan indisponible' });
         }
-        const nowIso = new Date().toISOString();
         const aiBilanTexte = typeof bilan === 'string' ? bilan : '';
         const safeBilan = (aiBilanTexte || '').slice(0, 4000);
         console.log('[AI DEBUG] family-bilan upsert start', {
@@ -2046,13 +2045,13 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           length: safeBilan.length,
         });
         try {
-          const { data, error, count } = await serviceSupabase
+          const { error, count } = await serviceSupabase
             .from('family_context')
             .upsert(
               {
                 profile_id: resolvedProfileId,
                 ai_bilan: safeBilan,
-                last_generated_at: nowIso,
+                last_generated_at: new Date().toISOString(),
               },
               { onConflict: 'profile_id', count: 'exact' }
             );
@@ -2062,30 +2061,21 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
               .status(500)
               .json({ error: 'Failed to save family_context', details: error });
           }
-          const effectiveCount = typeof count === 'number' ? count : Array.isArray(data) ? data.length : null;
           console.log('[AI DEBUG] family-bilan upsert success', {
             profileId: resolvedProfileId,
-            count: effectiveCount,
+            count,
           });
-        } catch (err) {
-          const errorDetail = err?.details || err?.message || String(err);
-          console.error('[AI DEBUG] family-bilan upsert fail', {
-            profileId: resolvedProfileId,
-            error: errorDetail,
-          });
-          return res
-            .status(500)
-            .json({ error: 'Failed to save family_context', details: errorDetail });
+        } catch (error) {
+          console.error('[AI DEBUG] family-bilan upsert fail', { profileId: resolvedProfileId, error });
+          return res.status(500).json({ error: 'Failed to save family_context', details: error });
         }
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        const responseBody = {
-          bilan: aiBilanTexte,
-          lastGeneratedAt: nowIso,
+        return res.json({
           refreshed: true,
           profileId: resolvedProfileId,
-        };
-        return res.status(200).send(JSON.stringify(responseBody));
+          ai_bilan: safeBilan,
+        });
       }
       case 'child-full-report': {
         const apiKey = process.env.OPENAI_API_KEY;
