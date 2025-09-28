@@ -1415,7 +1415,7 @@ const TIMELINE_MILESTONES = [
 
   
 
-  // Données démo locales pour pré-remplir le carnet de santé & la communauté
+  // Données démo locales pour pré-remplir le Carnet de suivi & la communauté
   const DEMO_CHILD_ID = 'demo-child-1';
   function buildDemoChild() {
     const baseDob = '2022-05-12';
@@ -4532,7 +4532,7 @@ const TIMELINE_MILESTONES = [
 
       showNotification({
         title: 'Profil parent mis à jour',
-        text: 'Rendez-vous dans le Carnet de santé à la section « Mises à jour parentales » vue famille, pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
+        text: 'Rendez-vous dans le Carnet de suivi à la section « Mises à jour parentales » vue famille, pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
         actionHref: '#/dashboard?view=family&focus=parent-updates',
         actionLabel: 'Voir',
         durationMs: 10000,
@@ -4627,7 +4627,7 @@ const TIMELINE_MILESTONES = [
   function notifyChildProfileUpdated(){
     showNotification({
       title: 'Profil enfant mis à jour',
-      text: 'Rendez-vous dans le Carnet de santé à la section « historique de l’évolution » pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
+      text: 'Rendez-vous dans le Carnet de suivi à la section « historique de l’évolution » pour consulter toutes les mises à jour et lire les commentaires de votre assistant IA.',
       actionHref: '#/dashboard?focus=history',
       actionLabel: 'Voir',
       durationMs: 10000
