@@ -2043,6 +2043,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }
         const normalizedChildUpdates = Array.isArray(childUpdates) ? childUpdates : [];
         const childSummaries = normalizedChildUpdates.map(summarizeChildUpdateForReport);
+        markLatestMeasurementSummary(childSummaries);
 
         let childBaselineRow = null;
         try {
@@ -2421,24 +2422,62 @@ function formatChildUpdatesForFamilyPrompt(updates = [], children = []) {
       map.set(String(child.id), child);
     });
   }
+  const latestMeasurementByChild = new Set();
   return updates
     .filter(Boolean)
     .slice(0, 20)
     .map((row, index) => {
-      const child = map.get(String(row.child_id));
+      const childId = row?.child_id != null ? String(row.child_id) : '';
+      const child = childId ? map.get(childId) : null;
       const name = child?.first_name || 'Enfant';
       const date = formatDateForPrompt(row.created_at);
       const type = row?.update_type ? String(row.update_type).trim() : '';
-      let summary = typeof row?.ai_summary === 'string' ? row.ai_summary.trim().slice(0, 400) : '';
-      if (!summary) {
-        const parsed = parseUpdateContentForPrompt(row?.update_content);
-        summary = typeof parsed?.summary === 'string' ? parsed.summary.trim().slice(0, 400) : '';
+      const parsed = parseUpdateContentForPrompt(row?.update_content);
+      const measurement = extractMeasurementDetails(parsed, row?.created_at);
+      if (measurement && measurement.hasMeasurement && childId) {
+        if (!latestMeasurementByChild.has(childId)) {
+          measurement.isLatest = true;
+          latestMeasurementByChild.add(childId);
+        } else {
+          measurement.isLatest = false;
+        }
       }
       const headerParts = [`${index + 1}. ${name}`];
       if (date) headerParts.push(`date: ${date}`);
       if (type) headerParts.push(`type: ${type}`);
       const header = headerParts.join(' – ');
-      return summary ? `${header}: ${summary}` : header;
+      const segments = [];
+      if (measurement && measurement.hasMeasurement) {
+        buildMeasurementSegments(measurement)
+          .map((segment) => truncateForPrompt(segment, 300))
+          .filter(Boolean)
+          .forEach((segment) => {
+            if (!segments.includes(segment)) segments.push(segment);
+          });
+        if (measurement.summary) {
+          const measurementSummary = truncateForPrompt(measurement.summary, 300);
+          if (measurementSummary && !segments.includes(measurementSummary)) {
+            segments.push(measurementSummary);
+          }
+        }
+      }
+      let summary = typeof row?.ai_summary === 'string' ? row.ai_summary.trim() : '';
+      if (!summary && parsed && typeof parsed.summary === 'string') {
+        summary = parsed.summary.trim();
+      }
+      summary = summary ? truncateForPrompt(summary, 400) : '';
+      if (summary && !segments.includes(summary)) {
+        segments.push(summary);
+      }
+      const comment = typeof row?.ai_commentaire === 'string' ? row.ai_commentaire.trim() : '';
+      if (comment) {
+        const commentText = truncateForPrompt(`IA: ${comment}`, 300);
+        if (commentText && !segments.includes(commentText)) {
+          segments.push(commentText);
+        }
+      }
+      const body = segments.filter(Boolean).slice(0, 4).join(' | ');
+      return body ? `${header}: ${body}` : header;
     });
 }
 
@@ -2530,6 +2569,7 @@ function summarizeChildUpdateForReport(row = {}) {
   const type = typeof row?.update_type === 'string' ? row.update_type.trim().slice(0, 64) : '';
   const ai_summary = truncateForPrompt(row?.ai_summary, 400);
   const ai_commentaire = truncateForPrompt(row?.ai_commentaire, 400);
+  const parsedContent = parseUpdateContentForPrompt(row?.update_content);
   let contentRaw = '';
   if (typeof row?.update_content === 'string') {
     contentRaw = row.update_content;
@@ -2541,12 +2581,17 @@ function summarizeChildUpdateForReport(row = {}) {
     }
   }
   const content = truncateForPrompt(contentRaw, 400);
+  const measurement = extractMeasurementDetails(parsedContent, row?.created_at);
+  if (measurement) {
+    measurement.isLatest = false;
+  }
   return {
     date: toIsoString(row?.created_at),
     type,
     ai_summary,
     ai_commentaire,
     content,
+    measurement,
   };
 }
 
@@ -2560,6 +2605,196 @@ function summarizeParentUpdateForReport(row = {}) {
     parent_comment,
     ai_commentaire,
   };
+}
+
+function markLatestMeasurementSummary(entries = []) {
+  if (!Array.isArray(entries)) return;
+  let latestAssigned = false;
+  entries.forEach((entry) => {
+    const measurement = entry?.measurement;
+    if (!measurement || !measurement.hasMeasurement) return;
+    if (!latestAssigned) {
+      measurement.isLatest = true;
+      latestAssigned = true;
+    } else {
+      measurement.isLatest = false;
+    }
+  });
+}
+
+const MEASUREMENT_NESTED_KEYS = [
+  'growth',
+  'measure',
+  'measurement',
+  'measurements',
+  'values',
+  'data',
+  'payload',
+  'snapshot',
+  'child',
+  'current',
+  'next',
+  'details',
+  'inputs',
+  'profile',
+  'result',
+  'state',
+  'context',
+];
+
+function extractMeasurementDetails(parsedContent, fallbackDate) {
+  if (!parsedContent || typeof parsedContent !== 'object') return null;
+  const currentCandidates = gatherMeasurementCandidates(parsedContent);
+  const current = findMeasurementSnapshot(currentCandidates, { fallbackDate });
+  const previousRoots = [
+    parsedContent.prev,
+    parsedContent.previous,
+    parsedContent.before,
+    parsedContent.old,
+    parsedContent.prior,
+    parsedContent.snapshot?.previous,
+    parsedContent.snapshot?.prev,
+  ].filter((candidate) => candidate && typeof candidate === 'object');
+  let previous = null;
+  if (previousRoots.length) {
+    const previousCandidates = [];
+    previousRoots.forEach((root) => {
+      previousCandidates.push(...gatherMeasurementCandidates(root));
+    });
+    previous = findMeasurementSnapshot(previousCandidates, {});
+  }
+  if (!current && !previous) return null;
+  return {
+    current,
+    previous,
+    hasMeasurement: Boolean(current && current.hasData),
+    summary: typeof parsedContent.summary === 'string' ? parsedContent.summary.trim().slice(0, 400) : '',
+    isLatest: false,
+  };
+}
+
+function gatherMeasurementCandidates(root, depth = 0, visited = new WeakSet()) {
+  if (!root || typeof root !== 'object' || depth > 3) return [];
+  if (visited.has(root)) return [];
+  visited.add(root);
+  const out = [root];
+  for (const key of MEASUREMENT_NESTED_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(root, key)) continue;
+    const value = root[key];
+    if (!value) continue;
+    if (Array.isArray(value)) {
+      value.slice(0, 6).forEach((entry) => {
+        out.push(...gatherMeasurementCandidates(entry, depth + 1, visited));
+      });
+    } else if (typeof value === 'object') {
+      out.push(...gatherMeasurementCandidates(value, depth + 1, visited));
+    }
+  }
+  return out;
+}
+
+function findMeasurementSnapshot(candidates = [], { fallbackDate } = {}) {
+  for (const candidate of candidates) {
+    const snapshot = sanitizeMeasurementSnapshot(candidate, { fallbackDate });
+    if (snapshot) return snapshot;
+  }
+  return null;
+}
+
+function sanitizeMeasurementSnapshot(source, { fallbackDate } = {}) {
+  if (!source || typeof source !== 'object') return null;
+  const heightCandidate = readNumberCandidate(source, ['height', 'height_cm', 'heightCm', 'taille', 'taille_cm']);
+  const weightCandidate = readNumberCandidate(source, ['weight', 'weight_kg', 'weightKg', 'poids', 'poids_kg']);
+  const teethCandidate = readNumberCandidate(source, ['teeth', 'teeth_count', 'teethCount', 'dents']);
+  const height = heightCandidate.found && heightCandidate.value != null ? toFiniteNumber(heightCandidate.value) : null;
+  const weight = weightCandidate.found && weightCandidate.value != null ? toFiniteNumber(weightCandidate.value) : null;
+  const teeth = teethCandidate.found && teethCandidate.value != null ? toFiniteNumber(teethCandidate.value) : null;
+  const hasMeasurement = height != null || weight != null || teeth != null;
+  if (!hasMeasurement) return null;
+  const ageCandidate = readNumberCandidate(source, ['agemos', 'age_month', 'ageMonth', 'month', 'age_in_months', 'ageMonths']);
+  const recordedCandidate = readStringCandidate(source, ['recorded_at', 'recordedAt', 'created_at', 'createdAt', 'measured_at', 'measuredAt', 'date'], { maxLength: 40 });
+  const statusGlobal = readStringCandidate(source, ['status_global', 'statusGlobal'], { maxLength: 80 });
+  const statusWeight = readStringCandidate(source, ['status_weight', 'statusWeight'], { maxLength: 80 });
+  const statusHeight = readStringCandidate(source, ['status_height', 'statusHeight'], { maxLength: 80 });
+  const summaryCandidate = readStringCandidate(source, ['summary', 'note', 'comment', 'description'], { maxLength: 200 });
+  return {
+    height,
+    weight,
+    teeth,
+    ageMonths: ageCandidate.found && ageCandidate.value != null ? toFiniteNumber(ageCandidate.value) : null,
+    recordedAt: recordedCandidate.found ? recordedCandidate.value : fallbackDate || '',
+    status_global: statusGlobal.found ? statusGlobal.value : '',
+    status_weight: statusWeight.found ? statusWeight.value : '',
+    status_height: statusHeight.found ? statusHeight.value : '',
+    summary: summaryCandidate.found ? summaryCandidate.value : '',
+    hasData: true,
+  };
+}
+
+function describeMeasurementValues(snapshot, { label = 'Valeurs relevées' } = {}) {
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const parts = [];
+  if (Number.isFinite(snapshot.height)) {
+    parts.push(`taille ${formatGrowthNumber(snapshot.height, { unit: 'cm', decimals: 1 })}`);
+  }
+  if (Number.isFinite(snapshot.weight)) {
+    parts.push(`poids ${formatGrowthNumber(snapshot.weight, { unit: 'kg', decimals: 2 })}`);
+  }
+  if (Number.isFinite(snapshot.teeth)) {
+    const count = Math.max(0, Math.round(snapshot.teeth));
+    parts.push(`${count} dent${count > 1 ? 's' : ''}`);
+  }
+  if (!parts.length) return '';
+  return `${label}: ${parts.join(' • ')}`;
+}
+
+function describeMeasurementStatuses(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const statuses = [];
+  if (snapshot.status_global) statuses.push(`global ${snapshot.status_global}`);
+  if (snapshot.status_weight) statuses.push(`poids ${snapshot.status_weight}`);
+  if (snapshot.status_height) statuses.push(`taille ${snapshot.status_height}`);
+  if (!statuses.length) return '';
+  return `Statuts OMS: ${statuses.join(' / ')}`;
+}
+
+function describeMeasurementPeriod(snapshot, { label = 'Période' } = {}) {
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const entry = {};
+  if (snapshot.ageMonths != null && Number.isFinite(snapshot.ageMonths)) {
+    entry.agemos = snapshot.ageMonths;
+  }
+  const ageText = Object.keys(entry).length ? formatGrowthAgeForPrompt(entry) : '';
+  const recordedText = snapshot.recordedAt ? formatDateForPrompt(snapshot.recordedAt) || snapshot.recordedAt : '';
+  const value = ageText || recordedText;
+  if (!value) return '';
+  return label ? `${label}: ${value}` : value;
+}
+
+function buildMeasurementSegments(measurement) {
+  if (!measurement || !measurement.hasMeasurement) return [];
+  const segments = [];
+  if (measurement.current && measurement.current.hasData) {
+    const currentLabel = measurement.isLatest ? 'Valeurs actuelles' : 'Valeurs relevées';
+    const currentValues = describeMeasurementValues(measurement.current, { label: currentLabel });
+    if (currentValues) segments.push(currentValues);
+    const period = describeMeasurementPeriod(measurement.current, { label: measurement.isLatest ? 'Âge/Date' : 'Période' });
+    if (period) segments.push(period);
+    const statuses = describeMeasurementStatuses(measurement.current);
+    if (statuses) segments.push(statuses);
+    if (measurement.current.summary) segments.push(measurement.current.summary);
+  }
+  if (measurement.previous && measurement.previous.hasData) {
+    const previousValues = describeMeasurementValues(measurement.previous, { label: 'Référence précédente' });
+    if (previousValues) segments.push(previousValues);
+    const previousPeriod = describeMeasurementPeriod(measurement.previous, { label: 'Période précédente' });
+    if (previousPeriod) segments.push(previousPeriod);
+    if (measurement.previous.summary) segments.push(measurement.previous.summary);
+  }
+  if (!measurement.isLatest) {
+    segments.push('Historique: relevé antérieur utilisé comme référence.');
+  }
+  return segments;
 }
 
 async function fetchChildBaselineRow({ supaUrl, headers, childId }) {
@@ -3139,16 +3374,47 @@ function buildReportDetailsSection({ childSummaries, parentSummaries }) {
 
 function formatChildDetailLine(summary) {
   if (!summary) return '';
+  const measurement = summary.measurement;
   const date = summary.date ? formatDateForPrompt(summary.date) : '';
   const headerParts = [];
   if (date) headerParts.push(date);
   if (summary.type) headerParts.push(summary.type);
-  const header = headerParts.length ? headerParts.join(' • ') : 'Mise à jour';
+  if (measurement && measurement.hasMeasurement) {
+    headerParts.push(measurement.isLatest ? 'Mesure actuelle' : 'Mesure historique');
+  }
+  const header = headerParts.length
+    ? headerParts.join(' • ')
+    : measurement && measurement.hasMeasurement
+      ? 'Mesure'
+      : 'Mise à jour';
   const detailParts = [];
-  if (summary.ai_summary) detailParts.push(summary.ai_summary);
-  if (summary.ai_commentaire) detailParts.push(`IA: ${summary.ai_commentaire}`);
-  if (!detailParts.length && summary.content) detailParts.push(summary.content);
-  const body = detailParts.slice(0, 2).join(' | ');
+  if (measurement && measurement.hasMeasurement) {
+    buildMeasurementSegments(measurement)
+      .map((segment) => truncateForPrompt(segment, 300))
+      .filter(Boolean)
+      .forEach((segment) => {
+        if (!detailParts.includes(segment)) detailParts.push(segment);
+      });
+    if (measurement.summary) {
+      const measurementSummary = truncateForPrompt(measurement.summary, 300);
+      if (measurementSummary && !detailParts.includes(measurementSummary)) {
+        detailParts.push(measurementSummary);
+      }
+    }
+  }
+  if (summary.ai_summary) {
+    const text = truncateForPrompt(summary.ai_summary, 300);
+    if (text && !detailParts.includes(text)) detailParts.push(text);
+  }
+  if (summary.ai_commentaire) {
+    const comment = truncateForPrompt(`IA: ${summary.ai_commentaire}`, 300);
+    if (comment && !detailParts.includes(comment)) detailParts.push(comment);
+  }
+  if (!detailParts.length && summary.content) {
+    const content = truncateForPrompt(summary.content, 300);
+    if (content) detailParts.push(content);
+  }
+  const body = detailParts.slice(0, 3).join(' | ');
   return body ? `- ${header}: ${body}` : `- ${header}`;
 }
 
