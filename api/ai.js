@@ -1928,7 +1928,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
             teeth_created_at: latestTeeth?.created_at ?? null,
           };
         });
-        console.log('[AI DEBUG] family-bilan collected childData', collectedChildDataLog);
+        console.log('[AI DEBUG] family-bilan growth used', collectedChildDataLog);
         const growthContextText = buildFamilyGrowthSection(childrenRows, growthByChild);
         const childStatusLines = buildFamilyChildrenGlobalStatus({
           children: childrenRows,
@@ -1953,7 +1953,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
           `Enfants suivis:\n${childContextText}`,
           growthContextText
             ? `Croissance récente (taille/poids/dents):\n${growthContextText}`
-            : 'Croissance récente: aucune mesure enregistrée.',
+            : 'Croissance récente: Croissance non disponible. Dents non disponibles.',
           parentContextLines.length
             ? `Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`
             : 'Contexte parental actuel: non précisé.',
@@ -2203,20 +2203,8 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const hasTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
         const latestMeasurement = hasMeasurements ? growthData.measurements[0] || null : null;
         logLatestMeasurementSelection(childId, latestMeasurement);
-        const measurementLog = {
-          height_cm: latestMeasurement?.height_cm ?? null,
-          weight_kg: latestMeasurement?.weight_kg ?? null,
-          status_global: latestMeasurement?.status_global ?? null,
-          status_height: latestMeasurement?.status_height ?? null,
-          status_weight: latestMeasurement?.status_weight ?? null,
-          created_at: latestMeasurement?.created_at ?? null,
-        };
-        console.log('[AI DEBUG] child-full-report using measurements', measurementLog);
+        console.log('[AI DEBUG] child-full-report growth used', latestMeasurement);
         console.info('[ai] growth presence', { hasMeasurements, hasTeeth });
-
-        if (mergedChildData) {
-          enrichChildGrowthFromMeasurements(mergedChildData, growthData);
-        }
 
         const childFirstName = await fetchChildFirstName({ supaUrl, headers: supabaseHeaders, childId }).catch((err) => {
           console.warn('[ai] child-full-report first name fetch failed', { childId, err });
@@ -2493,25 +2481,29 @@ function extractChildUpdateHighlight(row = {}) {
 }
 
 function buildChildGrowthHighlight(growthData) {
-  if (!growthData || typeof growthData !== 'object') return '';
-  const measurements = Array.isArray(growthData.measurements)
-    ? growthData.measurements.filter(Boolean).slice(0, 3)
-    : [];
-  const measurementLines = formatGrowthMeasurementsForPrompt(measurements).slice(0, 2);
-  const analysis = buildGrowthInterpretationLine(measurements) || '';
-  const teethLine = formatGrowthTeethForPrompt(growthData.teeth);
+  if (!growthData || typeof growthData !== 'object') return 'Croissance non disponible ; Dents non disponibles';
+  const measurement = Array.isArray(growthData.measurements) && growthData.measurements.length
+    ? growthData.measurements[0]
+    : null;
+  const measurementLine = measurement ? formatGrowthMeasurementEntry(measurement) : '';
+  const teethEntry = Array.isArray(growthData.teeth) && growthData.teeth.length ? growthData.teeth[0] : null;
+  const teethLine = teethEntry ? formatGrowthTeethForPrompt([teethEntry]) : '';
+  const analysis = measurement ? buildGrowthAlertSummaryFromMeasurements([measurement]) : '';
   const parts = [];
-  if (measurementLines.length) {
-    parts.push(measurementLines.join(' | '));
+  if (measurementLine) {
+    parts.push(measurementLine);
+  } else {
+    parts.push('Croissance non disponible');
+  }
+  if (teethLine) {
+    parts.push(`Dents: ${teethLine}`);
+  } else {
+    parts.push('Dents non disponibles');
   }
   if (analysis) {
     parts.push(analysis.replace(/^Analyse\s*:\s*/i, '').trim());
   }
-  if (teethLine) {
-    parts.push(`Dents: ${teethLine}`);
-  }
-  const text = parts.filter(Boolean).join(' ; ');
-  return text ? truncateForPrompt(text, 200) : '';
+  return truncateForPrompt(parts.filter(Boolean).join(' ; '), 200);
 }
 
 function formatChildrenForPrompt(children = []) {
@@ -2559,18 +2551,8 @@ function formatChildUpdatesForFamilyPrompt(updates = [], children = []) {
       const header = headerParts.join(' – ');
       const segments = [];
       if (measurement && measurement.hasMeasurement) {
-        buildMeasurementSegments(measurement)
-          .map((segment) => truncateForPrompt(segment, 300))
-          .filter(Boolean)
-          .forEach((segment) => {
-            if (!segments.includes(segment)) segments.push(segment);
-          });
-        if (measurement.summary) {
-          const measurementSummary = truncateForPrompt(measurement.summary, 300);
-          if (measurementSummary && !segments.includes(measurementSummary)) {
-            segments.push(measurementSummary);
-          }
-        }
+        const placeholder = 'Mesure enregistrée (voir section Croissance).';
+        if (!segments.includes(placeholder)) segments.push(placeholder);
       }
       let summary = typeof row?.ai_summary === 'string' ? row.ai_summary.trim() : '';
       if (!summary && parsed && typeof parsed.summary === 'string') {
@@ -3248,31 +3230,6 @@ function extractContextFromCandidate(candidate) {
   return context;
 }
 
-function extractGrowthFromCandidate(candidate) {
-  if (!candidate || typeof candidate !== 'object') return null;
-  const sources = [];
-  if (candidate.growth && typeof candidate.growth === 'object') sources.push(candidate.growth);
-  if (candidate.snapshot && typeof candidate.snapshot === 'object' && candidate.snapshot.growth) sources.push(candidate.snapshot.growth);
-  if (candidate.next && typeof candidate.next === 'object' && candidate.next.growth) sources.push(candidate.next.growth);
-  sources.push(candidate);
-  let growth = null;
-  sources.forEach((source) => {
-    if (!source || typeof source !== 'object') return;
-    const height = readNumberCandidate(source, ['heightCm', 'height_cm', 'height']);
-    const weight = readNumberCandidate(source, ['weightKg', 'weight_kg', 'weight']);
-    const teeth = readNumberCandidate(source, ['teethCount', 'teeth_count', 'teeth']);
-    if (height.found || weight.found || teeth.found) {
-      if (!growth) growth = {};
-      if (height.found) growth.heightCm = height.value;
-      if (weight.found) growth.weightKg = weight.value;
-      if (teeth.found) {
-        growth.teethCount = teeth.value == null ? null : Math.max(0, Math.round(teeth.value));
-      }
-    }
-  });
-  return growth;
-}
-
 function extractChildStateFromCandidate(candidate) {
   if (!candidate || typeof candidate !== 'object') return null;
   const out = {};
@@ -3287,8 +3244,6 @@ function extractChildStateFromCandidate(candidate) {
   }
   const context = extractContextFromCandidate(candidate);
   if (context) out.context = context;
-  const growth = extractGrowthFromCandidate(candidate);
-  if (growth) out.growth = growth;
   return Object.keys(out).length ? out : null;
 }
 
@@ -3306,33 +3261,6 @@ function applyChildUpdateToState(state, updateRow) {
     const extracted = extractChildStateFromCandidate(candidate);
     if (extracted) mergeChildStateValues(state, extracted);
   });
-}
-
-function enrichChildGrowthFromMeasurements(childData, growthData) {
-  if (!childData || typeof childData !== 'object') return;
-  if (!childData.growth || typeof childData.growth !== 'object') {
-    childData.growth = { heightCm: null, weightKg: null, teethCount: null };
-  }
-  if (growthData && Array.isArray(growthData.measurements) && growthData.measurements.length) {
-    const latestMeasurement = growthData.measurements.find((entry) => {
-      const height = Number(entry?.height_cm ?? entry?.height);
-      const weight = Number(entry?.weight_kg ?? entry?.weight);
-      return Number.isFinite(height) || Number.isFinite(weight);
-    });
-    if (latestMeasurement) {
-      const height = Number(latestMeasurement.height_cm ?? latestMeasurement.height);
-      const weight = Number(latestMeasurement.weight_kg ?? latestMeasurement.weight);
-      if (Number.isFinite(height)) childData.growth.heightCm = height;
-      if (Number.isFinite(weight)) childData.growth.weightKg = weight;
-    }
-  }
-  if (growthData && Array.isArray(growthData.teeth) && growthData.teeth.length) {
-    const latestTeeth = growthData.teeth.find((entry) => Number.isFinite(Number(entry?.count)));
-    if (latestTeeth) {
-      const teethCount = Number(latestTeeth.count);
-      if (Number.isFinite(teethCount)) childData.growth.teethCount = Math.max(0, Math.round(teethCount));
-    }
-  }
 }
 
 function labelChildFeedingType(value) {
@@ -3443,24 +3371,25 @@ function buildReportResumeSection({ firstName, childCount, parentCount }) {
 
 function buildReportGrowthSection({ growthData, hasError }) {
   const lines = ['Croissance'];
-  if (hasError || !growthData) {
+  if (hasError) {
     lines.push('Croissance non disponible (erreur technique).');
     return lines.join('\n');
   }
-  const measurements = Array.isArray(growthData.measurements)
-    ? growthData.measurements.filter(Boolean).slice(0, 3)
-    : [];
-  const measurementLines = formatGrowthMeasurementsForPrompt(measurements).slice(0, 3);
-  if (measurementLines.length) {
-    measurementLines.forEach((line) => {
-      lines.push(`- ${line}`);
-    });
-    lines.push(buildGrowthInterpretationLine(measurements));
+  if (!growthData || typeof growthData !== 'object') {
+    lines.push('Croissance non disponible');
+    lines.push('Dents non disponibles');
+    return lines.join('\n');
   }
-  const teethLines = buildGrowthTeethLines(growthData.teeth);
-  teethLines.forEach((line) => lines.push(line));
-  if (!measurementLines.length && !teethLines.length) {
-    lines.push('Pas de mesure enregistrée.');
+  const formatted = formatGrowthSectionForPrompt(growthData, { errorMessage: '' });
+  if (formatted) {
+    formatted
+      .split('\n')
+      .filter(Boolean)
+      .forEach((line) => lines.push(line));
+  }
+  if (lines.length === 1) {
+    lines.push('Croissance non disponible');
+    lines.push('Dents non disponibles');
   }
   return lines.join('\n');
 }
@@ -3507,18 +3436,8 @@ function formatChildDetailLine(summary) {
       : 'Mise à jour';
   const detailParts = [];
   if (measurement && measurement.hasMeasurement) {
-    buildMeasurementSegments(measurement)
-      .map((segment) => truncateForPrompt(segment, 300))
-      .filter(Boolean)
-      .forEach((segment) => {
-        if (!detailParts.includes(segment)) detailParts.push(segment);
-      });
-    if (measurement.summary) {
-      const measurementSummary = truncateForPrompt(measurement.summary, 300);
-      if (measurementSummary && !detailParts.includes(measurementSummary)) {
-        detailParts.push(measurementSummary);
-      }
-    }
+    const placeholder = 'Mesure enregistrée (voir section Croissance).';
+    if (!detailParts.includes(placeholder)) detailParts.push(placeholder);
   }
   if (summary.ai_summary) {
     const text = truncateForPrompt(summary.ai_summary, 300);
@@ -3684,24 +3603,26 @@ function formatGrowthSectionForPrompt(growthData, { errorMessage = 'Croissance n
   if (!growthData || typeof growthData !== 'object') {
     return errorMessage;
   }
-  const measurementLines = formatGrowthMeasurementsForPrompt(growthData?.measurements).slice(0, 3);
+  const measurement = Array.isArray(growthData.measurements) && growthData.measurements.length
+    ? growthData.measurements[0]
+    : null;
+  const measurementLine = measurement ? formatGrowthMeasurementEntry(measurement) : '';
   const lines = [];
-  if (measurementLines.length) {
-    lines.push('Mesures taille/poids récentes:');
-    measurementLines.forEach((line) => {
-      lines.push(`- ${line}`);
-    });
+  if (measurementLine) {
+    lines.push(`Mesure récente: ${measurementLine}`);
+  } else {
+    lines.push('Croissance non disponible');
   }
-  const teethLine = formatGrowthTeethForPrompt(growthData?.teeth);
+  const teethEntry = Array.isArray(growthData.teeth) && growthData.teeth.length ? growthData.teeth[0] : null;
+  const teethLine = teethEntry ? formatGrowthTeethForPrompt([teethEntry]) : '';
   if (teethLine) {
     lines.push(`Dents: ${teethLine}`);
+  } else {
+    lines.push('Dents non disponibles');
   }
-  const alertSummary = buildGrowthAlertSummaryFromMeasurements(growthData?.measurements);
+  const alertSummary = measurement ? buildGrowthAlertSummaryFromMeasurements([measurement]) : '';
   if (alertSummary) {
     lines.push(`Analyse OMS: ${alertSummary}`);
-  }
-  if (!lines.length) {
-    return 'Pas de mesure enregistrée.';
   }
   return lines.join('\n').slice(0, 600);
 }
