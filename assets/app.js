@@ -263,6 +263,7 @@ const TIMELINE_MILESTONES = [
       regenerating: false,
       pendingRefresh: false,
       regenerationPromise: null,
+      needsManualRefresh: false,
     },
   };
 
@@ -6269,6 +6270,7 @@ const TIMELINE_MILESTONES = [
           });
         }
       };
+      refreshBtn.dataset.needsRefresh = dashboardState.family.needsManualRefresh ? '1' : '0';
       if (dashboardState.family.regenerating) {
         applyBusyState(true);
       } else {
@@ -6276,6 +6278,8 @@ const TIMELINE_MILESTONES = [
       }
       refreshBtn.addEventListener('click', async () => {
         if (refreshBtn.dataset.busy === '1') return;
+        dashboardState.family.needsManualRefresh = false;
+        refreshBtn.dataset.needsRefresh = '0';
         const profileId = dashboardState.profileId || getActiveProfileId();
         const anonCode = isAnonProfile()
           ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
@@ -6285,6 +6289,8 @@ const TIMELINE_MILESTONES = [
             title: 'Profil introuvable',
             text: 'Connectez-vous pour générer le bilan familial.',
           });
+          dashboardState.family.needsManualRefresh = true;
+          refreshBtn.dataset.needsRefresh = '1';
           return;
         }
         applyBusyState(true);
@@ -6313,6 +6319,10 @@ const TIMELINE_MILESTONES = [
             applyBusyState(true);
           } else {
             applyBusyState(false, { failed: hadError });
+            if (hadError) {
+              dashboardState.family.needsManualRefresh = true;
+              refreshBtn.dataset.needsRefresh = '1';
+            }
           }
         }
       });
@@ -6709,12 +6719,13 @@ const TIMELINE_MILESTONES = [
 
   async function scheduleFamilyContextRefresh() {
     try {
-      const profileId = dashboardState.profileId || getActiveProfileId();
-      const anonCode = isAnonProfile()
-        ? (activeProfile?.code_unique ? String(activeProfile.code_unique).trim().toUpperCase() : '')
-        : '';
-      if (!profileId && !anonCode) return;
-      await runFamilyContextRegeneration(profileId || null, { refreshDashboard: true, skipIfRunning: true });
+      const state = dashboardState.family;
+      if (!state) return;
+      state.needsManualRefresh = true;
+      const refreshBtn = document.querySelector('#btn-refresh-family-bilan');
+      if (refreshBtn) {
+        refreshBtn.dataset.needsRefresh = '1';
+      }
     } catch (err) {
       console.warn('scheduleFamilyContextRefresh failed', err);
     }
