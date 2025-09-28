@@ -273,6 +273,8 @@ const TIMELINE_MILESTONES = [
     pending: new Set(),
     loading: new Map(),
   };
+  const communityAuthorsCache = new Map();
+  const communityAuthorsLoading = new Map();
 
   const PARENT_FIELD_DEFS = [
     { key: 'maritalStatus', column: 'marital_status', form: 'marital_status', type: 'string' },
@@ -6872,53 +6874,89 @@ const TIMELINE_MILESTONES = [
     const unique = Array.from(new Set(ids.map((id) => (id == null ? '' : String(id))).filter(Boolean)));
     if (!unique.length) return;
     const state = forumLikesState;
+
+    const candidates = refresh ? unique : unique.filter((id) => !state.counts.has(id));
+    const inFlight = candidates.map((id) => state.loading.get(id)).filter(Boolean);
+
+    if (!refresh && !candidates.length) {
+      unique.forEach((id) => updateReplyLikeUI(id));
+      return;
+    }
+
+    if (!refresh && candidates.length && candidates.length === inFlight.length && inFlight.length) {
+      await Promise.allSettled(inFlight);
+      unique.forEach((id) => updateReplyLikeUI(id));
+      return;
+    }
+
+    const idsToFetch = refresh ? unique : candidates.filter((id) => !state.loading.has(id));
+    if (!idsToFetch.length) {
+      if (inFlight.length) await Promise.allSettled(inFlight);
+      unique.forEach((id) => updateReplyLikeUI(id));
+      return;
+    }
+
     let token = '';
     try { token = await getAccessTokenForApi(); }
     catch (err) { console.warn('Access token fetch failed', err); }
     const code = getActiveAnonCode();
-    await Promise.all(unique.map((id) => {
-      if (!refresh && state.loading.has(id)) return state.loading.get(id);
-      const promise = (async () => {
-        try {
-          const payload = { action: 'get-likes', replyId: id };
-          if (code) payload.code = code;
-          const headers = { 'Content-Type': 'application/json' };
-          if (token) headers.Authorization = `Bearer ${token}`;
-          const response = await fetch('/api/server', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload),
-          });
-          const json = await response.json().catch(() => null);
-          if (!response.ok || !json?.success) {
-            throw new Error(json?.error || `HTTP ${response.status}`);
-          }
-          const count = Number(json.count);
-          if (Number.isFinite(count)) {
-            state.counts.set(id, count);
-          } else if (!state.counts.has(id)) {
-            state.counts.set(id, 0);
-          }
-          if (json && typeof json.liked === 'object' && json.liked !== null) {
-            const value = json.liked[id];
-            if (value === true) state.liked.add(id);
-            else state.liked.delete(id);
-          } else if (json?.liked === true) {
-            state.liked.add(id);
-          } else {
-            state.liked.delete(id);
-          }
-        } catch (err) {
-          console.warn('loadReplyLikes failed', err);
-          if (!state.counts.has(id)) state.counts.set(id, 0);
-        } finally {
-          state.loading.delete(id);
-          updateReplyLikeUI(id);
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const requestPromise = (async () => {
+      try {
+        const payload = { action: 'get-likes', replyIds: idsToFetch };
+        if (code) payload.code = code;
+        const response = await fetch('/api/server', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        const json = await response.json().catch(() => null);
+        if (!response.ok || !json?.success) {
+          throw new Error(json?.error || `HTTP ${response.status}`);
         }
-      })();
-      state.loading.set(id, promise);
-      return promise;
-    }));
+        if (idsToFetch.length === 1) {
+          const key = idsToFetch[0];
+          const countValue =
+            typeof json.count === 'object' && json.count !== null ? Number(json.count[key]) : Number(json.count);
+          const normalizedCount = Number.isFinite(countValue) ? countValue : 0;
+          state.counts.set(key, normalizedCount);
+          const likedValue =
+            typeof json.liked === 'object' && json.liked !== null ? json.liked[key] : json.liked;
+          if (likedValue === true) state.liked.add(key);
+          else if (likedValue === false) state.liked.delete(key);
+        } else {
+          const countMap = json.count && typeof json.count === 'object' ? json.count : {};
+          const likedMap = json.liked && typeof json.liked === 'object' ? json.liked : {};
+          idsToFetch.forEach((key) => {
+            const rawCount = countMap[key];
+            const normalizedCount = Number.isFinite(Number(rawCount)) ? Number(rawCount) : 0;
+            state.counts.set(key, normalizedCount);
+            if (likedMap[key] === true) state.liked.add(key);
+            else if (likedMap[key] === false) state.liked.delete(key);
+          });
+        }
+      } catch (err) {
+        console.warn('loadReplyLikes failed', err);
+        idsToFetch.forEach((key) => {
+          if (!state.counts.has(key)) state.counts.set(key, 0);
+          state.liked.delete(key);
+        });
+      } finally {
+        idsToFetch.forEach((key) => {
+          state.loading.delete(key);
+          updateReplyLikeUI(key);
+        });
+      }
+    })();
+
+    idsToFetch.forEach((id) => state.loading.set(id, requestPromise));
+    const handled = new Set(idsToFetch);
+    await requestPromise;
+    unique.forEach((id) => {
+      if (!handled.has(id)) updateReplyLikeUI(id);
+    });
   }
 
   async function toggleLike(replyId) {
@@ -7710,75 +7748,113 @@ const TIMELINE_MILESTONES = [
                 .map((value) => (value != null ? String(value) : ''))
                 .filter(Boolean);
               if (!idArray.length) return new Map();
-              const sources = [
-                { table: 'profiles_with_children', select: 'id,full_name,show_children_count,children:children(id)' },
-                { table: 'profiles', select: 'id,full_name,show_children_count' },
-              ];
-              for (const source of sources) {
-                try {
-                  const { data: rows, error: fetchError } = await supabase
-                    .from(source.table)
-                    .select(source.select)
-                    .in('id', idArray);
-                  if (fetchError) throw fetchError;
-                  if (Array.isArray(rows) && rows.length) {
-                    return new Map(
-                      rows
-                        .map((row) => {
-                          const id = row?.id != null ? String(row.id) : '';
-                          if (!id) return null;
-                          const entry = normalizeAuthorMeta({
-                            name: row.full_name || row.name || 'Utilisateur',
-                            children: Array.isArray(row.children) ? row.children : undefined,
-                            child_count: row.children_count ?? row.child_count ?? null,
-                            show_children_count: row.show_children_count,
-                          }) || { name: row.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                          return [id, entry];
-                        })
-                        .filter(Boolean)
-                    );
-                  }
-                } catch (err) {
-                  console.warn(`${source.table} load failed`, err);
-                }
-              }
-              try {
-                const { data: authData } = await supabase.auth.getSession();
-                const token = authData?.session?.access_token || '';
-                if (token) {
-                  const response = await fetch('/api/profiles/by-ids', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ ids: idArray }),
-                  });
-                  if (response.ok) {
-                    const payload = await response.json().catch(() => null);
-                    if (payload?.profiles) {
-                      const entries = payload.profiles
-                        .map((profile) => {
-                          const id = profile?.id != null ? String(profile.id) : '';
-                          if (!id) return null;
-                          const entry = normalizeAuthorMeta({
-                            name: profile.full_name || profile.name || 'Utilisateur',
-                            child_count: profile.child_count ?? profile.children_count ?? null,
-                            show_children_count:
-                              profile.show_children_count ?? profile.showChildCount ?? profile.show_stats ?? profile.showStats,
-                          }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                          return [id, entry];
-                        })
-                        .filter(Boolean);
-                      if (entries.length) {
-                        return new Map(entries);
+
+              const missing = idArray.filter((id) => !communityAuthorsCache.has(id));
+              if (missing.length) {
+                const batchKey = missing.slice().sort().join(',');
+                let loader = communityAuthorsLoading.get(batchKey);
+                if (!loader) {
+                  loader = (async () => {
+                    let rows = [];
+                    let viewFailed = false;
+                    try {
+                      const { data, error } = await supabase
+                        .from('profiles_with_children')
+                        .select('id,full_name,children_count,show_children_count')
+                        .in('id', missing);
+                      if (error) throw error;
+                      if (Array.isArray(data)) rows = data;
+                    } catch (err) {
+                      viewFailed = true;
+                      console.warn('profiles_with_children load failed', err);
+                    }
+                    if ((!Array.isArray(rows) || !rows.length) && viewFailed) {
+                      try {
+                        const { data, error } = await supabase
+                          .from('profiles')
+                          .select('id,full_name,show_children_count')
+                          .in('id', missing);
+                        if (error) throw error;
+                        if (Array.isArray(data)) rows = data;
+                      } catch (err) {
+                        console.warn('profiles fallback load failed', err);
+                        rows = [];
                       }
                     }
-                  }
+                    (Array.isArray(rows) ? rows : []).forEach((row) => {
+                      const id = row?.id != null ? String(row.id) : '';
+                      if (!id) return;
+                      const entry =
+                        normalizeAuthorMeta({
+                          name: row.full_name || row.name || 'Utilisateur',
+                          child_count: row.children_count ?? row.child_count ?? null,
+                          show_children_count: row.show_children_count,
+                        }) || { name: row.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                      communityAuthorsCache.set(id, entry);
+                    });
+
+                    const unresolved = missing.filter((id) => !communityAuthorsCache.has(id));
+                    if (unresolved.length && useRemote()) {
+                      try {
+                        const token = await getAccessTokenForApi();
+                        if (token) {
+                          const response = await fetch('/api/profiles/by-ids', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify({ ids: unresolved }),
+                          });
+                          if (response.ok) {
+                            const payload = await response.json().catch(() => null);
+                            const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
+                            profiles.forEach((profile) => {
+                              const id = profile?.id != null ? String(profile.id) : '';
+                              if (!id) return;
+                              const entry =
+                                normalizeAuthorMeta({
+                                  name: profile.full_name || profile.name || 'Utilisateur',
+                                  child_count: profile.child_count ?? profile.children_count ?? null,
+                                  show_children_count:
+                                    profile.show_children_count ??
+                                    profile.showChildCount ??
+                                    profile.show_stats ??
+                                    profile.showStats,
+                                }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                              communityAuthorsCache.set(id, entry);
+                            });
+                          }
+                        }
+                      } catch (err) {
+                        console.warn('profiles service fallback failed', err);
+                      }
+                    }
+
+                    const defaultMeta =
+                      normalizeAuthorMeta({ name: 'Utilisateur' }) || {
+                        name: 'Utilisateur',
+                        childCount: null,
+                        showChildCount: false,
+                      };
+                    missing.forEach((id) => {
+                      if (!communityAuthorsCache.has(id)) {
+                        communityAuthorsCache.set(id, { ...defaultMeta });
+                      }
+                    });
+                  })().finally(() => communityAuthorsLoading.delete(batchKey));
+                  communityAuthorsLoading.set(batchKey, loader);
                 }
-              } catch (err) {
-                console.warn('profiles fallback load failed', err);
+                await loader;
               }
-              return new Map();
+
+              const entries = idArray
+                .map((id) => {
+                  const entry = communityAuthorsCache.get(id);
+                  if (!entry) return null;
+                  return [id, entry];
+                })
+                .filter(Boolean);
+              return new Map(entries);
             };
-            authorsMap = await withRetry(() => loadCommunityProfiles());
+            authorsMap = await loadCommunityProfiles();
           }
           const repliesMap = new Map();
           replies.forEach((reply) => {
