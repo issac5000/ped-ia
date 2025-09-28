@@ -3370,20 +3370,24 @@ section[data-route="/community"] .reply-like{
   gap:6px;
   padding:6px 12px;
   border-radius:999px;
-  border:1px solid rgba(255,255,255,.18);
-  background:rgba(255,255,255,.06);
+  border:1px solid rgba(148,163,184,.45);
+  background:rgba(148,163,184,.16);
   color:var(--muted);
   font-size:14px;
   cursor:pointer;
   transition:background .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease;
 }
 section[data-route="/community"] .reply-like:hover{
-  background:rgba(255,255,255,.12);
+  background:rgba(148,163,184,.26);
   color:#ffffff;
+}
+section[data-route="/community"] .reply-like:focus-visible{
+  outline:2px solid rgba(78,124,216,.7);
+  outline-offset:2px;
 }
 section[data-route="/community"] .reply-like.is-liked{
   background:rgba(78,124,216,.2);
-  border-color:rgba(78,124,216,.5);
+  border-color:rgba(78,124,216,.55);
   color:var(--blue-strong);
   box-shadow:0 10px 24px rgba(78,124,216,.25);
 }

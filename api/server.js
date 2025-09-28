@@ -51,31 +51,6 @@ function parseBody(req) {
   return {};
 }
 
-function collectReplyIds(payload) {
-  const values = [];
-  const pushValue = (input) => {
-    if (input == null) return;
-    if (Array.isArray(input)) {
-      input.forEach(pushValue);
-      return;
-    }
-    if (typeof input === 'string') {
-      input
-        .split(',')
-        .map((part) => part.trim())
-        .forEach((part) => {
-          if (part) values.push(part);
-        });
-      return;
-    }
-    values.push(String(input));
-  };
-  pushValue(payload.replyIds);
-  pushValue(payload.replyId);
-  pushValue(payload.reply_id);
-  return Array.from(new Set(values.map((id) => normalizeReplyId(id)).filter(Boolean)));
-}
-
 async function resolveForumActor(req, payload, context, { required = false } = {}) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -124,34 +99,13 @@ async function countLikesForReply(supabase, replyId) {
   return Number.isFinite(count) ? count : 0;
 }
 
-async function fetchLikeSummaries(supabase, replyIds, actorId) {
-  const { data, error } = await supabase
-    .from('forum_reply_likes')
-    .select('reply_id,user_id')
-    .in('reply_id', replyIds);
+async function ensureReplyExists(supabase, replyId) {
+  const { count, error } = await supabase
+    .from('forum_replies')
+    .select('id', { head: true, count: 'exact' })
+    .eq('id', replyId);
   if (error) throw error;
-
-  const counts = Object.create(null);
-  const likedMap = Object.create(null);
-  const actorKey = actorId ? String(actorId) : '';
-
-  if (Array.isArray(data)) {
-    data.forEach((row) => {
-      const rid = row?.reply_id != null ? String(row.reply_id) : '';
-      if (!rid) return;
-      counts[rid] = (counts[rid] || 0) + 1;
-      if (actorKey && row?.user_id != null && String(row.user_id) === actorKey) {
-        likedMap[rid] = true;
-      }
-    });
-  }
-
-  replyIds.forEach((rid) => {
-    if (!(rid in counts)) counts[rid] = 0;
-    if (actorKey && !(rid in likedMap)) likedMap[rid] = false;
-  });
-
-  return { counts, likedMap, actorKey };
+  return Number.isFinite(count) && count > 0;
 }
 
 export default async function handler(req, res) {
@@ -195,26 +149,59 @@ export default async function handler(req, res) {
   }
 
   try {
-    if (action === 'like' || action === 'unlike') {
-      const replyId = pickFirst(payload.replyId ?? payload.reply_id) || '';
-      const normalizedReplyId = normalizeReplyId(replyId);
-      if (!normalizedReplyId) {
-        return res.status(400).json({ error: 'replyId required' });
-      }
-      const actor = await resolveForumActor(req, payload, context, { required: true });
-      if (actor.error) {
-        return res.status(actor.status || 401).json({ error: actor.error });
-      }
-      if (action === 'like') {
-        const { error: upsertError } = await context.supabase
-          .from('forum_reply_likes')
-          .upsert([{ reply_id: normalizedReplyId, user_id: actor.userId }], { onConflict: 'reply_id,user_id' });
-        if (upsertError) {
-          console.error('[api/server] like insert failed', upsertError);
-          throw upsertError;
+    const supabase = context.supabase;
+    const replyIdRaw = pickFirst(payload.replyId ?? payload.reply_id);
+    const normalizedReplyId = normalizeReplyId(replyIdRaw);
+
+    switch (action) {
+      case 'like': {
+        if (!normalizedReplyId) {
+          return res.status(400).json({ error: 'replyId required' });
         }
-      } else {
-        const { error: deleteError } = await context.supabase
+        const actor = await resolveForumActor(req, payload, context, { required: true });
+        if (actor.error) {
+          return res.status(actor.status || 401).json({ error: actor.error });
+        }
+        const exists = await ensureReplyExists(supabase, normalizedReplyId);
+        if (!exists) {
+          return res.status(404).json({ error: 'Reply not found' });
+        }
+        const { data: existingRows, error: selectError } = await supabase
+          .from('forum_reply_likes')
+          .select('reply_id')
+          .eq('reply_id', normalizedReplyId)
+          .eq('user_id', actor.userId)
+          .limit(1);
+        if (selectError) {
+          console.error('[api/server] like select failed', selectError);
+          throw selectError;
+        }
+        const alreadyLiked = Array.isArray(existingRows) && existingRows.length > 0;
+        if (!alreadyLiked) {
+          const { error: insertError } = await supabase
+            .from('forum_reply_likes')
+            .insert([{ reply_id: normalizedReplyId, user_id: actor.userId }]);
+          if (insertError) {
+            console.error('[api/server] like insert failed', insertError);
+            throw insertError;
+          }
+        }
+        const count = await countLikesForReply(supabase, normalizedReplyId);
+        return res.status(200).json({ success: true, count, liked: true });
+      }
+      case 'unlike': {
+        if (!normalizedReplyId) {
+          return res.status(400).json({ error: 'replyId required' });
+        }
+        const actor = await resolveForumActor(req, payload, context, { required: true });
+        if (actor.error) {
+          return res.status(actor.status || 401).json({ error: actor.error });
+        }
+        const exists = await ensureReplyExists(supabase, normalizedReplyId);
+        if (!exists) {
+          return res.status(404).json({ error: 'Reply not found' });
+        }
+        const { error: deleteError } = await supabase
           .from('forum_reply_likes')
           .delete()
           .eq('reply_id', normalizedReplyId)
@@ -223,40 +210,41 @@ export default async function handler(req, res) {
           console.error('[api/server] unlike delete failed', deleteError);
           throw deleteError;
         }
+        const count = await countLikesForReply(supabase, normalizedReplyId);
+        return res.status(200).json({ success: true, count, liked: false });
       }
-      const count = await countLikesForReply(context.supabase, normalizedReplyId);
-      return res.status(200).json({ success: true, count, liked: action === 'like' });
+      case 'get-likes': {
+        if (!normalizedReplyId) {
+          return res.status(400).json({ error: 'replyId required' });
+        }
+        const actor = await resolveForumActor(req, payload, context, { required: false });
+        if (actor.error) {
+          return res.status(actor.status || 401).json({ error: actor.error });
+        }
+        const exists = await ensureReplyExists(supabase, normalizedReplyId);
+        if (!exists) {
+          return res.status(404).json({ error: 'Reply not found' });
+        }
+        const count = await countLikesForReply(supabase, normalizedReplyId);
+        let liked = false;
+        if (actor.userId) {
+          const { data: likedRows, error: likedError } = await supabase
+            .from('forum_reply_likes')
+            .select('reply_id')
+            .eq('reply_id', normalizedReplyId)
+            .eq('user_id', actor.userId)
+            .limit(1);
+          if (likedError) {
+            console.error('[api/server] liked select failed', likedError);
+            throw likedError;
+          }
+          liked = Array.isArray(likedRows) && likedRows.length > 0;
+        }
+        return res.status(200).json({ success: true, count, liked });
+      }
+      default:
+        return res.status(400).json({ error: 'Unknown action' });
     }
-
-    if (action === 'get-likes') {
-      const replyIds = collectReplyIds(payload);
-      if (!replyIds.length) {
-        return res.status(400).json({ error: 'replyId required' });
-      }
-      const actor = await resolveForumActor(req, payload, context, { required: false });
-      if (actor.error) {
-        return res.status(actor.status || 401).json({ error: actor.error });
-      }
-      const { counts, likedMap, actorKey } = await fetchLikeSummaries(
-        context.supabase,
-        replyIds,
-        actor.userId
-      );
-      if (replyIds.length === 1) {
-        const key = replyIds[0];
-        const likedValue = actorKey ? !!likedMap[key] : false;
-        return res.status(200).json({ success: true, count: counts[key] ?? 0, liked: likedValue });
-      }
-      const likedPayload = actorKey
-        ? likedMap
-        : replyIds.reduce((acc, id) => {
-            acc[id] = false;
-            return acc;
-          }, {});
-      return res.status(200).json({ success: true, count: counts, liked: likedPayload });
-    }
-
-    return res.status(400).json({ error: 'Unknown action' });
   } catch (err) {
     console.error('[api/server] handler error', err);
     const status = Number(err?.status || err?.statusCode) || 500;
