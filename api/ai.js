@@ -1789,6 +1789,10 @@ Propose des recommandations précises et actionnables plutôt que des générali
                   supaUrl,
                   headers,
                 });
+                const latestMeasurement = Array.isArray(growth?.measurements) && growth.measurements.length
+                  ? growth.measurements[0]
+                  : null;
+                logLatestMeasurementSelection(id, latestMeasurement);
                 if (growth) {
                   growthByChild.set(String(id), growth);
                 }
@@ -1804,6 +1808,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
                   teeth: [],
                   status: 'error',
                 });
+                logLatestMeasurementSelection(id, null);
               }
             })
           );
@@ -2085,6 +2090,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const hasMeasurements = Array.isArray(growthData?.measurements) && growthData.measurements.length > 0;
         const hasTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
         const latestMeasurement = hasMeasurements ? growthData.measurements[0] || null : null;
+        logLatestMeasurementSelection(childId, latestMeasurement);
         const measurementLog = {
           height_cm: latestMeasurement?.height_cm ?? null,
           weight_kg: latestMeasurement?.weight_kg ?? null,
@@ -2719,26 +2725,6 @@ function mergeChildContextValues(base, updates) {
   return context;
 }
 
-function mergeChildGrowthValues(base, updates) {
-  const growth = base && typeof base === 'object'
-    ? { ...base }
-    : { heightCm: null, weightKg: null, teethCount: null };
-  if (!updates || typeof updates !== 'object') return growth;
-  if (Object.prototype.hasOwnProperty.call(updates, 'heightCm')) {
-    const val = Number(updates.heightCm);
-    growth.heightCm = Number.isFinite(val) ? val : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(updates, 'weightKg')) {
-    const val = Number(updates.weightKg);
-    growth.weightKg = Number.isFinite(val) ? val : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(updates, 'teethCount')) {
-    const val = Number(updates.teethCount);
-    growth.teethCount = Number.isFinite(val) ? Math.max(0, Math.round(val)) : null;
-  }
-  return growth;
-}
-
 function mergeChildStateValues(state, updates) {
   if (!state || typeof state !== 'object' || !updates || typeof updates !== 'object') return state;
   if (Object.prototype.hasOwnProperty.call(updates, 'firstName')) {
@@ -2759,9 +2745,6 @@ function mergeChildStateValues(state, updates) {
     state.milestones = Array.isArray(updates.milestones)
       ? updates.milestones.slice(0, 120).map((entry) => !!entry)
       : state.milestones;
-  }
-  if (Object.prototype.hasOwnProperty.call(updates, 'growth')) {
-    state.growth = mergeChildGrowthValues(state.growth, updates.growth);
   }
   return state;
 }
@@ -2801,11 +2784,6 @@ function mapChildRowToState(row) {
   if (Array.isArray(row.milestones)) {
     state.milestones = row.milestones.slice(0, 120).map((entry) => !!entry);
   }
-  const growthPayload = {};
-  if (Object.prototype.hasOwnProperty.call(row, 'height_cm')) growthPayload.heightCm = row.height_cm;
-  if (Object.prototype.hasOwnProperty.call(row, 'weight_kg')) growthPayload.weightKg = row.weight_kg;
-  if (Object.prototype.hasOwnProperty.call(row, 'teeth_count')) growthPayload.teethCount = row.teeth_count;
-  state.growth = mergeChildGrowthValues(state.growth, growthPayload);
   return state;
 }
 
@@ -3307,7 +3285,8 @@ async function fetchGrowthDataForPrompt({
 
     const growthData = { measurements, teeth };
     console.info('[ai/growth] raw growthData', JSON.stringify(growthData, null, 2));
-    return growthData;
+    const { growthData: sanitizedGrowthData } = sanitizeGrowthDataForPrompt(growthData, { childId });
+    return sanitizedGrowthData;
   } catch (err) {
     const details = err instanceof HttpError ? err.details : err?.message;
     console.error('[ai/growth] fetch failed', { childId, err, details });
@@ -3387,6 +3366,94 @@ function formatGrowthMeasurementsForPrompt(measurements = []) {
   return measurements
     .map((entry) => formatGrowthMeasurementEntry(entry))
     .filter(Boolean);
+}
+
+function parseMeasurementTimestamp(value) {
+  if (typeof value !== 'string' || !value) return Number.NEGATIVE_INFINITY;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+}
+
+function compareMeasurementsDesc(a, b) {
+  if (a === b) return 0;
+  const aTime = parseMeasurementTimestamp(a?.created_at ?? a?.recorded_at ?? '');
+  const bTime = parseMeasurementTimestamp(b?.created_at ?? b?.recorded_at ?? '');
+  return bTime - aTime;
+}
+
+function toFiniteNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function extractMeasurementAgeMonths(entry = {}) {
+  const candidates = [entry.agemos, entry.age_month, entry.ageMonth, entry.month];
+  for (const candidate of candidates) {
+    const num = toFiniteNumber(candidate);
+    if (num != null) return num;
+  }
+  return null;
+}
+
+function isMeasurementEntryInvalid(entry = {}) {
+  const weight = toFiniteNumber(entry.weight_kg ?? entry.weight);
+  const height = toFiniteNumber(entry.height_cm ?? entry.height);
+  const ageMonths = extractMeasurementAgeMonths(entry);
+  if (weight != null) {
+    if (weight <= 0) return true;
+    if (ageMonths != null && ageMonths < 60 && weight > 20) return true;
+  }
+  if (height != null) {
+    if (height <= 0) return true;
+    if (ageMonths != null && ageMonths >= 6 && height < 40) return true;
+  }
+  return false;
+}
+
+function selectLatestValidMeasurement(measurements = [], { childId } = {}) {
+  const entries = Array.isArray(measurements) ? measurements.filter(Boolean) : [];
+  if (!entries.length) {
+    return { latest: null, list: [] };
+  }
+  const sorted = entries.slice().sort(compareMeasurementsDesc);
+  for (const entry of sorted) {
+    const hasHeight = toFiniteNumber(entry.height_cm ?? entry.height) != null;
+    const hasWeight = toFiniteNumber(entry.weight_kg ?? entry.weight) != null;
+    if (!hasHeight && !hasWeight) continue;
+    if (isMeasurementEntryInvalid(entry)) {
+      const debugRow = { ...entry };
+      if (childId != null && !Object.prototype.hasOwnProperty.call(debugRow, 'child_id')) {
+        debugRow.child_id = childId;
+      }
+      console.warn('[AI DEBUG] measurement discarded as invalid', debugRow);
+      continue;
+    }
+    return { latest: entry, list: [entry] };
+  }
+  return { latest: null, list: [] };
+}
+
+function sanitizeGrowthDataForPrompt(growthData, { childId } = {}) {
+  const base = growthData && typeof growthData === 'object' ? { ...growthData } : {};
+  const measurements = Array.isArray(base.measurements) ? base.measurements : [];
+  const teeth = Array.isArray(base.teeth) ? base.teeth : [];
+  const { latest, list } = selectLatestValidMeasurement(measurements, { childId });
+  const sanitizedMeasurements = list.length ? list : [];
+  const sanitizedTeeth = teeth.filter(Boolean).slice(0, 1);
+  return {
+    growthData: { ...base, measurements: sanitizedMeasurements, teeth: sanitizedTeeth },
+    latestMeasurement: latest,
+  };
+}
+
+function logLatestMeasurementSelection(childId, measurement) {
+  const payload = {
+    childId: childId != null && childId !== '' ? String(childId) : null,
+    height_cm: measurement?.height_cm ?? measurement?.height ?? null,
+    weight_kg: measurement?.weight_kg ?? measurement?.weight ?? null,
+    created_at: measurement?.created_at ?? measurement?.recorded_at ?? null,
+  };
+  console.log('[AI DEBUG] latest measurement selected', payload);
 }
 
 function formatGrowthMeasurementEntry(entry) {
