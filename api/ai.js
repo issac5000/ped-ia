@@ -383,6 +383,74 @@ function extractChildrenFromStructuredAiBilan(aiBilan) {
   return results;
 }
 
+function parseChildrenFromAiBilan(aiBilanText) {
+  if (typeof aiBilanText !== 'string') return [];
+  const trimmedText = aiBilanText.trim();
+  if (!trimmedText) return [];
+
+  const lines = trimmedText.split(/\r?\n/);
+  const headerRegex = /^\s*(?:[-•]\s*)?\*{1,2}([^*]+?)\*{1,2}\s*:?(.*)$/;
+  const childrenSections = [];
+  let currentSection = null;
+
+  for (const rawLine of lines) {
+    if (typeof rawLine !== 'string') continue;
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const headerMatch = headerRegex.exec(line);
+    if (headerMatch) {
+      if (currentSection) {
+        childrenSections.push(currentSection);
+      }
+      const name = headerMatch[1]?.trim().slice(0, 80) || '';
+      const rest = headerMatch[2]?.trim() || '';
+      currentSection = { name, lines: [] };
+      if (rest) {
+        currentSection.lines.push(rest);
+      }
+      continue;
+    }
+
+    if (currentSection) {
+      currentSection.lines.push(line);
+    }
+  }
+
+  if (currentSection) {
+    childrenSections.push(currentSection);
+  }
+
+  const ensureInfo = (value) => (value ? value.slice(0, 240) : 'non renseigné');
+  const findInfoLine = (linesArray, keywords) => {
+    for (const text of linesArray) {
+      const lower = text.toLowerCase();
+      if (keywords.some((keyword) => lower.includes(keyword))) {
+        return text;
+      }
+    }
+    return '';
+  };
+
+  return childrenSections
+    .filter((section) => section.name)
+    .map((section, index) => {
+      const infoLines = Array.isArray(section.lines) ? section.lines : [];
+      const growthLine = findInfoLine(infoLines, ['poids', 'taille', 'croissance']);
+      const feedingLine = findInfoLine(infoLines, ['appétit', 'appetit', 'alimentation', 'allaitement']);
+      const sleepLine = findInfoLine(infoLines, ['sommeil', 'réveil', 'reveil', 'nuit']);
+
+      const name = section.name || `Enfant ${index + 1}`;
+
+      return {
+        name,
+        growth: ensureInfo(growthLine),
+        feeding: ensureInfo(feedingLine),
+        sleep: ensureInfo(sleepLine),
+      };
+    });
+}
+
 function buildDefaultParentChildContext() {
   return {
     parent: { ...DEFAULT_PARENT_CHILD_CONTEXT.parent },
@@ -854,6 +922,19 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         ) {
           summarizedContext.children = fallbackChildrenFromAiBilan;
           console.log('[AI DEBUG] fallback children from ai_bilan:', summarizedContext.children);
+        }
+        if (
+          codeUnique &&
+          (!Array.isArray(summarizedContext?.children) || !summarizedContext.children.length)
+        ) {
+          const parsedChildren = parseChildrenFromAiBilan(typeof aiBilan === 'string' ? aiBilan : '');
+          if (parsedChildren.length) {
+            summarizedContext.children = parsedChildren;
+            console.log(
+              '[AI DEBUG] fallback children from ai_bilan (anonymous):',
+              summarizedContext.children
+            );
+          }
         }
         console.log(
           "[AI DEBUG] summarizedContext.children:",
