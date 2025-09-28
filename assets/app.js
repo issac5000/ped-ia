@@ -6792,175 +6792,6 @@ const TIMELINE_MILESTONES = [
     return Array.from(byMonth.values()).sort((a,b)=>a.month-b.month);
   }
 
-  const parseLikeButtonState = (button) => {
-    if (!button) return { count: 0, liked: false };
-    const raw = button.dataset.count
-      ?? button.getAttribute('data-count')
-      ?? button.querySelector('.topic-like__count')?.textContent
-      ?? '0';
-    const parsed = Number(raw);
-    const count = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-    const liked = button.dataset.liked === '1' || button.getAttribute('data-liked') === '1';
-    return { count, liked };
-  };
-
-  const applyLikeButtonState = (button, state) => {
-    if (!button) return;
-    const rawCount = Number(state?.count);
-    const count = Number.isFinite(rawCount) ? Math.max(0, Math.round(rawCount)) : 0;
-    const liked = !!state?.liked;
-    button.dataset.count = String(count);
-    button.dataset.liked = liked ? '1' : '0';
-    button.setAttribute('data-count', String(count));
-    button.setAttribute('data-liked', liked ? '1' : '0');
-    button.setAttribute('aria-pressed', liked ? 'true' : 'false');
-    button.classList.toggle('topic-like--active', liked);
-    const counter = button.querySelector('.topic-like__count');
-    if (counter) counter.textContent = String(count);
-  };
-
-  async function resolveAccessToken() {
-    let token = authSession?.access_token || '';
-    if (!token && supabase?.auth) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        token = session?.access_token || '';
-      } catch {}
-    }
-    return token;
-  }
-
-  async function fetchReplyLikes(replyIds) {
-    const uniqueIds = Array.from(new Set((replyIds || [])
-      .map((value) => (value != null ? String(value).trim() : ''))
-      .filter(Boolean)));
-    const likeMap = new Map();
-    uniqueIds.forEach((id) => likeMap.set(id, { count: 0, liked: false }));
-    if (!uniqueIds.length) return likeMap;
-    const ok = await ensureSupabaseClient();
-    if (!ok) return likeMap;
-    try {
-      const { data, error } = await supabase
-        .from('forum_reply_likes')
-        .select('reply_id,user_id')
-        .in('reply_id', uniqueIds);
-      if (error) throw error;
-      const rows = Array.isArray(data) ? data : [];
-      const meRaw = getActiveProfileId();
-      const me = meRaw != null ? String(meRaw) : '';
-      for (const row of rows) {
-        const rid = row?.reply_id != null ? String(row.reply_id) : '';
-        if (!rid) continue;
-        const current = likeMap.get(rid) || { count: 0, liked: false };
-        const baseCount = Number.isFinite(current.count) ? current.count : 0;
-        current.count = baseCount + 1;
-        if (me && row?.user_id != null && String(row.user_id) === me) {
-          current.liked = true;
-        }
-        likeMap.set(rid, current);
-      }
-    } catch (err) {
-      console.error('fetchReplyLikes failed', err);
-    }
-    return likeMap;
-  }
-
-  async function toggleLike(replyId, buttonEl = null) {
-    const id = typeof replyId === 'string'
-      ? replyId.trim()
-      : replyId != null
-        ? String(replyId)
-        : '';
-    if (!id) return null;
-    if (!useRemote()) {
-      console.warn('toggleLike requires an active session.');
-      return null;
-    }
-    const profileId = getActiveProfileId();
-    if (!profileId) {
-      console.warn('toggleLike: missing profile id');
-      return null;
-    }
-    let selectorId = id;
-    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-      selectorId = CSS.escape(id);
-    }
-    const button = buttonEl || document.querySelector(`[data-like-btn="${selectorId}"]`);
-    if (!button) return null;
-    const originalState = parseLikeButtonState(button);
-    const nextLiked = !originalState.liked;
-    const optimisticState = {
-      liked: nextLiked,
-      count: Math.max(0, originalState.count + (nextLiked ? 1 : -1)),
-    };
-    applyLikeButtonState(button, optimisticState);
-    const payload = { replyId: id, action: nextLiked ? 'like' : 'unlike' };
-    const headers = { 'Content-Type': 'application/json' };
-    try {
-      const ok = await ensureSupabaseClient();
-      if (!ok && !isAnonProfile()) {
-        throw new Error('Supabase indisponible');
-      }
-      if (isAnonProfile()) {
-        const anonCode = activeProfile?.code_unique
-          ? String(activeProfile.code_unique).trim().toUpperCase()
-          : '';
-        if (!anonCode) throw new Error('Code anonyme manquant');
-        payload.code = anonCode;
-      } else {
-        const token = await resolveAccessToken();
-        if (!token) throw new Error('Token manquant');
-        headers.Authorization = `Bearer ${token}`;
-      }
-      const response = await fetch('/api/like', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const text = await response.text().catch(() => '');
-      let json = null;
-      if (text) {
-        try { json = JSON.parse(text); }
-        catch {}
-      }
-      if (!response.ok) {
-        throw new Error(json?.error || 'Action impossible');
-      }
-      const serverCount = Number(json?.count);
-      const finalState = {
-        count: Number.isFinite(serverCount) ? Math.max(0, serverCount) : optimisticState.count,
-        liked: typeof json?.liked === 'boolean' ? json.liked : nextLiked,
-      };
-      applyLikeButtonState(button, finalState);
-      return finalState;
-    } catch (err) {
-      console.error('toggleLike failed', err);
-      applyLikeButtonState(button, originalState);
-      return null;
-    }
-  }
-
-  async function handleLikeButtonClick(event) {
-    const button = event.target.closest('[data-like-btn]');
-    if (!button) return;
-    if (!useRemote()) return;
-    event.preventDefault();
-    const replyId = button.getAttribute('data-like-btn');
-    if (!replyId || button.dataset.busy === '1') return;
-    button.dataset.busy = '1';
-    button.disabled = true;
-    try {
-      await toggleLike(replyId, button);
-    } finally {
-      button.dataset.busy = '0';
-      button.disabled = false;
-    }
-  }
-
-  if (typeof window !== 'undefined') {
-    window.toggleLike = toggleLike;
-  }
-
   // Communauté
   function renderCommunity() {
     // Garde d’instance pour éviter les courses et les doublons DOM
@@ -6969,10 +6800,6 @@ const TIMELINE_MILESTONES = [
     if (!list) {
       console.warn('Forum list container introuvable');
       return;
-    }
-    if (!list.dataset.likeBound) {
-      list.addEventListener('click', handleLikeButtonClick);
-      list.dataset.likeBound = '1';
     }
     const isListActive = () => document.body.contains(list) && renderCommunity._rid === rid;
     list.innerHTML = '';
@@ -7206,7 +7033,7 @@ const TIMELINE_MILESTONES = [
       return null;
     };
 
-    const renderTopics = (topics, replies, authorsMap, likeState = new Map()) => {
+    const renderTopics = (topics, replies, authorsMap) => {
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
       if (rid !== renderCommunity._rid) return;
@@ -7306,7 +7133,6 @@ const TIMELINE_MILESTONES = [
         timeIso,
         contentHtml,
         messageBtn,
-        likeButtonHtml = '',
         label,
         isAi,
         isSelf,
@@ -7324,11 +7150,8 @@ const TIMELINE_MILESTONES = [
         const timeHtml = timeLabel
           ? `<time datetime="${escapeHtml(timeIso || '')}">${escapeHtml(timeLabel)}</time>`
           : '';
-        const actionParts = [];
-        if (messageBtn) actionParts.push(messageBtn);
-        if (likeButtonHtml) actionParts.push(likeButtonHtml);
-        const actionsHtml = actionParts.length
-          ? `<div class="topic-entry__actions">${actionParts.join('')}</div>`
+        const actionsHtml = messageBtn
+          ? `<div class="topic-entry__actions">${messageBtn}</div>`
           : '';
         let entryClass = 'topic-entry';
         if (highlight) entryClass += ' topic-entry--highlight';
@@ -7356,11 +7179,11 @@ const TIMELINE_MILESTONES = [
             </article>
           `;
         }
-      const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
-      const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
-      const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
-      return `
-        <article class="${entryClass}">
+        const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
+        const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
+        const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
+        return `
+          <article class="${entryClass}">
             <div class="topic-entry__head">
               <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
               <div class="topic-entry__meta">
@@ -7378,33 +7201,6 @@ const TIMELINE_MILESTONES = [
             </div>
           </article>
         `;
-      };
-      const resolveLikeInfo = (replyId) => {
-        if (!replyId) return { count: 0, liked: false };
-        if (likeState && typeof likeState.get === 'function') {
-          const value = likeState.get(replyId);
-          if (value) {
-            const rawCount = Number(value.count);
-            const count = Number.isFinite(rawCount) ? Math.max(0, rawCount) : 0;
-            return { count, liked: !!value.liked };
-          }
-        }
-        return { count: 0, liked: false };
-      };
-      const renderLikeButton = (replyId) => {
-        if (!replyId) return '';
-        const info = resolveLikeInfo(replyId);
-        const count = Number.isFinite(info.count) ? Math.max(0, info.count) : 0;
-        const liked = !!info.liked;
-        const btnClass = liked ? 'topic-like topic-like--active' : 'topic-like';
-        const labelAction = liked ? 'Retirer le like' : 'Aimer cette réponse';
-        const safeLabel = escapeHtml(labelAction);
-        return `
-          <button class="${btnClass}" type="button" data-like-btn="${escapeHtml(replyId)}" data-count="${count}" data-liked="${liked ? '1' : '0'}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${safeLabel}">
-            <span class="topic-like__icon" aria-hidden="true">👍</span>
-            <span class="topic-like__count">${count}</span>
-          </button>
-        `.trim();
       };
       topics.slice().forEach(t => {
         let title = t.title || '';
@@ -7472,8 +7268,6 @@ const TIMELINE_MILESTONES = [
           const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
           const replyOwnerId = resolveAuthorId(r);
           const replyIsSelf = activeId && replyOwnerId ? String(replyOwnerId) === String(activeId) : false;
-          const replyId = r?.id != null ? String(r.id) : '';
-          const likeButtonHtml = renderLikeButton(replyId);
           return renderThreadEntry({
             authorName: replyAuthor,
             authorMetaHtml: replyAuthorMetaHtml,
@@ -7482,7 +7276,6 @@ const TIMELINE_MILESTONES = [
             timeIso: replyIso,
             contentHtml: normalizeContent(r.content),
             messageBtn: replyMessageBtn,
-            likeButtonHtml,
             label: replyLabel,
             isAi: isReplyAi,
             isSelf: replyIsSelf,
@@ -7618,12 +7411,7 @@ const TIMELINE_MILESTONES = [
               arr.push(r);
               repliesMap.set(key, arr);
             });
-            const replyIds = repliesArr
-              .map((reply) => (reply?.id != null ? String(reply.id) : ''))
-              .filter(Boolean);
-            const likeState = await fetchReplyLikes(replyIds);
-            if (rid !== renderCommunity._rid || !isListActive()) return;
-            renderTopics(topics, repliesMap, authorsMap, likeState);
+            renderTopics(topics, repliesMap, authorsMap);
             return;
           }
           const uid = getActiveProfileId();
@@ -7779,12 +7567,7 @@ const TIMELINE_MILESTONES = [
             arr.push(reply);
             repliesMap.set(key, arr);
           });
-          const replyIds = replies
-            .map((reply) => (reply?.id != null ? String(reply.id) : ''))
-            .filter(Boolean);
-          const likeState = await fetchReplyLikes(replyIds);
-          if (rid !== renderCommunity._rid || !isListActive()) return;
-          renderTopics(topics, repliesMap, authorsMap, likeState);
+          renderTopics(topics, repliesMap, authorsMap);
         } catch (e) {
           console.error('renderCommunity load failed', e);
           showEmpty();

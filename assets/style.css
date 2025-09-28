@@ -3359,47 +3359,6 @@ section[data-route="/community"] .topic-entry__actions{
   gap:8px;
   flex:0 0 auto;
 }
-section[data-route="/community"] .topic-like{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding:6px 10px;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.18);
-  background:rgba(255,255,255,.08);
-  color:#e2e9ff;
-  font-size:13px;
-  font-weight:600;
-  line-height:1;
-  cursor:pointer;
-  transition:background .2s ease, color .2s ease, transform .2s ease, border-color .2s ease, box-shadow .2s ease;
-  min-width:0;
-}
-section[data-route="/community"] .topic-like__icon{
-  font-size:16px;
-}
-section[data-route="/community"] .topic-like:hover{
-  transform:translateY(-1px);
-  background:rgba(255,255,255,.14);
-}
-section[data-route="/community"] .topic-like:focus-visible{
-  outline:2px solid rgba(110,163,255,.8);
-  outline-offset:2px;
-}
-section[data-route="/community"] .topic-like--active{
-  background:rgba(110,163,255,.18);
-  border-color:rgba(110,163,255,.8);
-  color:#ffffff;
-  box-shadow:0 0 0 1px rgba(110,163,255,.22);
-}
-section[data-route="/community"] .topic-like--active .topic-like__icon{
-  filter:drop-shadow(0 0 6px rgba(110,163,255,.5));
-}
-section[data-route="/community"] .topic-like[disabled]{
-  opacity:.6;
-  cursor:default;
-  transform:none;
-}
 section[data-route="/community"] .topic-entry .timeline-parent-note,
 section[data-route="/community"] .topic-entry .timeline-ai-note{
   margin:0;
