@@ -3352,9 +3352,31 @@ section[data-route="/community"] .topic-entry .timeline-parent-note,
 section[data-route="/community"] .topic-entry .timeline-ai-note{
   margin:0;
 }
+section[data-route="/community"] .topic-entry .timeline-parent-note{
+  padding:12px;
+  border-radius:12px;
+  background:rgba(110,163,255,.16);
+  border:1px solid rgba(110,163,255,.26);
+  color:#ffffff;
+  font-size:13px;
+  line-height:1.55;
+}
+section[data-route="/community"] .topic-entry .timeline-parent-note__label{
+  display:block;
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:rgba(202,220,255,.9);
+  margin-bottom:4px;
+}
 section[data-route="/community"] .topic-entry .timeline-parent-note__text,
 section[data-route="/community"] .topic-entry .timeline-ai-note__text{
+  font-size:13px;
   word-break:break-word;
+}
+section[data-route="/community"] .topic-entry .timeline-parent-note__text{
+  color:#2196f3;
 }
 section[data-route="/community"] .topic-empty{
   margin:0;
