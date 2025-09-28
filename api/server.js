@@ -777,22 +777,19 @@ const server = createServer(async (req, res) => {
             return send(res, 500, JSON.stringify({ error: 'unlike failed' }), { 'Content-Type': 'application/json; charset=utf-8' });
           }
         }
-        const { data: rows, error: countError } = await context.supabase
+        const { count, error: countError } = await context.supabase
           .from('forum_reply_likes')
-          .select('reply_id,user_id')
+          .select('user_id', { count: 'exact', head: true })
           .eq('reply_id', replyId);
         if (countError) {
           console.error('[api/server] like count failed', countError);
           return send(res, 500, JSON.stringify({ error: 'count failed' }), { 'Content-Type': 'application/json; charset=utf-8' });
         }
-        const array = Array.isArray(rows) ? rows : [];
-        const count = array.length;
-        const responsePayload = { success: true, count };
-        if (actor.userId) {
-          const normalizedActorId = String(actor.userId);
-          const liked = array.some((row) => row?.user_id != null && String(row.user_id) === normalizedActorId);
-          responsePayload.liked = liked;
-        }
+        const responsePayload = {
+          success: true,
+          count: Number.isFinite(count) ? count : 0,
+          liked: action === 'like',
+        };
         return send(res, 200, JSON.stringify(responsePayload), { 'Content-Type': 'application/json; charset=utf-8' });
       }
 
@@ -810,6 +807,7 @@ const server = createServer(async (req, res) => {
           const status = actor.status || 401;
           return send(res, status, JSON.stringify({ error: actor.error }), { 'Content-Type': 'application/json; charset=utf-8' });
         }
+        const actorId = actor.userId ? String(actor.userId) : '';
         const { data, error } = await context.supabase
           .from('forum_reply_likes')
           .select('reply_id,user_id')
@@ -825,24 +823,29 @@ const server = createServer(async (req, res) => {
             const rid = row?.reply_id != null ? String(row.reply_id) : '';
             if (!rid) return;
             counts[rid] = (counts[rid] || 0) + 1;
-            if (actor.userId && row?.user_id != null && String(row.user_id) === actor.userId) {
+            if (actorId && row?.user_id != null && String(row.user_id) === actorId) {
               likedMap[rid] = true;
             }
           });
         }
         replyIds.forEach((id) => {
           if (!(id in counts)) counts[id] = 0;
-          if (actor.userId && !(id in likedMap)) likedMap[id] = false;
+          if (actorId && !(id in likedMap)) likedMap[id] = false;
         });
         const single = replyIds.length === 1;
         const responsePayload = { success: true };
         if (single) {
           const key = replyIds[0];
           responsePayload.count = counts[key] ?? 0;
-          if (actor.userId) responsePayload.liked = !!likedMap[key];
+          responsePayload.liked = actorId ? !!likedMap[key] : false;
         } else {
           responsePayload.count = counts;
-          if (actor.userId) responsePayload.liked = likedMap;
+          responsePayload.liked = actorId
+            ? likedMap
+            : replyIds.reduce((acc, id) => {
+                acc[id] = false;
+                return acc;
+              }, {});
         }
         return send(res, 200, JSON.stringify(responsePayload), { 'Content-Type': 'application/json; charset=utf-8' });
       }
