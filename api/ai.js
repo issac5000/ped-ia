@@ -1931,9 +1931,9 @@ Propose des recommandations précises et actionnables plutôt que des générali
         });
         let contextText = [
           '--- CONTEXTE ENFANTS ---',
-          childrenFactsText || '(aucune donnée disponible en BDD)',
+          childrenFactsText || '(aucune donnée en BDD)',
         ].join('\n');
-        if (!hasChildrenFromDb && aiBilanNarrative) {
+        if (childrenFromDb.length === 0 && aiBilanNarrative) {
           contextText += `\n\n--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}`;
         }
         const contextFromDb = hasChildrenFromDb;
@@ -2087,6 +2087,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const payload = [{
           profile_id: profileId,
           children_ids: childIds,
+          children_facts_text: childrenFactsText || null,
           ai_bilan: bilan.slice(0, 4000),
           last_generated_at: nowIso,
         }];
@@ -2104,7 +2105,9 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        return res.status(200).send(JSON.stringify({ bilan, lastGeneratedAt: nowIso }));
+        return res.status(200).send(
+          JSON.stringify({ bilan, lastGeneratedAt: nowIso, childrenFactsText })
+        );
       }
       case 'child-full-report': {
         const apiKey = process.env.OPENAI_API_KEY;

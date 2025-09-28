@@ -1,4 +1,9 @@
-import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
+import {
+  HttpError,
+  clearFamilyContextAiBilan,
+  getServiceConfig,
+  supabaseRequest,
+} from '../lib/anon-children.js';
 
 function extractBearerToken(header) {
   if (typeof header !== 'string') return '';
@@ -62,6 +67,14 @@ async function invalidateFamilyContext(supaUrl, serviceKey, profileId) {
     'Content-Type': 'application/json',
   };
   try {
+    try {
+      await clearFamilyContextAiBilan(supaUrl, serviceKey, normalizedProfileId);
+    } catch (err) {
+      console.warn('[api/child-updates] unable to clear family_context ai_bilan', {
+        profileId: normalizedProfileId,
+        err,
+      });
+    }
     await supabaseRequest(
       `${supaUrl}/rest/v1/family_context?profile_id=eq.${encodeURIComponent(normalizedProfileId)}`,
       {

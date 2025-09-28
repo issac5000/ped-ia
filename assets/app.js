@@ -6209,9 +6209,17 @@ const TIMELINE_MILESTONES = [
         ${childrenList}
       </div>
     `;
-    const bilanRaw = typeof data.familyContext?.ai_bilan === 'string' ? data.familyContext.ai_bilan.trim() : '';
-    const bilanText = bilanRaw
-      ? `<div class="family-bilan-text"><p>${escapeHtml(bilanRaw).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p></div>`
+    const childrenFactsRaw = typeof data.familyContext?.children_facts_text === 'string'
+      ? data.familyContext.children_facts_text.trim()
+      : typeof data.familyContext?.childrenFactsText === 'string'
+        ? data.familyContext.childrenFactsText.trim()
+        : '';
+    const aiBilanRaw = typeof data.familyContext?.ai_bilan === 'string'
+      ? data.familyContext.ai_bilan.trim()
+      : '';
+    const displayBilan = childrenFactsRaw || aiBilanRaw;
+    const bilanText = displayBilan
+      ? `<div class="family-bilan-text"><p>${escapeHtml(displayBilan).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p></div>`
       : '<div class="empty-state muted">Aucun bilan généré pour l’instant.</div>';
     let generatedInfo = '';
     if (data.familyContext?.last_generated_at) {
@@ -6484,10 +6492,16 @@ const TIMELINE_MILESTONES = [
               const childrenIds = Array.isArray(fc.children_ids)
                 ? fc.children_ids
                 : Array.isArray(fc.childrenIds)
-                  ? fc.childrenIds
-                  : null;
+                    ? fc.childrenIds
+                    : null;
+              const childrenFactsText = typeof fc.children_facts_text === 'string'
+                ? fc.children_facts_text
+                : typeof fc.childrenFactsText === 'string'
+                  ? fc.childrenFactsText
+                  : '';
               familyContext = {
                 ai_bilan: aiBilan,
+                children_facts_text: childrenFactsText,
                 last_generated_at: lastGeneratedAt,
                 children_ids: childrenIds,
               };
@@ -6549,7 +6563,7 @@ const TIMELINE_MILESTONES = [
             .order('created_at', { ascending: true }),
           supabase
             .from('family_context')
-            .select('ai_bilan,last_generated_at,children_ids')
+            .select('ai_bilan,last_generated_at,children_ids,children_facts_text')
             .eq('profile_id', uid)
             .order('last_generated_at', { ascending: false })
             .limit(1),
@@ -6580,6 +6594,27 @@ const TIMELINE_MILESTONES = [
             }))
           : [];
         const familyRow = Array.isArray(familyRes.data) ? (familyRes.data[0] || null) : (familyRes.data || null);
+        const normalizedFamilyContext = (() => {
+          if (!familyRow || typeof familyRow !== 'object') return null;
+          const aiBilan = typeof familyRow.ai_bilan === 'string' ? familyRow.ai_bilan : '';
+          const childrenFactsText = typeof familyRow.children_facts_text === 'string'
+            ? familyRow.children_facts_text
+            : typeof familyRow.childrenFactsText === 'string'
+              ? familyRow.childrenFactsText
+              : '';
+          const lastGeneratedAt = familyRow.last_generated_at || familyRow.lastGeneratedAt || null;
+          const childrenIds = Array.isArray(familyRow.children_ids)
+            ? familyRow.children_ids
+            : Array.isArray(familyRow.childrenIds)
+              ? familyRow.childrenIds
+              : null;
+          return {
+            ai_bilan: aiBilan,
+            children_facts_text: childrenFactsText,
+            last_generated_at: lastGeneratedAt,
+            children_ids: childrenIds,
+          };
+        })();
         const parentUpdates = Array.isArray(parentUpdatesRes.data) ? parentUpdatesRes.data : [];
         let growthAlerts = [];
         try {
@@ -6591,7 +6626,7 @@ const TIMELINE_MILESTONES = [
           parentContext,
           parentInfo,
           children,
-          familyContext: familyRow,
+          familyContext: normalizedFamilyContext,
           parentUpdates,
           growthAlerts,
         };
@@ -6679,6 +6714,9 @@ const TIMELINE_MILESTONES = [
       try {
         const result = await regenerateFamilyContext(targetProfileId || null, targetProfileId ? '' : anonCode);
         const bilan = typeof result?.bilan === 'string' ? result.bilan : '';
+        const childrenFactsText = typeof result?.childrenFactsText === 'string'
+          ? result.childrenFactsText
+          : '';
         const generatedAt = result?.lastGeneratedAt || new Date().toISOString();
         const previousData = state.data && typeof state.data === 'object' ? state.data : {};
         const nextFamilyContext = {
@@ -6686,6 +6724,9 @@ const TIMELINE_MILESTONES = [
           ai_bilan: bilan,
           last_generated_at: generatedAt,
         };
+        if (childrenFactsText || (previousData.familyContext && Object.prototype.hasOwnProperty.call(previousData.familyContext, 'children_facts_text'))) {
+          nextFamilyContext.children_facts_text = childrenFactsText;
+        }
         state.data = { ...previousData, familyContext: nextFamilyContext };
         state.lastFetchedAt = Date.now();
         if (refreshDashboard && dashboardState.viewMode === 'family') {
