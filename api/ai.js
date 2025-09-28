@@ -2775,7 +2775,9 @@ function buildMeasurementSegments(measurement) {
   if (!measurement || !measurement.hasMeasurement) return [];
   const segments = [];
   if (measurement.current && measurement.current.hasData) {
-    const currentLabel = measurement.isLatest ? 'Valeurs actuelles' : 'Valeurs relevées';
+    const currentLabel = measurement.isLatest
+      ? 'Valeurs actuelles'
+      : 'Valeurs relevées (historique)';
     const currentValues = describeMeasurementValues(measurement.current, { label: currentLabel });
     if (currentValues) segments.push(currentValues);
     const period = describeMeasurementPeriod(measurement.current, { label: measurement.isLatest ? 'Âge/Date' : 'Période' });
@@ -2785,14 +2787,19 @@ function buildMeasurementSegments(measurement) {
     if (measurement.current.summary) segments.push(measurement.current.summary);
   }
   if (measurement.previous && measurement.previous.hasData) {
-    const previousValues = describeMeasurementValues(measurement.previous, { label: 'Référence précédente' });
+    const previousValues = describeMeasurementValues(measurement.previous, {
+      label: 'Ancienne mesure (référence)',
+    });
     if (previousValues) segments.push(previousValues);
     const previousPeriod = describeMeasurementPeriod(measurement.previous, { label: 'Période précédente' });
     if (previousPeriod) segments.push(previousPeriod);
     if (measurement.previous.summary) segments.push(measurement.previous.summary);
+    segments.push('Note: ces valeurs historiques servent uniquement de comparaison, pas comme mesures actuelles.');
   }
   if (!measurement.isLatest) {
     segments.push('Historique: relevé antérieur utilisé comme référence.');
+  } else if (measurement.previous && measurement.previous.hasData) {
+    segments.push('Les mesures actuelles remplacent définitivement les valeurs antérieures mentionnées ci-dessus.');
   }
   return segments;
 }
