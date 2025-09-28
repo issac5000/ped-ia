@@ -1751,7 +1751,7 @@ section[data-route="/community"] #forum-cats .btn-secondary{background:rgba(255,
 section[data-route="/community"] #forum-cats .btn-secondary.active{background:linear-gradient(92deg, var(--orange-strong), var(--blue-strong)); color:#ffffff; box-shadow:0 14px 28px rgba(78,124,216,.42)}
 @media(max-width:768px){
   section[data-route="/community"] .topic{padding:20px 18px}
-  section[data-route="/community"] .topic-header{align-items:flex-start}
+  section[data-route="/community"] .topic-header{align-items:flex-start; margin-bottom:12px}
   section[data-route="/community"] .topic-actions{width:100%; justify-content:flex-start}
   section[data-route="/community"] .topic-avatar{width:48px; height:48px; font-size:18px}
   section[data-route="/community"] .topic-entry{padding:16px 18px}
