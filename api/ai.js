@@ -216,6 +216,95 @@ async function fetchChildrenContextForPrompt(supaUrl, headers, profileId) {
   return { childrenFromDb, anomaliesFromDb };
 }
 
+function buildContextFromDb(childrenFromDb = [], anomaliesFromDb = []) {
+  if (!Array.isArray(childrenFromDb) || !childrenFromDb.length) {
+    return '';
+  }
+  const lines = [];
+  childrenFromDb.forEach((child, index) => {
+    if (!child) return;
+    const name = child?.name || `Enfant ${index + 1}`;
+    const growth = child?.growth || {};
+    const statusParts = [];
+    if (growth.status_global) statusParts.push(`global: ${growth.status_global}`);
+    if (growth.status_height) statusParts.push(`taille: ${growth.status_height}`);
+    if (growth.status_weight) statusParts.push(`poids: ${growth.status_weight}`);
+    const growthLine = statusParts.length
+      ? `Statuts OMS ${statusParts.join(', ')}`
+      : 'Statuts OMS: non renseigné';
+    const flagsLine = Array.isArray(child?.flags) && child.flags.length
+      ? `Signaux: ${child.flags.join(', ')}`
+      : '';
+    let updatesLine = '';
+    if (Array.isArray(child?.recent_updates) && child.recent_updates.length) {
+      const formattedUpdates = child.recent_updates
+        .slice(0, 2)
+        .map((update) => {
+          if (!update) return '';
+          const type = update?.update_type ? String(update.update_type).trim() : 'update';
+          let summary = '';
+          if (typeof update?.update_content === 'string') {
+            try {
+              const parsed = JSON.parse(update.update_content);
+              summary = typeof parsed?.summary === 'string' ? parsed.summary : '';
+            } catch {
+              summary = '';
+            }
+          } else if (update?.update_content && typeof update.update_content === 'object') {
+            summary = typeof update.update_content.summary === 'string'
+              ? update.update_content.summary
+              : '';
+          }
+          const trimmedSummary = summary ? truncateForPrompt(summary, 120) : '';
+          return trimmedSummary ? `${type}: ${trimmedSummary}` : type;
+        })
+        .filter(Boolean);
+      if (formattedUpdates.length) {
+        updatesLine = `MàJ récentes: ${formattedUpdates.join(' | ')}`;
+      }
+    }
+    const childLine = [
+      `${index + 1}. ${name}`,
+      growthLine,
+      flagsLine,
+      updatesLine,
+    ]
+      .filter(Boolean)
+      .join(' – ');
+    lines.push(truncateForPrompt(childLine, 320));
+  });
+
+  if (Array.isArray(anomaliesFromDb) && anomaliesFromDb.length) {
+    lines.push('');
+    lines.push('Anomalies OMS détectées:');
+    anomaliesFromDb.forEach((child) => {
+      if (!child) return;
+      const name = child?.name || 'Enfant';
+      const growth = child?.growth || {};
+      const anomalyParts = [];
+      if (growth.status_global) anomalyParts.push(`global: ${growth.status_global}`);
+      if (growth.status_height) anomalyParts.push(`taille: ${growth.status_height}`);
+      if (growth.status_weight) anomalyParts.push(`poids: ${growth.status_weight}`);
+      const anomalyLine = anomalyParts.length ? anomalyParts.join(', ') : 'statut à préciser';
+      lines.push(truncateForPrompt(`- ${name}: ${anomalyLine}`, 240));
+    });
+  }
+
+  return lines.join('\n').trim();
+}
+
+function fallbackFromAiBilan(aiBilan) {
+  if (!aiBilan) return '';
+  const formatted = formatFamilyAiBilanForPrompt(aiBilan);
+  if (formatted) return formatted;
+  if (typeof aiBilan === 'string') return aiBilan.trim();
+  try {
+    return truncateForPrompt(JSON.stringify(aiBilan), 400);
+  } catch {
+    return '';
+  }
+}
+
 const DEFAULT_PARENT_CHILD_CONTEXT = Object.freeze({
   parent: {
     name: 'non renseigné',
@@ -1748,6 +1837,33 @@ Propose des recommandations précises et actionnables plutôt que des générali
           console.warn('[family-bilan] profile not found in Supabase', { profileId });
           return res.status(404).json({ error: 'No profile data', profileId });
         }
+        let childrenContext = { childrenFromDb: [], anomaliesFromDb: [] };
+        try {
+          childrenContext = await fetchChildrenContextForPrompt(supaUrl, headers, profileId);
+        } catch (err) {
+          console.warn('[family-bilan] children context fetch failed', { profileId, err });
+        }
+        const { childrenFromDb, anomaliesFromDb } = childrenContext;
+        console.log('[AI DEBUG] family_full_report data', { children: childrenFromDb });
+        let contextText = '';
+        let contextFromDb = false;
+        if (Array.isArray(childrenFromDb) && childrenFromDb.length) {
+          contextFromDb = true;
+          contextText = buildContextFromDb(childrenFromDb, anomaliesFromDb);
+        } else {
+          let aiBilanForContext = null;
+          try {
+            aiBilanForContext = await fetchFamilyBilanForPrompt({
+              profileId,
+              codeUnique,
+              supaUrl,
+              headers,
+            });
+          } catch (err) {
+            console.warn('[family-bilan] unable to fetch ai_bilan for fallback', { profileId, err });
+          }
+          contextText = fallbackFromAiBilan(aiBilanForContext);
+        }
         const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
         if (childIds.length) {
           const inParam = childIds.map((id) => `${encodeURIComponent(id)}`).join(',');
@@ -1843,6 +1959,12 @@ Propose des recommandations précises et actionnables plutôt que des générali
             ? `Historique parental récent:\n${parentUpdatesText.join('\n')}`
             : 'Historique parental: aucun changement récent consigné.',
         ];
+        if (contextText) {
+          const contextLabel = contextFromDb
+            ? 'Synthèse enfants (BDD)'
+            : 'Synthèse enfants (ai_bilan)';
+          userPromptSections.unshift(`${contextLabel}:\n${contextText}`);
+        }
         const system = `Tu es Ped’IA, coach familial bienveillant. À partir des observations enfants et du contexte parental, rédige un bilan structuré en français (400 mots max).
 Structure attendue :
 1. État général de la famille (quelques phrases)
@@ -1954,6 +2076,36 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           return res.status(500).json({ error: 'Missing Supabase service credentials' });
         }
         const supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+        let childrenContext = { childrenFromDb: [], anomaliesFromDb: [] };
+        try {
+          childrenContext = await fetchChildrenContextForPrompt(supaUrl, supabaseHeaders, profileId || '');
+        } catch (err) {
+          console.warn('[ai] child-full-report children context fetch failed', { profileId: profileId || null, err });
+        }
+        const { childrenFromDb, anomaliesFromDb } = childrenContext;
+        console.log('[AI DEBUG] child_full_report data', { children: childrenFromDb });
+        let contextText = '';
+        let contextFromDb = false;
+        if (Array.isArray(childrenFromDb) && childrenFromDb.length) {
+          contextFromDb = true;
+          contextText = buildContextFromDb(childrenFromDb, anomaliesFromDb);
+        } else if (profileId || codeUnique) {
+          try {
+            const aiBilanForContext = await fetchFamilyBilanForPrompt({
+              profileId,
+              codeUnique,
+              supaUrl,
+              headers: supabaseHeaders,
+            });
+            contextText = fallbackFromAiBilan(aiBilanForContext);
+          } catch (err) {
+            console.warn('[ai] child-full-report family bilan fallback failed', {
+              profileId: profileId || null,
+              codeUnique: codeUnique || null,
+              err,
+            });
+          }
+        }
 
         if (!profileId && codeUnique) {
           try {
@@ -2054,6 +2206,12 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const promptSections = [resumeSection];
         if (baselineSection) promptSections.push(baselineSection);
         promptSections.push(growthSection, detailsSection);
+        if (contextText) {
+          const contextLabel = contextFromDb
+            ? 'Contexte familial (BDD)'
+            : 'Contexte familial (ai_bilan)';
+          promptSections.push(`${contextLabel}:\n${contextText}`);
+        }
         const userPrompt = promptSections.join('\n---\n');
         console.info('[ai] prompt sizes', { userChars: userPrompt.length });
 
