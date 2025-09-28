@@ -1419,6 +1419,9 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
         }
+        if (parentComment) {
+          userParts.push(`Le parent écrit: « ${parentComment} ». Réponds-lui explicitement en reformulant l'idée clé et en montrant que tu l'as entendue.`);
+        }
         if (!hasChildrenFromDb && familyBilanText) {
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
@@ -1448,7 +1451,12 @@ Ton ton reste chaleureux, mais privilégie l'analyse factuelle et les actions co
 Relie explicitement les informations concernant les enfants (prénoms, croissance, incidents, santé) aux conseils que tu donnes.
 Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
 Propose des recommandations précises et actionnables plutôt que des généralités.`;
-        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent, NE NEGLIGE SURTOUT PAS LE COMMENTAIRE DU PARENT, PREND LE EN CONSIDERATION ET REPONDS Y DE FAçON ADAPTEE. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental. Sois concret et bienveillant, 150 mots max.`;
+        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent, NE NEGLIGE SURTOUT PAS LE COMMENTAIRE DU PARENT, PRENDS-LE EN CONSIDÉRATION ET REPONDS-Y DE FAçON ADAPTÉE. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental.`;
+        system += `\nStructure ta réponse en trois blocs clairement identifiables :
+- « Côté parent » : remercie le parent, reformule en une à deux phrases l'idée principale de son commentaire et résume son état émotionnel, son stress et sa fatigue (même si c'est pour signaler que les données manquent).
+- « Actualité des enfants » : développe les observations sur chaque enfant en reliant leur situation aux ressentis parentaux.
+- « Pistes concrètes » : propose des actions pratiques et adaptées à la famille.`;
+        system += `\nSois concret, bienveillant et reste dans la limite de 150 mots.`;
         if (growthAnomalyChildren.length) {
           const anomalyLines = growthAnomalyChildren
             .map((entry) => `- ${entry.name}: ${entry.growth}`)
