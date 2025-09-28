@@ -1,10 +1,10 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
 import { buildGrowthPromptLines, summarizeGrowthStatus } from '../assets/ia.js';
 
-async function resolveProfileIdFromCode(codeUnique, { supaUrl: supaUrlArg, headers }) {
+async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
   if (!codeUnique) return null;
   const lookup = await supabaseRequest(
-    `${supaUrlArg}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
+    `${supaUrl}/rest/v1/profiles?select=id&code_unique=eq.${encodeURIComponent(codeUnique)}&limit=1`,
     { headers }
   );
   const row = Array.isArray(lookup) ? lookup[0] : lookup;
@@ -27,20 +27,38 @@ function getAnonSupabaseConfig() {
   return { supaUrl, anonKey };
 }
 
-async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
+async function fetchFamilyBilanForPrompt({ profileId, codeUnique, supaUrl: providedUrl, headers: providedHeaders }) {
   let normalizedProfileId = profileId == null ? '' : String(profileId).trim();
   const normalizedCode = codeUnique == null ? '' : String(codeUnique).trim().toUpperCase();
   if (!normalizedProfileId && !normalizedCode) return null;
 
+  let supaUrl = providedUrl || '';
+  let headers = providedHeaders || null;
+
   if (!normalizedProfileId && normalizedCode) {
-    const { supaUrl, serviceKey } = getServiceConfig();
-    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+    let resolveUrl = supaUrl;
+    let resolveHeaders = headers;
+    if (!resolveUrl || !resolveHeaders) {
+      const serviceConfig = getServiceConfig();
+      resolveUrl = serviceConfig.supaUrl;
+      resolveHeaders = {
+        apikey: serviceConfig.serviceKey,
+        Authorization: `Bearer ${serviceConfig.serviceKey}`,
+        'Content-Type': 'application/json',
+      };
+    }
     normalizedProfileId =
-      (await resolveProfileIdFromCode(normalizedCode, { supaUrl, headers })) || '';
+      (await resolveProfileIdFromCode(normalizedCode, { supaUrl: resolveUrl, headers: resolveHeaders })) || '';
+    if (!supaUrl) supaUrl = resolveUrl;
+    if (!headers) headers = resolveHeaders;
   }
 
-  const { supaUrl, anonKey } = getAnonSupabaseConfig();
-  const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+  if (!supaUrl || !headers) {
+    const anonConfig = getAnonSupabaseConfig();
+    supaUrl = anonConfig.supaUrl;
+    headers = { apikey: anonConfig.anonKey, Authorization: `Bearer ${anonConfig.anonKey}` };
+  }
+
   const effectiveProfileId = normalizedProfileId;
   if (!effectiveProfileId) return null;
 
@@ -58,79 +76,133 @@ async function fetchFamilyBilanForPrompt({ profileId, codeUnique }) {
   return row?.ai_bilan ?? null;
 }
 
-async function fetchChildrenContextForPrompt({ profileId, codeUnique }) {
-  const normalizedProfileId = typeof profileId === 'string' ? profileId.trim() : '';
-  const normalizedCode = typeof codeUnique === 'string' ? codeUnique.trim().toUpperCase() : '';
-  if (!normalizedProfileId && !normalizedCode) {
-    return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: '' };
+async function fetchChildrenContextForPrompt(supaUrl, headers, profileId) {
+  const empty = { childrenFromDb: [], anomaliesFromDb: [] };
+  if (!supaUrl || !headers || !profileId) {
+    return empty;
   }
 
-  let supaUrl = '';
-  let headers = null;
-  let effectiveProfileId = normalizedProfileId;
-  let usingService = false;
+  const childrenFromDb = [];
 
   try {
-    if (normalizedProfileId) {
-      const { supaUrl: anonUrl, anonKey } = getAnonSupabaseConfig();
-      supaUrl = anonUrl;
-      headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
-    } else {
-      const { supaUrl: serviceUrl, serviceKey } = getServiceConfig();
-      supaUrl = serviceUrl;
-      headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
-      usingService = true;
-      const resolved = await resolveProfileIdFromCode(normalizedCode, { supaUrl: serviceUrl, headers });
-      if (!resolved) return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: '' };
-      effectiveProfileId = resolved;
-    }
-
-    if (!effectiveProfileId) return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: '' };
-
-    const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob,ai_preview,user_id&user_id=eq.${encodeURIComponent(
-      effectiveProfileId
-    )}&order=dob.asc`;
-    const childrenRows = await supabaseRequest(childrenUrl, { headers }).catch((err) => {
-      console.warn('[ai] fetchChildrenContextForPrompt children failed', {
-        profileId: effectiveProfileId,
-        usingService,
-        details: err?.message || err,
-      });
-      return [];
-    });
-    const children = Array.isArray(childrenRows) ? childrenRows.filter(Boolean) : [];
-    const childSummary = children.length ? formatChildrenForPrompt(children).slice(0, 800) : '';
-    const childNames = children
-      .map((child) => (child?.first_name ? String(child.first_name).trim() : ''))
-      .filter(Boolean)
-      .slice(0, 10);
-
-    const childIds = children.map((child) => child?.id).filter(Boolean).map(String);
-    if (!childIds.length) {
-      return { childSummary, childUpdatesSummary: '', childNames, effectiveProfileId };
-    }
-
-    const inParam = childIds.map((id) => encodeURIComponent(id)).join(',');
-    const updatesUrl = `${supaUrl}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=${Math.min(
-      15,
-      childIds.length * 3
+    const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex&user_id=eq.${encodeURIComponent(
+      profileId
     )}`;
-    const updatesRows = await supabaseRequest(updatesUrl, { headers }).catch((err) => {
-      console.warn('[ai] fetchChildrenContextForPrompt updates failed', {
-        profileId: effectiveProfileId,
-        usingService,
+    const childrenRows = await supabaseRequest(childrenUrl, { headers }).catch((err) => {
+      console.warn('[AI DEBUG] children context fetch failed', {
+        step: 'children',
+        profileId,
         details: err?.message || err,
       });
       return [];
     });
-    const updatesList = formatChildUpdatesForFamilyPrompt(updatesRows, children).slice(0, 6);
-    const childUpdatesSummary = updatesList.length ? updatesList.join('\n').slice(0, 900) : '';
+    const normalizedChildren = Array.isArray(childrenRows) ? childrenRows.filter(Boolean) : [];
 
-    return { childSummary, childUpdatesSummary, childNames, effectiveProfileId };
+    for (const [index, childRow] of normalizedChildren.entries()) {
+      const childId = childRow?.id == null ? '' : String(childRow.id).trim();
+      if (!childId) continue;
+
+      const normalizeText = (value) =>
+        typeof value === 'string' ? value.trim() : value == null ? '' : String(value).trim();
+      const normalizeNumber = (value) => {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+
+      const childEntry = {
+        id: childId,
+        name: normalizeText(childRow?.first_name) || `Enfant ${index + 1}`,
+        sex: normalizeText(childRow?.sex),
+        growth: null,
+        recent_updates: [],
+      };
+
+      const growthUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,first_name,sex,agemos,height_cm,weight_kg,status_height,status_weight,status_global&child_id=eq.${encodeURIComponent(
+        childId
+      )}&order=agemos.desc&limit=1`;
+      const growthRows = await supabaseRequest(growthUrl, { headers }).catch((err) => {
+        console.warn('[AI DEBUG] children context fetch failed', {
+          step: 'growth',
+          childId,
+          details: err?.message || err,
+        });
+        return [];
+      });
+      const growthRow = Array.isArray(growthRows) ? growthRows[0] : growthRows;
+      if (growthRow && typeof growthRow === 'object') {
+        const growthName = normalizeText(growthRow.first_name);
+        const growthSex = normalizeText(growthRow.sex);
+        if (growthName) childEntry.name = growthName;
+        if (growthSex) childEntry.sex = growthSex;
+        childEntry.growth = {
+          agemos: normalizeNumber(growthRow.agemos),
+          height_cm: normalizeNumber(growthRow.height_cm),
+          weight_kg: normalizeNumber(growthRow.weight_kg),
+          status_height: normalizeText(growthRow.status_height),
+          status_weight: normalizeText(growthRow.status_weight),
+          status_global: normalizeText(growthRow.status_global),
+        };
+      }
+
+      const updatesUrl = `${supaUrl}/rest/v1/child_updates?select=child_id,update_type,update_content,created_at&child_id=eq.${encodeURIComponent(
+        childId
+      )}&order=created_at.desc&limit=3`;
+      const updatesRows = await supabaseRequest(updatesUrl, { headers }).catch((err) => {
+        console.warn('[AI DEBUG] children context fetch failed', {
+          step: 'updates',
+          childId,
+          details: err?.message || err,
+        });
+        return [];
+      });
+      if (Array.isArray(updatesRows) && updatesRows.length) {
+        childEntry.recent_updates = updatesRows
+          .filter(Boolean)
+          .map((row) => ({
+            child_id: row?.child_id ?? childId,
+            update_type: row?.update_type ?? null,
+            update_content: row?.update_content ?? null,
+            created_at: row?.created_at ?? null,
+          }));
+      }
+
+      childrenFromDb.push(childEntry);
+    }
   } catch (err) {
-    console.warn('[ai] fetchChildrenContextForPrompt unexpected error', err);
-    return { childSummary: '', childUpdatesSummary: '', childNames: [], effectiveProfileId: normalizedProfileId };
+    console.warn('[AI DEBUG] children context fetch failed', { details: err?.message || err });
+    return empty;
   }
+
+  const normalizeStatusLabel = (value) => {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase();
+  };
+
+  const anomaliesFromDb = childrenFromDb.filter((child) => {
+    const growth = child?.growth;
+    if (!growth || typeof growth !== 'object') return false;
+    const globalStatus = normalizeStatusLabel(growth.status_global);
+    const heightStatus = normalizeStatusLabel(growth.status_height);
+    const weightStatus = normalizeStatusLabel(growth.status_weight);
+    if (globalStatus && globalStatus !== 'normal') return true;
+    if (heightStatus && ['low', 'high', 'out'].includes(heightStatus)) return true;
+    if (weightStatus && ['low', 'high', 'out'].includes(weightStatus)) return true;
+    return false;
+  });
+
+  console.log('[AI DEBUG] children_from_db', { count: childrenFromDb.length });
+  console.log(
+    '[AI DEBUG] anomalies_from_db',
+    anomaliesFromDb.map((child) => ({
+      name: child?.name || '',
+      status_global: child?.growth?.status_global || '',
+      status_h: child?.growth?.status_height || '',
+      status_w: child?.growth?.status_weight || '',
+    }))
+  );
+
+  return { childrenFromDb, anomaliesFromDb };
 }
 
 const DEFAULT_PARENT_CHILD_CONTEXT = Object.freeze({
@@ -470,7 +542,7 @@ function buildDefaultParentChildContext() {
   };
 }
 
-async function buildContext(profileId, { codeUnique } = {}) {
+async function buildContext(profileId, { codeUnique, disableAiBilanFallback } = {}) {
   const normalized = typeof profileId === 'string' ? profileId.trim() : '';
   if (!normalized) {
     return buildDefaultParentChildContext();
@@ -533,6 +605,10 @@ async function buildContext(profileId, { codeUnique } = {}) {
     };
 
     if (!childrenRows.length) {
+      if (disableAiBilanFallback) {
+        context.children = [];
+        return context;
+      }
       let childrenFallback = [];
       try {
         const aiBilan = await fetchFamilyBilanForPrompt({ profileId: normalized, codeUnique });
@@ -872,12 +948,66 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           typeof body.code === 'string' ? body.code.trim().toUpperCase() : '',
         ];
         const codeUnique = codeCandidates.find((candidate) => candidate) || '';
+        const isAnonymousRequest = !effectiveProfileId || Boolean(codeUnique);
+
+        let supaUrlForTables = '';
+        let supabaseHeaders = null;
+
+        if (isAnonymousRequest) {
+          const effectiveUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+          if (!effectiveUrl) {
+            console.error('[ai/parent-update] Missing SUPABASE_URL for anonymous mode');
+            throw new HttpError(500, 'Missing SUPABASE_URL');
+          }
+          const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+          const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+          const effectiveHeaders = serviceKey
+            ? { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }
+            : anonKey
+              ? { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' }
+              : null;
+          if (!effectiveHeaders) {
+            console.error('[ai/parent-update] Missing Supabase credentials for anonymous mode');
+            throw new HttpError(500, 'Missing Supabase credentials');
+          }
+          supaUrlForTables = effectiveUrl;
+          supabaseHeaders = effectiveHeaders;
+
+          if (!effectiveProfileId && codeUnique) {
+            const resolvedProfileId = await resolveProfileIdFromCode(codeUnique, {
+              supaUrl: supaUrlForTables,
+              headers: supabaseHeaders,
+            });
+            if (!resolvedProfileId) {
+              return res.status(400).json({
+                error: 'profile_not_found',
+                message: 'Aucun profil associé à ce code.',
+              });
+            }
+            effectiveProfileId = resolvedProfileId;
+            console.log('[AI DEBUG] resolved profile_id from code', { profileId: effectiveProfileId });
+          }
+        } else {
+          const anonConfig = getAnonSupabaseConfig();
+          supaUrlForTables = anonConfig.supaUrl;
+          supabaseHeaders = {
+            apikey: anonConfig.anonKey,
+            Authorization: `Bearer ${anonConfig.anonKey}`,
+            'Content-Type': 'application/json',
+          };
+        }
+
         let aiBilan = null;
         let familyBilanText = '';
         let fallbackChildrenFromAiBilan = [];
-        if (profileId || codeUnique) {
+        if ((effectiveProfileId || codeUnique) && supaUrlForTables && supabaseHeaders) {
           try {
-            aiBilan = await fetchFamilyBilanForPrompt({ profileId, codeUnique });
+            aiBilan = await fetchFamilyBilanForPrompt({
+              profileId: effectiveProfileId,
+              codeUnique,
+              supaUrl: supaUrlForTables,
+              headers: supabaseHeaders,
+            });
             familyBilanText = formatFamilyAiBilanForPrompt(aiBilan);
             if (aiBilan) {
               fallbackChildrenFromAiBilan = extractChildrenFromStructuredAiBilan(aiBilan);
@@ -885,7 +1015,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           } catch (err) {
             const status = err instanceof HttpError ? err.status : null;
             console.warn('[ai/parent-update] unable to fetch family_context.ai_bilan', {
-              profileId: profileId || null,
+              profileId: effectiveProfileId || null,
               codeUnique: codeUnique || null,
               status,
               details: err?.details || err?.message || String(err || ''),
@@ -917,18 +1047,95 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             : [];
         const { preview: familyBilanPreview } = makeFamilyBilanPreview(bilanArray);
 
-        const {
-          childSummary,
-          childUpdatesSummary,
-          childNames,
-          effectiveProfileId: resolvedChildProfileId,
-        } = await fetchChildrenContextForPrompt({ profileId, codeUnique });
-        if (resolvedChildProfileId) {
-          effectiveProfileId = resolvedChildProfileId;
-        }
+        const childrenContext = await fetchChildrenContextForPrompt(
+          supaUrlForTables,
+          supabaseHeaders,
+          effectiveProfileId
+        );
+        const childrenFromDb = Array.isArray(childrenContext?.childrenFromDb)
+          ? childrenContext.childrenFromDb
+          : [];
+        const anomaliesFromDb = Array.isArray(childrenContext?.anomaliesFromDb)
+          ? childrenContext.anomaliesFromDb
+          : [];
+        const hasChildrenFromDb = childrenFromDb.length > 0;
 
-        const summarizedContext = await buildContext(effectiveProfileId, { codeUnique });
+        const childNames = childrenFromDb
+          .map((child) => (child?.name ? String(child.name).trim() : ''))
+          .filter(Boolean)
+          .slice(0, 10);
+
+        const formatNumberForPrompt = (value) => {
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            return Number.isInteger(value) ? String(value) : value.toFixed(1);
+          }
+          if (typeof value === 'string') {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+              return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(1);
+            }
+          }
+          return '';
+        };
+
+        const childrenFactLines = hasChildrenFromDb
+          ? childrenFromDb.map((child, index) => {
+              const parts = [`${index + 1}. ${child?.name || 'Enfant'}`];
+              if (child?.sex) parts.push(`sexe: ${child.sex}`);
+              const growth = child?.growth && typeof child.growth === 'object' ? child.growth : {};
+              const growthParts = [];
+              if (growth.agemos != null && growth.agemos !== '') {
+                const value = formatNumberForPrompt(growth.agemos);
+                if (value) growthParts.push(`âge (mois): ${value}`);
+              }
+              if (growth.height_cm != null && growth.height_cm !== '') {
+                const value = formatNumberForPrompt(growth.height_cm);
+                if (value) growthParts.push(`taille: ${value} cm`);
+              }
+              if (growth.weight_kg != null && growth.weight_kg !== '') {
+                const value = formatNumberForPrompt(growth.weight_kg);
+                if (value) growthParts.push(`poids: ${value} kg`);
+              }
+              if (growth.status_global) growthParts.push(`statut global: ${growth.status_global}`);
+              if (growth.status_height) growthParts.push(`statut taille: ${growth.status_height}`);
+              if (growth.status_weight) growthParts.push(`statut poids: ${growth.status_weight}`);
+              const details = growthParts.filter(Boolean).join(' ; ');
+              return details ? `${parts.join(' – ')} : ${details}` : parts.join(' – ');
+            })
+          : [];
+        const childSummary = childrenFactLines.length
+          ? childrenFactLines.slice(0, 6).join('\n').slice(0, 900)
+          : '';
+
+        const updateLines = hasChildrenFromDb
+          ? childrenFromDb.flatMap((child) => {
+              const updates = Array.isArray(child?.recent_updates)
+                ? child.recent_updates.slice(0, 3)
+                : [];
+              return updates.map((update) => {
+                const updateType = typeof update?.update_type === 'string' ? update.update_type.trim() : '';
+                const parsedContent = parseUpdateContentForPrompt(update?.update_content);
+                const summary = formatUpdateDataForPrompt(parsedContent);
+                const date = formatDateForPrompt(typeof update?.created_at === 'string' ? update.created_at : '');
+                const headerParts = [`${child?.name || 'Enfant'}`];
+                if (date) headerParts.push(`date: ${date}`);
+                if (updateType) headerParts.push(`type: ${updateType}`);
+                const header = headerParts.join(' – ');
+                const body = summary ? summary.slice(0, 180) : '';
+                return body ? `${header}: ${body}` : header;
+              });
+            })
+          : [];
+        const childUpdatesSummary = updateLines.length
+          ? updateLines.slice(0, 6).join('\n').slice(0, 900)
+          : '';
+
+        const summarizedContext = await buildContext(effectiveProfileId, {
+          codeUnique,
+          disableAiBilanFallback: hasChildrenFromDb,
+        });
         if (
+          !hasChildrenFromDb &&
           (!Array.isArray(summarizedContext?.children) || !summarizedContext.children.length) &&
           fallbackChildrenFromAiBilan.length
         ) {
@@ -936,6 +1143,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
           console.log('[AI DEBUG] fallback children from ai_bilan:', summarizedContext.children);
         }
         if (
+          !hasChildrenFromDb &&
           codeUnique &&
           (!Array.isArray(summarizedContext?.children) || !summarizedContext.children.length)
         ) {
@@ -948,43 +1156,59 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             );
           }
         }
-        console.log(
-          "[AI DEBUG] summarizedContext.children:",
-          summarizedContext?.children || []
-        );
-        console.log(
-          "[AI DEBUG] growthAnomalyChildren (avant filtrage):",
-          Array.isArray(summarizedContext?.children)
-            ? summarizedContext.children.map((c) => ({
-                name: c?.name,
-                growth: c?.growth,
-              }))
-            : []
-        );
-        const summarizedContextJson = JSON.stringify(summarizedContext);
+        console.log('[AI DEBUG] summarizedContext.children:', summarizedContext?.children || []);
+
         const contextChildren = Array.isArray(summarizedContext?.children)
           ? summarizedContext.children
           : [];
-        let growthAnomalyChildren = contextChildren
-          .map((child, index) => {
-            if (!child || typeof child !== 'object') return null;
-            const rawName = typeof child.name === 'string' ? child.name.trim() : '';
-            const displayName = rawName || `Enfant #${index + 1}`;
-            const growthText = typeof child.growth === 'string' ? child.growth.trim() : '';
-            if (!growthText) return null;
-            const normalizedGrowth = normalizeWithoutDiacritics(growthText);
-            const hasAnomalyKeyword = CRITICAL_GROWTH_KEYWORDS.some((keyword) =>
-              normalizedGrowth.includes(keyword)
-            );
-            if (!hasAnomalyKeyword) return null;
-            if (/(pas\s+de|aucun|sans)\s+retard/.test(normalizedGrowth)) {
-              return null;
-            }
-            return { name: displayName, growth: growthText };
-          })
-          .filter(Boolean);
+        console.log(
+          '[AI DEBUG] growthAnomalyChildren (avant filtrage):',
+          hasChildrenFromDb
+            ? childrenFromDb.map((child) => ({
+                name: child?.name,
+                status_global: child?.growth?.status_global,
+                status_h: child?.growth?.status_height,
+                status_w: child?.growth?.status_weight,
+              }))
+            : contextChildren.map((c) => ({
+                name: c?.name,
+                growth: c?.growth,
+              }))
+        );
+        const summarizedContextJson = JSON.stringify(summarizedContext);
 
-        if (!growthAnomalyChildren.length && !contextChildren.length) {
+        let growthAnomalyChildren = hasChildrenFromDb
+          ? anomaliesFromDb.map((child) => {
+              const growth = child?.growth && typeof child.growth === 'object' ? child.growth : {};
+              const statusParts = [];
+              if (growth.status_global) statusParts.push(`statut global: ${growth.status_global}`);
+              if (growth.status_height) statusParts.push(`statut taille: ${growth.status_height}`);
+              if (growth.status_weight) statusParts.push(`statut poids: ${growth.status_weight}`);
+              return {
+                name: child?.name || 'Enfant',
+                growth: statusParts.filter(Boolean).join(' ; ') || 'Statut OMS à surveiller',
+              };
+            })
+          : contextChildren
+              .map((child, index) => {
+                if (!child || typeof child !== 'object') return null;
+                const rawName = typeof child.name === 'string' ? child.name.trim() : '';
+                const displayName = rawName || `Enfant #${index + 1}`;
+                const growthText = typeof child.growth === 'string' ? child.growth.trim() : '';
+                if (!growthText) return null;
+                const normalizedGrowth = normalizeWithoutDiacritics(growthText);
+                const hasAnomalyKeyword = CRITICAL_GROWTH_KEYWORDS.some((keyword) =>
+                  normalizedGrowth.includes(keyword)
+                );
+                if (!hasAnomalyKeyword) return null;
+                if (/(pas\s+de|aucun|sans)\s+retard/.test(normalizedGrowth)) {
+                  return null;
+                }
+                return { name: displayName, growth: growthText };
+              })
+              .filter(Boolean);
+
+        if (!hasChildrenFromDb && !growthAnomalyChildren.length) {
           if (containsCriticalGrowthKeywords(familyBilanText)) {
             const parsedFromBilan = extractChildrenFromAiBilanText(familyBilanText);
             if (parsedFromBilan.length) {
@@ -1020,12 +1244,60 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         })();
         const aiPreview = rawAiPreview ? rawAiPreview.split('\n').slice(0, 6).join('\n').slice(0, 400) : '';
 
+        const anomaliesNarrativeLines = hasChildrenFromDb
+          ? anomaliesFromDb.map((child) => {
+              const growth = child?.growth && typeof child.growth === 'object' ? child.growth : {};
+              const statuses = [];
+              if (growth.status_global) statuses.push(`statut global: ${growth.status_global}`);
+              if (growth.status_height) statuses.push(`statut taille: ${growth.status_height}`);
+              if (growth.status_weight) statuses.push(`statut poids: ${growth.status_weight}`);
+              const label = statuses.length ? statuses.join(', ') : 'statut non précisé';
+              return `- ${child?.name || 'Enfant'} (${label})`;
+            })
+          : [];
+        const anomaliesNarrativeBlock = anomaliesNarrativeLines.length
+          ? `Anomalies OMS détectées :\n${anomaliesNarrativeLines.join('\n')}`
+          : '';
+
+        const fallbackChildrenLines = !hasChildrenFromDb
+          ? contextChildren.map((child, index) => {
+              if (!child || typeof child !== 'object') return '';
+              const name = typeof child.name === 'string' ? child.name.trim() : `Enfant #${index + 1}`;
+              const growth = typeof child.growth === 'string' ? child.growth.trim() : '';
+              const nightWakings = typeof child.night_wakings === 'string' ? child.night_wakings.trim() : '';
+              const appetit = typeof child.appetit === 'string' ? child.appetit.trim() : '';
+              const segments = [`${index + 1}. ${name}`];
+              const facts = [
+                growth ? `Croissance: ${growth}` : '',
+                nightWakings ? `Réveils nocturnes: ${nightWakings}` : '',
+                appetit ? `Appétit: ${appetit}` : '',
+              ]
+                .filter(Boolean)
+                .join(' ; ');
+              return facts ? `${segments.join(' – ')} : ${facts}` : segments.join(' – ');
+            })
+              .filter(Boolean)
+          : [];
+        const fallbackChildrenBlock = fallbackChildrenLines.length
+          ? `--- Synthèse famille/enfants (texte) ---\n${fallbackChildrenLines.slice(0, 6).join('\n').slice(0, 900)}`
+          : '';
+
+        const fallbackAnomalyBlock = !hasChildrenFromDb && growthAnomalyChildren.length
+          ? `Anomalies OMS détectées :\n${growthAnomalyChildren
+              .map((entry) => `- ${entry.name}: ${entry.growth}`)
+              .join('\n')}`
+          : '';
+
         const contextParts = [];
-        if (familyBilanPreview) contextParts.push(`--- CONTEXTE FAMILIAL ---\n${familyBilanPreview}`);
-        if (aiPreview) contextParts.push(`--- CONTEXTE ENFANTS ---\n${aiPreview}`);
-        if (childSummary) contextParts.push(`--- FICHE ENFANTS (BDD) ---\n${childSummary}`);
-        if (childUpdatesSummary) contextParts.push(`--- MISES À JOUR ENFANTS RÉCENTES ---\n${childUpdatesSummary}`);
-        const contextText = contextParts.join('\n\n');
+        if (childSummary) contextParts.push(`--- Synthèse famille/enfants (BDD) ---\n${childSummary}`);
+        if (anomaliesNarrativeBlock) contextParts.push(anomaliesNarrativeBlock);
+        if (childUpdatesSummary) contextParts.push(`--- Mises à jour enfants (BDD) ---\n${childUpdatesSummary}`);
+        if (fallbackChildrenBlock) contextParts.push(fallbackChildrenBlock);
+        if (fallbackAnomalyBlock) contextParts.push(fallbackAnomalyBlock);
+        if (familyBilanPreview) contextParts.push(`--- Aperçu narratif (ai_bilan) ---\n${familyBilanPreview}`);
+        if (aiPreview) contextParts.push(`--- Aperçu narratif (ai_bilan texte) ---\n${aiPreview}`);
+        const contextText = contextParts.filter(Boolean).join('\n\n');
+
         const contextChildNames = new Set(
           bilanArray
             .map((entry) => (entry?.name ? String(entry.name).trim() : ''))
@@ -1034,13 +1306,21 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         childNames.forEach((name) => {
           if (name) contextChildNames.add(name);
         });
+        if (!hasChildrenFromDb) {
+          contextChildren.forEach((child) => {
+            const name = typeof child?.name === 'string' ? child.name.trim() : '';
+            if (name) contextChildNames.add(name);
+          });
+          fallbackChildrenFromAiBilan.forEach((child) => {
+            const name = typeof child?.name === 'string' ? child.name.trim() : '';
+            if (name) contextChildNames.add(name);
+          });
+        }
+
         const usedAiBilan = Boolean(
-          familyBilanText ||
+          (!hasChildrenFromDb && (familyBilanText || fallbackChildrenFromAiBilan.length)) ||
           familyBilanPreview ||
-          aiPreview ||
-          childSummary ||
-          childUpdatesSummary ||
-          contextChildNames.size
+          aiPreview
         );
         const userParts = [
           updateType ? `Type de mise à jour: ${updateType}` : '',
@@ -1049,7 +1329,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
         }
-        if (familyBilanText) {
+        if (!hasChildrenFromDb && familyBilanText) {
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
         if (contextChildNames.size) {
@@ -1097,7 +1377,15 @@ Propose des recommandations précises et actionnables plutôt que des générali
         if (wantsChildFocus) {
           system += `\n[FOCUS ENFANTS] Limite toute mention du parent à la manière dont il peut soutenir ses enfants. Ne renvoie pas la discussion sur l’adulte.`;
         }
-        const criticalTextAggregate = `${familyBilanText}\n${familyBilanPreview}\n${aiPreview}\n${childUpdatesSummary}`;
+        const criticalTextAggregate = [
+          familyBilanText,
+          familyBilanPreview,
+          aiPreview,
+          childUpdatesSummary,
+          childSummary,
+          anomaliesNarrativeBlock,
+          fallbackAnomalyBlock,
+        ].join('\n');
         const hasCriticalAlert = /fractur|pl[aâ]tre|bronchiol|bronchit|hospital|urgence|déshydrat|statut\s*oms\s*:\s*(?!.*(ok|normal))|(a|à)\s*surveiller|hors\s*norme|\bretard\b|croissance[\s\S]{0,80}anormal/i.test(criticalTextAggregate);
         if (hasCriticalAlert) {
           system += `\n[CRITIQUE] Des anomalies importantes sont signalées : cite-les explicitement (motifs, prénoms) et propose une action médicale concrète (consultation, examen, surveillance renforcée).`;
@@ -2123,7 +2411,7 @@ async function fetchParentUpdatesForReport({ supaUrl, headers, childId, profileI
     throw new HttpError(500, 'Missing Supabase parameters');
   }
   const effectiveLimit = Math.max(1, Math.min(5, Number(limit) || 5));
-  const query = `${supaUrlArg}/rest/v1/parent_updates?select=id,profile_id,child_id,update_type,update_content,parent_comment,ai_commentaire,created_at&child_id=eq.${encodeURIComponent(childId)}&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=${effectiveLimit}`;
+  const query = `${supaUrl}/rest/v1/parent_updates?select=id,profile_id,child_id,update_type,update_content,parent_comment,ai_commentaire,created_at&child_id=eq.${encodeURIComponent(childId)}&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=${effectiveLimit}`;
   const data = await supabaseRequest(query, { headers });
   return Array.isArray(data) ? data : [];
 }
@@ -2132,7 +2420,7 @@ async function fetchChildFirstName({ supaUrl, headers, childId }) {
   if (!supaUrl || !headers || !childId) return '';
   try {
     const data = await supabaseRequest(
-      `${supaUrlArg}/rest/v1/children?select=first_name&id=eq.${encodeURIComponent(childId)}&limit=1`,
+      `${supaUrl}/rest/v1/children?select=first_name&id=eq.${encodeURIComponent(childId)}&limit=1`,
       { headers }
     );
     const row = Array.isArray(data) ? data[0] : data;
@@ -2183,7 +2471,7 @@ function summarizeParentUpdateForReport(row = {}) {
 async function fetchChildBaselineRow({ supaUrl, headers, childId }) {
   if (!supaUrl || !headers || !childId) return null;
   try {
-    const query = `${supaUrlArg}/rest/v1/children?select=*&id=eq.${encodeURIComponent(childId)}&limit=1`;
+    const query = `${supaUrl}/rest/v1/children?select=*&id=eq.${encodeURIComponent(childId)}&limit=1`;
     const data = await supabaseRequest(query, { headers });
     const row = Array.isArray(data) ? data[0] : data;
     return row || null;
