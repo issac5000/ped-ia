@@ -4,9 +4,16 @@
 import { createServer } from 'http';
 import { randomBytes, randomUUID } from 'crypto';
 import { readFile, stat } from 'fs/promises';
-import { extname, join, resolve } from 'path';
+import { extname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { processAnonChildrenRequest } from '../lib/anon-children.js';
+import { createClient } from '@supabase/supabase-js';
+import {
+  HttpError,
+  fetchAnonProfile,
+  getServiceConfig,
+  normalizeCode,
+  processAnonChildrenRequest,
+} from '../lib/anon-children.js';
 import { processAnonCommunityRequest } from '../lib/anon-community.js';
 import { processAnonMessagesRequest } from '../lib/anon-messages.js';
 import { processAnonParentUpdatesRequest } from '../lib/anon-parent-updates.js';
@@ -69,6 +76,8 @@ const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image-preview';
 const AI_UNAVAILABLE_RESPONSE = { status: 'unavailable', message: 'Fonction IA désactivée' };
 
 let cachedSupabaseEnv = null;
+let cachedServiceClient = null;
+let cachedServiceConfig = null;
 
 async function resolveSupabaseEnv() {
   if (cachedSupabaseEnv) return cachedSupabaseEnv;
@@ -120,6 +129,66 @@ function send(res, status, body, headers={}) {
   const h = { 'Access-Control-Allow-Origin': '*', ...security, ...headers };
   res.writeHead(status, h);
   res.end(body);
+}
+
+function getServiceSupabaseClient() {
+  const { supaUrl, serviceKey } = getServiceConfig();
+  const needsNewClient =
+    !cachedServiceClient ||
+    !cachedServiceConfig ||
+    cachedServiceConfig.url !== supaUrl ||
+    cachedServiceConfig.key !== serviceKey;
+  if (needsNewClient) {
+    cachedServiceClient = createClient(supaUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    cachedServiceConfig = { url: supaUrl, key: serviceKey };
+  }
+  return { supabase: cachedServiceClient, supaUrl, serviceKey };
+}
+
+function normalizeReplyId(value) {
+  if (value == null) return '';
+  return String(value).trim();
+}
+
+async function resolveForumActor(req, body, context, { required = false } = {}) {
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (token) {
+    try {
+      const { data, error } = await context.supabase.auth.getUser(token);
+      if (error || !data?.user?.id) {
+        return { error: 'Invalid token', status: 401 };
+      }
+      const uid = String(data.user.id);
+      return { type: 'google', userId: uid, profileId: uid };
+    } catch (err) {
+      console.warn('[api/server] resolveForumActor token failed', err);
+      return { error: 'Invalid token', status: 401 };
+    }
+  }
+
+  const code = normalizeCode(body?.code || body?.code_unique);
+  if (code) {
+    try {
+      const profile = await fetchAnonProfile(context.supaUrl, context.serviceKey, code);
+      const pid = profile?.id != null ? String(profile.id) : '';
+      if (pid) return { type: 'anon', userId: pid, profileId: pid };
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return { error: err.message || 'Invalid code', status: err.status || 400 };
+      }
+      console.warn('[api/server] resolveForumActor code failed', err);
+      return { error: 'Invalid code', status: 400 };
+    }
+  }
+
+  if (required) {
+    return { error: 'Authentication required', status: 401 };
+  }
+
+  return { type: 'guest', userId: null, profileId: null };
 }
 
 /**
@@ -658,6 +727,132 @@ const server = createServer(async (req, res) => {
       const status = e && Number.isInteger(e.status) ? e.status : 500;
       const payload = { error: 'Server error', details: String(e?.details || e?.message || e) };
       return send(res, status, JSON.stringify(payload), { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/server') {
+    try {
+      const body = await parseJson(req);
+      const action = String(body?.action || '').trim();
+      if (!action) {
+        return send(res, 400, JSON.stringify({ error: 'action required' }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      let context;
+      try {
+        context = getServiceSupabaseClient();
+      } catch (cfgErr) {
+        const status = cfgErr instanceof HttpError ? cfgErr.status || 500 : 500;
+        const message = cfgErr?.message || 'Server misconfigured';
+        console.error('[api/server] service client init failed', cfgErr);
+        return send(res, status, JSON.stringify({ error: message }), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      if (action === 'like' || action === 'unlike') {
+        const replyId = normalizeReplyId(body?.replyId || body?.reply_id || body?.id);
+        if (!replyId) {
+          return send(res, 400, JSON.stringify({ error: 'replyId required' }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        const actor = await resolveForumActor(req, body, context, { required: true });
+        if (actor.error) {
+          const status = actor.status || 401;
+          return send(res, status, JSON.stringify({ error: actor.error }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        if (action === 'like') {
+          const { error: upsertError } = await context.supabase
+            .from('forum_reply_likes')
+            .upsert([{ reply_id: replyId, user_id: actor.userId }], { onConflict: 'reply_id,user_id' });
+          if (upsertError) {
+            console.error('[api/server] like insert failed', upsertError);
+            return send(res, 500, JSON.stringify({ error: 'like failed' }), { 'Content-Type': 'application/json; charset=utf-8' });
+          }
+        } else {
+          const { error: deleteError } = await context.supabase
+            .from('forum_reply_likes')
+            .delete()
+            .eq('reply_id', replyId)
+            .eq('user_id', actor.userId);
+          if (deleteError) {
+            console.error('[api/server] unlike delete failed', deleteError);
+            return send(res, 500, JSON.stringify({ error: 'unlike failed' }), { 'Content-Type': 'application/json; charset=utf-8' });
+          }
+        }
+        const { data: rows, error: countError } = await context.supabase
+          .from('forum_reply_likes')
+          .select('reply_id,user_id')
+          .eq('reply_id', replyId);
+        if (countError) {
+          console.error('[api/server] like count failed', countError);
+          return send(res, 500, JSON.stringify({ error: 'count failed' }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        const array = Array.isArray(rows) ? rows : [];
+        const count = array.length;
+        const responsePayload = { success: true, count };
+        if (actor.userId) {
+          const normalizedActorId = String(actor.userId);
+          const liked = array.some((row) => row?.user_id != null && String(row.user_id) === normalizedActorId);
+          responsePayload.liked = liked;
+        }
+        return send(res, 200, JSON.stringify(responsePayload), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      if (action === 'get-likes') {
+        const idsRaw = [];
+        if (Array.isArray(body?.replyIds)) idsRaw.push(...body.replyIds);
+        if (body?.replyId != null) idsRaw.push(body.replyId);
+        if (body?.reply_id != null) idsRaw.push(body.reply_id);
+        const replyIds = Array.from(new Set(idsRaw.map(normalizeReplyId).filter(Boolean)));
+        if (!replyIds.length) {
+          return send(res, 400, JSON.stringify({ error: 'replyId required' }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        const actor = await resolveForumActor(req, body, context, { required: false });
+        if (actor.error) {
+          const status = actor.status || 401;
+          return send(res, status, JSON.stringify({ error: actor.error }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        const { data, error } = await context.supabase
+          .from('forum_reply_likes')
+          .select('reply_id,user_id')
+          .in('reply_id', replyIds);
+        if (error) {
+          console.error('[api/server] get-likes select failed', error);
+          return send(res, 500, JSON.stringify({ error: 'fetch failed' }), { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        const counts = Object.create(null);
+        const likedMap = Object.create(null);
+        if (Array.isArray(data)) {
+          data.forEach((row) => {
+            const rid = row?.reply_id != null ? String(row.reply_id) : '';
+            if (!rid) return;
+            counts[rid] = (counts[rid] || 0) + 1;
+            if (actor.userId && row?.user_id != null && String(row.user_id) === actor.userId) {
+              likedMap[rid] = true;
+            }
+          });
+        }
+        replyIds.forEach((id) => {
+          if (!(id in counts)) counts[id] = 0;
+          if (actor.userId && !(id in likedMap)) likedMap[id] = false;
+        });
+        const single = replyIds.length === 1;
+        const responsePayload = { success: true };
+        if (single) {
+          const key = replyIds[0];
+          responsePayload.count = counts[key] ?? 0;
+          if (actor.userId) responsePayload.liked = !!likedMap[key];
+        } else {
+          responsePayload.count = counts;
+          if (actor.userId) responsePayload.liked = likedMap;
+        }
+        return send(res, 200, JSON.stringify(responsePayload), { 'Content-Type': 'application/json; charset=utf-8' });
+      }
+
+      return send(res, 400, JSON.stringify({ error: 'Unknown action' }), { 'Content-Type': 'application/json; charset=utf-8' });
+    } catch (err) {
+      console.error('[api/server] /api/server handler error', err);
+      const status = Number(err?.statusCode || err?.status) || 500;
+      const message = err?.message || 'Server error';
+      return send(res, status, JSON.stringify({ error: message }), { 'Content-Type': 'application/json; charset=utf-8' });
     }
   }
 

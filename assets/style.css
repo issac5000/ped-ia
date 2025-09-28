@@ -3359,6 +3359,59 @@ section[data-route="/community"] .topic-entry__actions{
   gap:8px;
   flex:0 0 auto;
 }
+section[data-route="/community"] .reply-like-bar{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:8px;
+}
+section[data-route="/community"] .reply-like{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.06);
+  color:var(--muted);
+  font-size:14px;
+  cursor:pointer;
+  transition:background .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+section[data-route="/community"] .reply-like:hover{
+  background:rgba(255,255,255,.12);
+  color:#ffffff;
+}
+section[data-route="/community"] .reply-like.is-liked{
+  background:rgba(78,124,216,.2);
+  border-color:rgba(78,124,216,.5);
+  color:var(--blue-strong);
+  box-shadow:0 10px 24px rgba(78,124,216,.25);
+}
+section[data-route="/community"] .reply-like.is-liked .reply-like__icon{
+  color:var(--blue-strong);
+}
+section[data-route="/community"] .reply-like__icon{
+  font-size:16px;
+  line-height:1;
+}
+section[data-route="/community"] .reply-like__count{
+  font-weight:600;
+}
+section[data-route="/community"] .reply-like__label{
+  font-size:13px;
+}
+section[data-route="/community"] .reply-like[disabled]{
+  opacity:.6;
+  cursor:not-allowed;
+}
+@media (max-width:720px){
+  section[data-route="/community"] .reply-like{
+    padding:6px 10px;
+  }
+  section[data-route="/community"] .reply-like__label{
+    display:none;
+  }
+}
 section[data-route="/community"] .topic-entry .timeline-parent-note,
 section[data-route="/community"] .topic-entry .timeline-ai-note{
   margin:0;
