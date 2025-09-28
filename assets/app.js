@@ -6682,6 +6682,13 @@ const TIMELINE_MILESTONES = [
         let generatedAt = result?.lastGeneratedAt || new Date().toISOString();
         const refreshed = Boolean(result?.refreshed);
         if (refreshed) {
+          if (typeof localStorage !== 'undefined') {
+            try { localStorage.removeItem('family_context'); } catch {}
+          }
+          dashboardState.family.data = null;
+          if (result?.profileId) {
+            console.log('[AI DEBUG] family-bilan cache invalidated', { profileId: result.profileId });
+          }
           try {
             const cacheKeyProfileId = result?.profileId || targetProfileId || null;
             const cacheKey = cacheKeyProfileId ? `family_context_${cacheKeyProfileId}` : null;

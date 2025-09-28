@@ -28,6 +28,7 @@ function createServiceSupabaseClient({ supaUrl, serviceKey }) {
           if (options.onConflict) params.set('on_conflict', options.onConflict);
           const url = params.size ? `${tableUrl}?${params.toString()}` : tableUrl;
           const preferParts = ['resolution=merge-duplicates'];
+          if (options.count) preferParts.push(`count=${options.count}`);
           if (options.returning === 'minimal') preferParts.push('return=minimal');
           else preferParts.push('return=representation');
           const response = await fetch(url, {
@@ -52,7 +53,20 @@ function createServiceSupabaseClient({ supaUrl, serviceKey }) {
             if (Array.isArray(data)) count = data.length;
             else if (typeof data.count === 'number') count = data.count;
           }
-          return { data, count };
+          if (count == null) {
+            let contentRange = null;
+            if (response.headers && typeof response.headers.get === 'function') {
+              contentRange = response.headers.get('content-range');
+            }
+            if (typeof contentRange === 'string') {
+              const match = /\/(\d+)$/i.exec(contentRange);
+              if (match) {
+                const parsed = Number(match[1]);
+                if (Number.isFinite(parsed)) count = parsed;
+              }
+            }
+          }
+          return { data, error: null, count };
         },
       };
     },
@@ -1739,8 +1753,8 @@ Propose des recommandations précises et actionnables plutôt que des générali
           typeof req?.query?.profileId === 'string' ? req.query.profileId.trim() : '',
           typeof req?.query?.profile_id === 'string' ? req.query.profile_id.trim() : '',
         ];
-        let profileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
-        const receivedId = profileId;
+        let resolvedProfileId = profileIdCandidates.find(Boolean)?.slice(0, 128) || '';
+        const receivedId = resolvedProfileId;
         const codeCandidates = [
           typeof body.code_unique === 'string' ? body.code_unique : '',
           typeof body.code === 'string' ? body.code : '',
@@ -1752,20 +1766,24 @@ Propose des recommandations précises et actionnables plutôt que des générali
         console.log('[family-bilan] incoming identifiers', {
           profileIdFromBody: body?.profileId ?? body?.profile_id ?? null,
           profileIdFromQuery: req?.query?.profileId ?? req?.query?.profile_id ?? null,
-          resolvedProfileId: profileId || null,
+          resolvedProfileId: resolvedProfileId || null,
           codeUnique: codeUnique || null,
         });
         const { supaUrl, serviceKey } = getServiceConfig();
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
         const serviceSupabase = createServiceSupabaseClient({ supaUrl, serviceKey });
-        if (!profileId && codeUnique) {
+        if (!resolvedProfileId) {
+          if (!codeUnique) {
+            console.error('[AI DEBUG] family-bilan upsert ABORT: missing profileId and codeUnique');
+            return res.status(400).json({ error: 'Missing profileId/codeUnique' });
+          }
           try {
             const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers });
             if (!resolvedId) {
               console.warn('[family-bilan] code_unique resolved to no profile', { codeUnique });
               return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique } });
             }
-            profileId = resolvedId;
+            resolvedProfileId = resolvedId;
           } catch (err) {
             const status = err instanceof HttpError && err.status ? err.status : 500;
             const details = err?.details || err?.message || '';
@@ -1776,9 +1794,20 @@ Propose des recommandations précises et actionnables plutôt que des générali
             return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique } });
           }
         }
-        if (!profileId) {
-          console.warn('[family-bilan] missing profile identifier after resolution', { receivedId: receivedId || null, codeUnique: codeUnique || null });
-          return res.status(400).json({ error: 'Profile not found', debug: { receivedId: receivedId || null, codeUnique: codeUnique || null } });
+        if (!resolvedProfileId) {
+          console.warn('[family-bilan] missing profile identifier after resolution', {
+            receivedId: receivedId || null,
+            codeUnique: codeUnique || null,
+          });
+          return res.status(400).json({
+            error: 'Profile not found',
+            debug: { receivedId: receivedId || null, codeUnique: codeUnique || null },
+          });
+        }
+        resolvedProfileId = String(resolvedProfileId).trim().slice(0, 128);
+        if (!resolvedProfileId) {
+          console.error('[AI DEBUG] family-bilan upsert ABORT: missing profileId and codeUnique');
+          return res.status(400).json({ error: 'Missing profileId/codeUnique' });
         }
         let profileRow = null;
         let childrenRows = [];
@@ -1787,11 +1816,11 @@ Propose des recommandations précises et actionnables plutôt que des générali
         try {
           const [profileData, childrenData] = await Promise.all([
             supabaseRequest(
-              `${supaUrl}/rest/v1/profiles?select=full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+              `${supaUrl}/rest/v1/profiles?select=full_name,parent_role,marital_status,number_of_children,parental_employment,parental_emotion,parental_stress,parental_fatigue,context_parental&id=eq.${encodeURIComponent(resolvedProfileId)}&limit=1`,
               { headers }
             ),
             supabaseRequest(
-              `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob&user_id=eq.${encodeURIComponent(profileId)}&order=dob.asc`,
+              `${supaUrl}/rest/v1/children?select=id,first_name,sex,dob&user_id=eq.${encodeURIComponent(resolvedProfileId)}&order=dob.asc`,
               { headers }
             ),
           ]);
@@ -1802,10 +1831,10 @@ Propose des recommandations précises et actionnables plutôt que des générali
           return res.status(status).json({ error: 'Unable to fetch family data', details: err?.details || err?.message || '' });
         }
         if (profileRow) {
-          console.log('[family-bilan] profile resolved', { profileId, childrenCount: childrenRows.length });
+          console.log('[family-bilan] profile resolved', { profileId: resolvedProfileId, childrenCount: childrenRows.length });
         } else {
-          console.warn('[family-bilan] profile not found in Supabase', { profileId });
-          return res.status(404).json({ error: 'No profile data', profileId });
+          console.warn('[family-bilan] profile not found in Supabase', { profileId: resolvedProfileId });
+          return res.status(404).json({ error: 'No profile data', profileId: resolvedProfileId });
         }
         if (!childrenRows.length) {
           console.warn('[AI DEBUG] family-bilan cacheUsed');
@@ -1825,7 +1854,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         }
         try {
           const parentRows = await supabaseRequest(
-            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=20`,
+            `${supaUrl}/rest/v1/parent_updates?select=update_type,update_content,parent_comment,ai_commentaire,created_at&profile_id=eq.${encodeURIComponent(resolvedProfileId)}&order=created_at.desc&limit=20`,
             { headers }
           );
           parentUpdates = Array.isArray(parentRows) ? parentRows : [];
@@ -1842,7 +1871,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
               try {
                 const growth = await fetchGrowthDataForPrompt({
                   childId: id,
-                  profileId,
+                  profileId: resolvedProfileId,
                   measurementLimit: 3,
                   teethLimit: 2,
                   supaUrl,
@@ -1911,7 +1940,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         const childUpdatesText = formatChildUpdatesForFamilyPrompt(childUpdates, childrenRows);
         const parentUpdatesText = formatParentUpdatesForPrompt(parentUpdates);
         console.log('[family-bilan] preparing OpenAI payload', {
-          profileId,
+          profileId: resolvedProfileId,
           childrenCount: childrenRows.length,
           childUpdatesCount: childUpdates.length,
           parentUpdatesCount: parentUpdates.length,
@@ -2010,45 +2039,51 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           return res.status(502).json({ error: 'Bilan indisponible' });
         }
         const nowIso = new Date().toISOString();
-        const resolvedProfileId = profileId || codeUnique || '';
         const aiBilanTexte = typeof bilan === 'string' ? bilan : '';
-        const truncatedAiBilan = aiBilanTexte.slice(0, 4000);
-        const upsertPayload = {
-          profile_id: resolvedProfileId,
-          children_ids: childIds,
-          ai_bilan: truncatedAiBilan,
-          last_generated_at: nowIso,
-        };
-        let upsertSuccess = false;
-        let upsertCount = null;
+        const safeBilan = (aiBilanTexte || '').slice(0, 4000);
         console.log('[AI DEBUG] family-bilan upsert start', {
-          profileId: resolvedProfileId || null,
-          length: truncatedAiBilan.length,
+          profileId: resolvedProfileId,
+          length: safeBilan.length,
         });
         try {
-          const { data, count } = await serviceSupabase
+          const { data, error, count } = await serviceSupabase
             .from('family_context')
-            .upsert(upsertPayload, { onConflict: 'profile_id' });
-          upsertSuccess = true;
-          upsertCount = typeof count === 'number' ? count : Array.isArray(data) ? data.length : null;
+            .upsert(
+              {
+                profile_id: resolvedProfileId,
+                ai_bilan: safeBilan,
+                last_generated_at: nowIso,
+              },
+              { onConflict: 'profile_id', count: 'exact' }
+            );
+          if (error) {
+            console.error('[AI DEBUG] family-bilan upsert fail', { profileId: resolvedProfileId, error });
+            return res
+              .status(500)
+              .json({ error: 'Failed to save family_context', details: error });
+          }
+          const effectiveCount = typeof count === 'number' ? count : Array.isArray(data) ? data.length : null;
           console.log('[AI DEBUG] family-bilan upsert success', {
-            count: upsertCount,
-            profileId: resolvedProfileId || null,
+            profileId: resolvedProfileId,
+            count: effectiveCount,
           });
         } catch (err) {
           const errorDetail = err?.details || err?.message || String(err);
-          console.warn('[AI DEBUG] family-bilan upsert fail', {
+          console.error('[AI DEBUG] family-bilan upsert fail', {
+            profileId: resolvedProfileId,
             error: errorDetail,
-            profileId: resolvedProfileId || null,
           });
+          return res
+            .status(500)
+            .json({ error: 'Failed to save family_context', details: errorDetail });
         }
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         const responseBody = {
           bilan: aiBilanTexte,
           lastGeneratedAt: nowIso,
-          refreshed: upsertSuccess,
-          profileId: resolvedProfileId || null,
+          refreshed: true,
+          profileId: resolvedProfileId,
         };
         return res.status(200).send(JSON.stringify(responseBody));
       }
