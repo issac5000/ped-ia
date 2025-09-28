@@ -6899,9 +6899,13 @@ const TIMELINE_MILESTONES = [
           } else if (!state.counts.has(id)) {
             state.counts.set(id, 0);
           }
-          if (json.liked === true) {
+          if (json && typeof json.liked === 'object' && json.liked !== null) {
+            const value = json.liked[id];
+            if (value === true) state.liked.add(id);
+            else state.liked.delete(id);
+          } else if (json?.liked === true) {
             state.liked.add(id);
-          } else if (json.liked === false) {
+          } else {
             state.liked.delete(id);
           }
         } catch (err) {
@@ -7706,15 +7710,17 @@ const TIMELINE_MILESTONES = [
                 .map((value) => (value != null ? String(value) : ''))
                 .filter(Boolean);
               if (!idArray.length) return new Map();
-              const viewCandidates = ['community_profiles_meta', 'community_profiles_public', 'profiles_public_meta'];
-              for (const viewName of viewCandidates) {
-                if (!viewName) continue;
+              const sources = [
+                { table: 'profiles_with_children', select: 'id,full_name,show_children_count,children:children(id)' },
+                { table: 'profiles', select: 'id,full_name,show_children_count' },
+              ];
+              for (const source of sources) {
                 try {
-                  const { data: rows, error: viewError } = await supabase
-                    .from(viewName)
-                    .select('id,full_name,name,children_count,child_count,show_children_count,showChildCount,show_stats,showStats')
+                  const { data: rows, error: fetchError } = await supabase
+                    .from(source.table)
+                    .select(source.select)
                     .in('id', idArray);
-                  if (viewError) throw viewError;
+                  if (fetchError) throw fetchError;
                   if (Array.isArray(rows) && rows.length) {
                     return new Map(
                       rows
@@ -7723,17 +7729,17 @@ const TIMELINE_MILESTONES = [
                           if (!id) return null;
                           const entry = normalizeAuthorMeta({
                             name: row.full_name || row.name || 'Utilisateur',
-                            child_count: row.children_count ?? row.child_count ?? row.childCount ?? null,
-                            show_children_count:
-                              row.show_children_count ?? row.showChildCount ?? row.show_stats ?? row.showStats,
-                          }) || { name: row.full_name || row.name || 'Utilisateur', childCount: null, showChildCount: false };
+                            children: Array.isArray(row.children) ? row.children : undefined,
+                            child_count: row.children_count ?? row.child_count ?? null,
+                            show_children_count: row.show_children_count,
+                          }) || { name: row.full_name || 'Utilisateur', childCount: null, showChildCount: false };
                           return [id, entry];
                         })
                         .filter(Boolean)
                     );
                   }
                 } catch (err) {
-                  console.warn('community profiles view load failed', err);
+                  console.warn(`${source.table} load failed`, err);
                 }
               }
               try {
@@ -7768,45 +7774,9 @@ const TIMELINE_MILESTONES = [
                   }
                 }
               } catch (err) {
-                console.warn('community profiles API fallback failed', err);
+                console.warn('profiles fallback load failed', err);
               }
-              const { data: profs, error: profsError } = await supabase
-                .from('profiles')
-                .select('id,full_name,show_children_count')
-                .in('id', idArray);
-              if (profsError) throw profsError;
-              let childRows = [];
-              try {
-                const { data: rows, error: childrenError } = await supabase
-                  .from('children')
-                  .select('user_id')
-                  .in('user_id', idArray);
-                if (childrenError) throw childrenError;
-                childRows = Array.isArray(rows) ? rows : [];
-              } catch (err) {
-                console.warn('community profiles children fetch failed', err);
-                childRows = [];
-              }
-              const counts = new Map();
-              childRows.forEach((row) => {
-                const key = row?.user_id != null ? String(row.user_id) : '';
-                if (!key) return;
-                counts.set(key, (counts.get(key) || 0) + 1);
-              });
-              return new Map(
-                (Array.isArray(profs) ? profs : [])
-                  .map((profile) => {
-                    const id = profile?.id != null ? String(profile.id) : '';
-                    if (!id) return null;
-                    const entry = normalizeAuthorMeta({
-                      name: profile.full_name || 'Utilisateur',
-                      child_count: counts.get(id) ?? null,
-                      show_children_count: profile.show_children_count,
-                    }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                    return [id, entry];
-                  })
-                  .filter(Boolean)
-              );
+              return new Map();
             };
             authorsMap = await withRetry(() => loadCommunityProfiles());
           }
