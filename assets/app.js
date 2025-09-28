@@ -7141,9 +7141,12 @@ const TIMELINE_MILESTONES = [
         const highlight = !!(isAi || isSelf);
         const safeInitials = escapeHtml(initials || '✦');
         const safeAuthor = escapeHtml(authorName || 'Anonyme');
-        const safeLabel = escapeHtml(
-          label || (isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`)
+        const hasLabel = label != null && String(label).trim() !== '';
+        const fallbackLabel = escapeHtml(
+          isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`
         );
+        const safeLabel = hasLabel ? escapeHtml(String(label).trim()) : fallbackLabel;
+        const shouldDisplayLabel = hasLabel || !isInitial;
         const timeHtml = timeLabel
           ? `<time datetime="${escapeHtml(timeIso || '')}">${escapeHtml(timeLabel)}</time>`
           : '';
@@ -7170,7 +7173,7 @@ const TIMELINE_MILESTONES = [
                 ${actionsHtml}
               </div>
               <div class="topic-initial">
-                <span class="topic-initial__badge">${safeLabel}</span>
+                ${shouldDisplayLabel ? `<span class="topic-initial__badge">${safeLabel}</span>` : ''}
                 <div class="topic-initial__content">${contentHtml}</div>
               </div>
             </article>
@@ -7193,7 +7196,7 @@ const TIMELINE_MILESTONES = [
               ${actionsHtml}
             </div>
             <div class="${noteClass}">
-              <span class="${labelClass}">${safeLabel}</span>
+              ${shouldDisplayLabel ? `<span class="${labelClass}">${safeLabel}</span>` : ''}
               <div class="${textClass}">${contentHtml}</div>
             </div>
           </article>
@@ -7244,7 +7247,7 @@ const TIMELINE_MILESTONES = [
           timeIso: createdIso,
           contentHtml: normalizeContent(t.content),
           messageBtn: '',
-          label: topicIsAi ? 'Message de Ped’IA' : 'Présentation de la publication',
+          label: topicIsAi ? 'Message de Ped’IA' : null,
           isAi: topicIsAi,
           isSelf: topicIsSelf,
           isInitial: true,
