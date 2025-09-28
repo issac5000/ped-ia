@@ -1813,6 +1813,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         let childrenRows = [];
         let childUpdates = [];
         let parentUpdates = [];
+        let childrenIds = [];
         try {
           const [profileData, childrenData] = await Promise.all([
             supabaseRequest(
@@ -1826,6 +1827,10 @@ Propose des recommandations précises et actionnables plutôt que des générali
           ]);
           profileRow = Array.isArray(profileData) ? profileData[0] : profileData;
           childrenRows = Array.isArray(childrenData) ? childrenData : [];
+          childrenIds = Array.isArray(childrenRows)
+            ? childrenRows.map((c) => c?.id).filter(Boolean)
+            : [];
+          console.log('[AI DEBUG] family-bilan collected childrenIds', childrenIds);
         } catch (err) {
           const status = err instanceof HttpError ? err.status : 500;
           return res.status(status).json({ error: 'Unable to fetch family data', details: err?.details || err?.message || '' });
@@ -1839,9 +1844,8 @@ Propose des recommandations précises et actionnables plutôt que des générali
         if (!childrenRows.length) {
           console.warn('[AI DEBUG] family-bilan cacheUsed');
         }
-        const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
-        if (childIds.length) {
-          const inParam = childIds.map((id) => `${encodeURIComponent(id)}`).join(',');
+        if (childrenIds.length) {
+          const inParam = childrenIds.map((id) => `${encodeURIComponent(id)}`).join(',');
           try {
             const updates = await supabaseRequest(
               `${supaUrl}/rest/v1/child_updates?select=child_id,ai_summary,update_type,update_content,created_at&child_id=in.(${inParam})&order=created_at.desc&limit=40`,
@@ -1865,9 +1869,9 @@ Propose des recommandations précises et actionnables plutôt que des générali
         const parentContextLines = parentContextToPromptLines(parentContext);
         const childContextText = formatChildrenForPrompt(childrenRows);
         const growthByChild = new Map();
-        if (childIds.length) {
+        if (childrenIds.length) {
           await Promise.all(
-            childIds.map(async (id) => {
+            childrenIds.map(async (id) => {
               try {
                 const growth = await fetchGrowthDataForPrompt({
                   childId: id,
@@ -2042,6 +2046,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         const safeBilan = (aiBilanTexte || '').slice(0, 4000);
         console.log('[AI DEBUG] family-bilan upsert start', {
           profileId: resolvedProfileId,
+          childrenIds,
           length: safeBilan.length,
         });
         try {
@@ -2050,23 +2055,25 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
             .upsert(
               {
                 profile_id: resolvedProfileId,
+                children_ids: childrenIds,
                 ai_bilan: safeBilan,
                 last_generated_at: new Date().toISOString(),
               },
               { onConflict: 'profile_id', count: 'exact' }
             );
           if (error) {
-            console.error('[AI DEBUG] family-bilan upsert fail', { profileId: resolvedProfileId, error });
+            console.error('[AI DEBUG] family-bilan upsert fail', { profileId: resolvedProfileId, childrenIds, error });
             return res
               .status(500)
               .json({ error: 'Failed to save family_context', details: error });
           }
           console.log('[AI DEBUG] family-bilan upsert success', {
             profileId: resolvedProfileId,
+            childrenIds,
             count,
           });
         } catch (error) {
-          console.error('[AI DEBUG] family-bilan upsert fail', { profileId: resolvedProfileId, error });
+          console.error('[AI DEBUG] family-bilan upsert fail', { profileId: resolvedProfileId, childrenIds, error });
           return res.status(500).json({ error: 'Failed to save family_context', details: error });
         }
         res.setHeader('Access-Control-Allow-Origin', '*');
