@@ -247,6 +247,142 @@ function extractChildrenFromAiBilanText(text) {
   return results;
 }
 
+function extractChildrenFromStructuredAiBilan(aiBilan) {
+  const results = [];
+
+  const addChild = (child, indexOffset = 0) => {
+    if (!child || typeof child !== 'object') return;
+    const nameCandidates = [
+      child.prenom,
+      child.first_name,
+      child.firstName,
+      child.name,
+    ];
+    let name = '';
+    for (const candidate of nameCandidates) {
+      const normalized = normalizeFieldValue(candidate, 80);
+      if (normalized) {
+        name = normalized;
+        break;
+      }
+    }
+    if (!name) {
+      name = `Enfant ${results.length + indexOffset + 1}`;
+    }
+
+    const growthCandidates = [];
+    const growthData = child.growth;
+    if (growthData && typeof growthData === 'object') {
+      const growthStrings = [
+        growthData.status_global,
+        growthData.statusGlobal,
+        growthData.status_height,
+        growthData.statusHeight,
+        growthData.status_weight,
+        growthData.statusWeight,
+        growthData.status_imc,
+        growthData.statusImc,
+        growthData.summary,
+        growthData.resume,
+        growthData.text,
+        growthData.comment,
+      ];
+      growthStrings.forEach((value) => {
+        if (typeof value === 'string' && value.trim()) {
+          growthCandidates.push(value.trim());
+        }
+      });
+    } else if (typeof growthData === 'string' && growthData.trim()) {
+      growthCandidates.push(growthData.trim());
+    }
+
+    const childTextCandidates = [
+      child.summary,
+      child.resume,
+      child.resume_global,
+      child.text,
+      child.ai_preview,
+      child.ai_summary,
+      child.comment,
+    ];
+    childTextCandidates.forEach((value) => {
+      if (typeof value === 'string' && value.trim()) {
+        growthCandidates.push(value.trim());
+      }
+    });
+
+    const lastUpdate = child.last_update || child.lastUpdate;
+    if (lastUpdate && typeof lastUpdate === 'object') {
+      const lastUpdateCandidates = [
+        lastUpdate.ai_summary,
+        lastUpdate.summary,
+        lastUpdate.content,
+        lastUpdate.text,
+      ];
+      lastUpdateCandidates.forEach((value) => {
+        if (typeof value === 'string' && value.trim()) {
+          growthCandidates.push(value.trim());
+        }
+      });
+    }
+
+    const uniqueGrowth = [];
+    const seenGrowth = new Set();
+    growthCandidates.forEach((candidate) => {
+      const normalized = candidate.slice(0, 240);
+      if (!normalized) return;
+      const key = normalized.toLowerCase();
+      if (seenGrowth.has(key)) return;
+      seenGrowth.add(key);
+      uniqueGrowth.push(normalized);
+    });
+
+    if (!uniqueGrowth.length) return;
+
+    const growth = uniqueGrowth.slice(0, 2).join(' ').slice(0, 240);
+    if (!growth) return;
+
+    results.push({ name, growth });
+  };
+
+  const addFromList = (entries) => {
+    if (!Array.isArray(entries)) return;
+    entries.forEach((entry, index) => addChild(entry, index));
+  };
+
+  const tryStructured = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      addFromList(value);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (Array.isArray(value.children)) {
+      addFromList(value.children);
+    }
+    if (Array.isArray(value.enfants)) {
+      addFromList(value.enfants);
+    }
+  };
+
+  tryStructured(aiBilan);
+
+  if (!results.length && typeof aiBilan === 'string') {
+    try {
+      const parsed = JSON.parse(aiBilan);
+      tryStructured(parsed);
+    } catch (_err) {
+      // Ignore JSON parse error, fallback handled below
+    }
+  }
+
+  if (!results.length && typeof aiBilan === 'string') {
+    return extractChildrenFromAiBilanText(aiBilan);
+  }
+
+  return results;
+}
+
 function buildDefaultParentChildContext() {
   return {
     parent: { ...DEFAULT_PARENT_CHILD_CONTEXT.parent },
@@ -658,10 +794,14 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         const codeUnique = codeCandidates.find((candidate) => candidate) || '';
         let aiBilan = null;
         let familyBilanText = '';
+        let fallbackChildrenFromAiBilan = [];
         if (profileId || codeUnique) {
           try {
             aiBilan = await fetchFamilyBilanForPrompt({ profileId, codeUnique });
             familyBilanText = formatFamilyAiBilanForPrompt(aiBilan);
+            if (aiBilan) {
+              fallbackChildrenFromAiBilan = extractChildrenFromStructuredAiBilan(aiBilan);
+            }
           } catch (err) {
             const status = err instanceof HttpError ? err.status : null;
             console.warn('[ai/parent-update] unable to fetch family_context.ai_bilan', {
@@ -708,6 +848,13 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         }
 
         const summarizedContext = await buildContext(effectiveProfileId, { codeUnique });
+        if (
+          (!Array.isArray(summarizedContext?.children) || !summarizedContext.children.length) &&
+          fallbackChildrenFromAiBilan.length
+        ) {
+          summarizedContext.children = fallbackChildrenFromAiBilan;
+          console.log('[AI DEBUG] fallback children from ai_bilan:', summarizedContext.children);
+        }
         console.log(
           "[AI DEBUG] summarizedContext.children:",
           summarizedContext?.children || []
