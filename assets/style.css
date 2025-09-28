@@ -3297,37 +3297,15 @@ section[data-route="/community"] .topic-thread{
   gap:18px;
 }
 section[data-route="/community"] .topic-entry{
-  position:relative;
   display:grid;
   gap:12px;
-  padding:18px 20px;
-  border-radius:20px;
-  background:#1a2433;
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:0 20px 44px rgba(0,0,0,.45);
-  isolation:isolate;
 }
 section[data-route="/community"] .topic-entry::before{
-  content:"";
-  position:absolute;
-  inset:-40% -10% auto -10%;
-  height:160px;
-  background:linear-gradient(135deg, rgba(110,163,255,.2), rgba(10,18,32,.1));
-  opacity:.4;
-  filter:blur(40px);
-  z-index:0;
-  transition:opacity .3s ease;
-}
-section[data-route="/community"] .topic-entry--highlight{
-  border-color:rgba(110,163,255,.35);
-  box-shadow:0 26px 56px rgba(14,26,45,.62);
-}
-section[data-route="/community"] .topic-entry--highlight::before{
-  opacity:.75;
+  content:none;
 }
 section[data-route="/community"] .topic-entry > *{
   position:relative;
-  z-index:1;
+  z-index:auto;
 }
 section[data-route="/community"] .topic-entry__head{
   display:flex;
