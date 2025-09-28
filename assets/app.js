@@ -267,6 +267,13 @@ const TIMELINE_MILESTONES = [
     },
   };
 
+  const forumLikesState = {
+    counts: new Map(),
+    liked: new Set(),
+    pending: new Set(),
+    loading: new Map(),
+  };
+
   const PARENT_FIELD_DEFS = [
     { key: 'maritalStatus', column: 'marital_status', form: 'marital_status', type: 'string' },
     { key: 'numberOfChildren', column: 'number_of_children', form: 'number_of_children', type: 'number' },
@@ -1025,6 +1032,15 @@ const TIMELINE_MILESTONES = [
       catch { /* fallback */ }
     }
     return !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
+  };
+
+  const getActiveAnonCode = () => {
+    if (!activeProfile?.code_unique) return '';
+    try {
+      return String(activeProfile.code_unique).trim().toUpperCase();
+    } catch {
+      return '';
+    }
   };
 
   restoreAnonSession();
@@ -6793,10 +6809,191 @@ const TIMELINE_MILESTONES = [
   }
 
   // Communauté
+  function getForumLikesState() {
+    return forumLikesState;
+  }
+
+  function pruneForumLikeState(validIds = []) {
+    const state = forumLikesState;
+    const keep = new Set(validIds.map((id) => String(id)));
+    state.counts.forEach((_, key) => { if (!keep.has(key)) state.counts.delete(key); });
+    Array.from(state.liked).forEach((key) => { if (!keep.has(key)) state.liked.delete(key); });
+    Array.from(state.pending).forEach((key) => { if (!keep.has(key)) state.pending.delete(key); });
+    Array.from(state.loading.keys()).forEach((key) => { if (!keep.has(key)) state.loading.delete(key); });
+  }
+
+  function getReplyLikeButtons(replyId) {
+    const id = replyId == null ? '' : String(replyId);
+    if (!id) return [];
+    const list = renderCommunity?._list;
+    const scope = list && document.body.contains(list) ? list : document;
+    return Array.from(scope.querySelectorAll('[data-like-reply]')).filter((btn) => btn.getAttribute('data-like-reply') === id);
+  }
+
+  function updateReplyLikeUI(replyId) {
+    const id = replyId == null ? '' : String(replyId);
+    if (!id) return;
+    const state = forumLikesState;
+    const count = state.counts.get(id) ?? 0;
+    const liked = state.liked.has(id);
+    const labelText = liked ? 'Aimé' : 'J’aime';
+    const ariaLabel = liked ? `Retirer votre « J’aime » (${count})` : `Aimer cette réponse (${count})`;
+    getReplyLikeButtons(id).forEach((btn) => {
+      btn.dataset.liked = liked ? '1' : '0';
+      btn.classList.toggle('is-liked', liked);
+      btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
+      btn.setAttribute('aria-label', ariaLabel);
+      btn.title = liked ? 'Retirer votre « J’aime »' : 'J’aime cette réponse';
+      const countNode = btn.querySelector('.reply-like__count');
+      if (countNode) countNode.textContent = String(count);
+      const labelNode = btn.querySelector('.reply-like__label');
+      if (labelNode) labelNode.textContent = labelText;
+      if (btn.dataset.busy === '1') btn.disabled = true;
+      else btn.disabled = !useRemote();
+    });
+  }
+
+  async function getAccessTokenForApi() {
+    if (authSession?.access_token) return authSession.access_token;
+    if (authSession?.session?.access_token) return authSession.session.access_token;
+    if (!supabase?.auth) return '';
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data?.session?.access_token || '';
+    } catch (err) {
+      console.warn('getAccessTokenForApi failed', err);
+      return '';
+    }
+  }
+
+  async function loadReplyLikes(replyIds, { refresh = false } = {}) {
+    if (!useRemote()) return;
+    const ids = Array.isArray(replyIds) ? replyIds : [replyIds];
+    const unique = Array.from(new Set(ids.map((id) => (id == null ? '' : String(id))).filter(Boolean)));
+    if (!unique.length) return;
+    const state = forumLikesState;
+    let token = '';
+    try { token = await getAccessTokenForApi(); }
+    catch (err) { console.warn('Access token fetch failed', err); }
+    const code = getActiveAnonCode();
+    await Promise.all(unique.map((id) => {
+      if (!refresh && state.loading.has(id)) return state.loading.get(id);
+      const promise = (async () => {
+        try {
+          const payload = { action: 'get-likes', replyId: id };
+          if (code) payload.code = code;
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) headers.Authorization = `Bearer ${token}`;
+          const response = await fetch('/api/server', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+          });
+          const json = await response.json().catch(() => null);
+          if (!response.ok || !json?.success) {
+            throw new Error(json?.error || `HTTP ${response.status}`);
+          }
+          const count = Number(json.count);
+          if (Number.isFinite(count)) {
+            state.counts.set(id, count);
+          } else if (!state.counts.has(id)) {
+            state.counts.set(id, 0);
+          }
+          if (json.liked === true) {
+            state.liked.add(id);
+          } else if (json.liked === false) {
+            state.liked.delete(id);
+          }
+        } catch (err) {
+          console.warn('loadReplyLikes failed', err);
+          if (!state.counts.has(id)) state.counts.set(id, 0);
+        } finally {
+          state.loading.delete(id);
+          updateReplyLikeUI(id);
+        }
+      })();
+      state.loading.set(id, promise);
+      return promise;
+    }));
+  }
+
+  async function toggleLike(replyId) {
+    const id = replyId == null ? '' : String(replyId);
+    if (!id) return;
+    if (!useRemote()) {
+      alert('Connectez-vous pour aimer cette réponse.');
+      return;
+    }
+    if (forumLikesState.pending.has(id)) return;
+    let token = '';
+    try { token = await getAccessTokenForApi(); }
+    catch (err) { console.warn('Access token fetch failed', err); }
+    const code = getActiveAnonCode();
+    if (!token && !code) {
+      alert('Connectez-vous pour aimer cette réponse.');
+      return;
+    }
+    const state = forumLikesState;
+    const currentlyLiked = state.liked.has(id);
+    const action = currentlyLiked ? 'unlike' : 'like';
+    const previousCount = state.counts.get(id) ?? 0;
+    const optimisticCount = currentlyLiked ? Math.max(0, previousCount - 1) : previousCount + 1;
+    state.counts.set(id, optimisticCount);
+    if (currentlyLiked) state.liked.delete(id);
+    else state.liked.add(id);
+    const buttons = getReplyLikeButtons(id);
+    buttons.forEach((btn) => {
+      btn.dataset.busy = '1';
+      btn.disabled = true;
+    });
+    updateReplyLikeUI(id);
+    state.pending.add(id);
+    try {
+      const payload = { action, replyId: id };
+      if (code) payload.code = code;
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch('/api/server', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error || `HTTP ${response.status}`);
+      }
+      const count = Number(json.count);
+      if (Number.isFinite(count)) state.counts.set(id, count);
+      if (json.liked === true) {
+        state.liked.add(id);
+      } else if (json.liked === false) {
+        state.liked.delete(id);
+      } else if (action === 'like') {
+        state.liked.add(id);
+      } else {
+        state.liked.delete(id);
+      }
+      updateReplyLikeUI(id);
+    } catch (err) {
+      console.warn('toggleLike failed', err);
+      state.counts.set(id, previousCount);
+      if (currentlyLiked) state.liked.add(id);
+      else state.liked.delete(id);
+      updateReplyLikeUI(id);
+    } finally {
+      state.pending.delete(id);
+      buttons.forEach((btn) => {
+        btn.dataset.busy = '0';
+        btn.disabled = !useRemote();
+      });
+    }
+  }
+
   function renderCommunity() {
     // Garde d’instance pour éviter les courses et les doublons DOM
     const rid = (renderCommunity._rid = (renderCommunity._rid || 0) + 1);
     const list = $('#forum-list');
+    renderCommunity._list = list || null;
     if (!list) {
       console.warn('Forum list container introuvable');
       return;
@@ -7035,6 +7232,18 @@ const TIMELINE_MILESTONES = [
 
     const renderTopics = (topics, replies, authorsMap) => {
       const activeId = getActiveProfileId();
+      const likeState = getForumLikesState();
+      const validReplyIds = [];
+      if (replies && typeof replies.forEach === 'function') {
+        replies.forEach((arr) => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach((reply) => {
+            const rid = reply?.id != null ? String(reply.id) : '';
+            if (rid) validReplyIds.push(rid);
+          });
+        });
+      }
+      pruneForumLikeState(validReplyIds);
       if (!topics.length) return showEmpty();
       if (rid !== renderCommunity._rid) return;
       if (!isListActive()) return;
@@ -7137,10 +7346,13 @@ const TIMELINE_MILESTONES = [
         isAi,
         isSelf,
         isInitial,
+        replyId,
+        footerHtml,
       }) => {
         const highlight = !!(isAi || isSelf);
         const safeInitials = escapeHtml(initials || '✦');
         const safeAuthor = escapeHtml(authorName || 'Anonyme');
+        const articleAttrs = replyId ? ` data-reply-id="${escapeHtml(String(replyId))}"` : '';
         const hasLabel = label != null && String(label).trim() !== '';
         const fallbackLabel = escapeHtml(
           isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`
@@ -7158,9 +7370,10 @@ const TIMELINE_MILESTONES = [
         if (isAi) entryClass += ' topic-entry--ai';
         if (isSelf) entryClass += ' topic-entry--self';
         if (isInitial) entryClass += ' topic-entry--origin';
+        const footerBlock = footerHtml ? `\n              ${footerHtml}\n` : '';
         if (isInitial) {
           return `
-            <article class="${entryClass}">
+            <article class="${entryClass}"${articleAttrs}>
               <div class="topic-entry__head">
                 <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
                 <div class="topic-entry__meta">
@@ -7176,14 +7389,16 @@ const TIMELINE_MILESTONES = [
                 ${shouldDisplayLabel ? `<span class="topic-initial__badge">${safeLabel}</span>` : ''}
                 <div class="topic-initial__content">${contentHtml}</div>
               </div>
+              ${footerBlock}
             </article>
           `;
         }
         const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
         const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
         const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
+        const bodyFooter = footerHtml ? `\n            ${footerHtml}\n` : '';
         return `
-          <article class="${entryClass}">
+          <article class="${entryClass}"${articleAttrs}>
             <div class="topic-entry__head">
               <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
               <div class="topic-entry__meta">
@@ -7198,7 +7413,7 @@ const TIMELINE_MILESTONES = [
             <div class="${noteClass}">
               ${shouldDisplayLabel ? `<span class="${labelClass}">${safeLabel}</span>` : ''}
               <div class="${textClass}">${contentHtml}</div>
-            </div>
+            </div>${bodyFooter}
           </article>
         `;
       };
@@ -7268,6 +7483,25 @@ const TIMELINE_MILESTONES = [
           const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
           const replyOwnerId = resolveAuthorId(r);
           const replyIsSelf = activeId && replyOwnerId ? String(replyOwnerId) === String(activeId) : false;
+          const replyId = r?.id != null ? String(r.id) : '';
+          const replyLikeCount = replyId ? likeState.counts.get(replyId) ?? 0 : 0;
+          const replyLiked = replyId ? likeState.liked.has(replyId) : false;
+          const likeDisabledAttr = useRemote() ? '' : ' disabled';
+          const likeLabelText = replyLiked ? 'Aimé' : 'J’aime';
+          const likeTitle = replyLiked ? 'Retirer votre « J’aime »' : 'J’aime cette réponse';
+          const likeAriaLabel = replyLiked
+            ? `Retirer votre « J’aime » (${replyLikeCount})`
+            : `Aimer cette réponse (${replyLikeCount})`;
+          const likeButtonHtml = replyId
+            ? `
+              <div class="reply-like-bar">
+                <button type="button" class="reply-like${replyLiked ? ' is-liked' : ''}" data-like-reply="${escapeHtml(replyId)}" data-liked="${replyLiked ? '1' : '0'}" aria-pressed="${replyLiked ? 'true' : 'false'}" aria-label="${escapeHtml(likeAriaLabel)}" title="${escapeHtml(likeTitle)}"${likeDisabledAttr}>
+                  <span class="reply-like__icon" aria-hidden="true">👍</span>
+                  <span class="reply-like__count">${replyLikeCount}</span>
+                  <span class="reply-like__label">${escapeHtml(likeLabelText)}</span>
+                </button>
+              </div>`
+            : '';
           return renderThreadEntry({
             authorName: replyAuthor,
             authorMetaHtml: replyAuthorMetaHtml,
@@ -7279,6 +7513,8 @@ const TIMELINE_MILESTONES = [
             label: replyLabel,
             isAi: isReplyAi,
             isSelf: replyIsSelf,
+            replyId,
+            footerHtml: likeButtonHtml,
           });
         }).join('');
         const repliesBlock = repliesCount
@@ -7332,6 +7568,15 @@ const TIMELINE_MILESTONES = [
     // Actions déléguées : pliage/dépliage et suppression (avec garde d’occupation)
     if (!list.dataset.delBound) {
       list.addEventListener('click', async (e)=>{
+        const likeBtn = e.target.closest('[data-like-reply]');
+        if (likeBtn) {
+          e.preventDefault();
+          if (likeBtn.dataset.busy === '1') return;
+          const replyId = likeBtn.getAttribute('data-like-reply');
+          if (!replyId) return;
+          toggleLike(replyId);
+          return;
+        }
         // Ouvrir/fermer le sujet
         const tgl = e.target.closest('[data-toggle-comments]');
         if (tgl) {
@@ -7412,6 +7657,12 @@ const TIMELINE_MILESTONES = [
               repliesMap.set(key, arr);
             });
             renderTopics(topics, repliesMap, authorsMap);
+            const anonReplyIds = repliesArr
+              .map((reply) => (reply?.id != null ? String(reply.id) : ''))
+              .filter(Boolean);
+            if (anonReplyIds.length) {
+              loadReplyLikes(anonReplyIds).catch((err) => console.warn('loadReplyLikes failed', err));
+            }
             return;
           }
           const uid = getActiveProfileId();
@@ -7568,6 +7819,12 @@ const TIMELINE_MILESTONES = [
             repliesMap.set(key, arr);
           });
           renderTopics(topics, repliesMap, authorsMap);
+          const remoteReplyIds = replies
+            .map((reply) => (reply?.id != null ? String(reply.id) : ''))
+            .filter(Boolean);
+          if (remoteReplyIds.length) {
+            loadReplyLikes(remoteReplyIds).catch((err) => console.warn('loadReplyLikes failed', err));
+          }
         } catch (e) {
           console.error('renderCommunity load failed', e);
           showEmpty();
