@@ -6717,6 +6717,23 @@ const TIMELINE_MILESTONES = [
     return promise;
   }
 
+  function hasFamilyModeContext() {
+    const profileId = dashboardState.profileId || getActiveProfileId();
+    if (profileId) return true;
+    if (isAnonProfile()) {
+      const code = activeProfile?.code_unique;
+      if (typeof code === 'string' && code.trim()) return true;
+      if (code != null && typeof code !== 'string') {
+        try {
+          return String(code).trim().length > 0;
+        } catch {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
   async function scheduleFamilyContextRefresh() {
     try {
       const state = dashboardState.family;
@@ -7910,12 +7927,16 @@ const TIMELINE_MILESTONES = [
     const normalizedContent = normalizeUpdateContentForLog(updateContent);
     const content = JSON.stringify(normalizedContent);
     const childAccess = dataProxy.children();
+    const shouldRefreshFamilyContext = hasFamilyModeContext();
     if (childAccess.isAnon) {
       await childAccess.callAnon('log-update', {
         childId: remoteChildId,
         updateType,
         updateContent: content
       });
+      if (shouldRefreshFamilyContext) {
+        scheduleFamilyContextRefresh();
+      }
       return;
     }
     const supaClient = await childAccess.getClient();
@@ -7945,7 +7966,9 @@ const TIMELINE_MILESTONES = [
       }
     }
     invalidateGrowthStatus(remoteChildId);
-    scheduleFamilyContextRefresh();
+    if (shouldRefreshFamilyContext) {
+      scheduleFamilyContextRefresh();
+    }
   }
 
   async function logChildUpdateViaApi({ childId, updateType, updateContent, aiSummary, aiCommentaire }) {

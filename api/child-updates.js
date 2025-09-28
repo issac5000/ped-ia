@@ -53,6 +53,32 @@ async function fetchUserFromToken(supaUrl, serviceKey, token) {
   }
 }
 
+async function invalidateFamilyContext(supaUrl, serviceKey, profileId) {
+  const normalizedProfileId = profileId == null ? '' : String(profileId).trim();
+  if (!supaUrl || !serviceKey || !normalizedProfileId) return;
+  const headers = {
+    apikey: serviceKey,
+    Authorization: `Bearer ${serviceKey}`,
+    'Content-Type': 'application/json',
+  };
+  try {
+    await supabaseRequest(
+      `${supaUrl}/rest/v1/family_context?profile_id=eq.${encodeURIComponent(normalizedProfileId)}`,
+      {
+        headers,
+        method: 'PATCH',
+        body: JSON.stringify({ last_generated_at: null }),
+      }
+    );
+    console.log('[AI DEBUG] family_context invalidated', { profileId: normalizedProfileId });
+  } catch (err) {
+    console.warn('[api/child-updates] unable to invalidate family_context', {
+      profileId: normalizedProfileId,
+      err,
+    });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
@@ -121,6 +147,7 @@ export default async function handler(req, res) {
       }
     );
     const row = Array.isArray(inserted) ? inserted[0] : inserted || null;
+    await invalidateFamilyContext(supaUrl, serviceKey, child.user_id);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).json({ update: row });
   } catch (err) {
