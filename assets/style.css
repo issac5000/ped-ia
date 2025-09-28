@@ -3403,6 +3403,52 @@ section[data-route="/community"] .topic-entry .timeline-ai-note__label{
 section[data-route="/community"] .topic-entry .timeline-ai-note__text{
   font-size:13px;
 }
+section[data-route="/community"] .topic-entry--origin{
+  background:rgba(10,17,32,.72);
+  border:1px solid rgba(110,163,255,.32);
+  border-radius:18px;
+  padding:18px 20px;
+  box-shadow:0 16px 36px rgba(5,10,24,.46);
+}
+section[data-route="/community"] .topic-entry--origin .topic-entry__head{
+  padding-bottom:4px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  margin-bottom:12px;
+}
+section[data-route="/community"] .topic-entry--origin .topic-entry__avatar{
+  box-shadow:none;
+  background:linear-gradient(135deg, rgba(120,175,255,.9), rgba(255,229,210,.8));
+}
+section[data-route="/community"] .topic-entry--origin .topic-entry__author-name{
+  font-size:16px;
+}
+section[data-route="/community"] .topic-initial{
+  display:grid;
+  gap:10px;
+  padding:6px 0 0;
+}
+section[data-route="/community"] .topic-initial__badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  padding:6px 12px;
+  border-radius:999px;
+  background:rgba(110,163,255,.2);
+  color:rgba(216,228,255,.95);
+}
+section[data-route="/community"] .topic-initial__content{
+  font-size:15px;
+  line-height:1.65;
+  color:#f5f7ff;
+  background:rgba(255,255,255,.03);
+  border-radius:14px;
+  padding:14px 16px;
+  border:1px solid rgba(255,255,255,.1);
+}
 section[data-route="/community"] .topic-empty{
   margin:0;
   padding:14px 16px;
