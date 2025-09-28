@@ -1,6 +1,5 @@
 import {
   HttpError,
-  clearFamilyContextAiBilan,
   getServiceConfig,
   supabaseRequest,
 } from '../lib/anon-children.js';
@@ -58,7 +57,7 @@ async function fetchUserFromToken(supaUrl, serviceKey, token) {
   }
 }
 
-async function invalidateFamilyContext(supaUrl, serviceKey, profileId) {
+async function invalidateFamilyContext(supaUrl, serviceKey, profileId, { childId = null } = {}) {
   const normalizedProfileId = profileId == null ? '' : String(profileId).trim();
   if (!supaUrl || !serviceKey || !normalizedProfileId) return;
   const headers = {
@@ -66,24 +65,22 @@ async function invalidateFamilyContext(supaUrl, serviceKey, profileId) {
     Authorization: `Bearer ${serviceKey}`,
     'Content-Type': 'application/json',
   };
+  const normalizedChildId = childId == null ? null : String(childId).trim() || null;
+  console.log('[AI DEBUG] growth update received', {
+    profileId: normalizedProfileId,
+    childId: normalizedChildId,
+    newValues: { height_cm: null, weight_kg: null },
+  });
   try {
-    try {
-      await clearFamilyContextAiBilan(supaUrl, serviceKey, normalizedProfileId);
-    } catch (err) {
-      console.warn('[api/child-updates] unable to clear family_context ai_bilan', {
-        profileId: normalizedProfileId,
-        err,
-      });
-    }
     await supabaseRequest(
       `${supaUrl}/rest/v1/family_context?profile_id=eq.${encodeURIComponent(normalizedProfileId)}`,
       {
         headers,
         method: 'PATCH',
-        body: JSON.stringify({ last_generated_at: null }),
+        body: JSON.stringify({ ai_bilan: null, last_generated_at: null }),
       }
     );
-    console.log('[AI DEBUG] family_context invalidated', { profileId: normalizedProfileId });
+    console.log('[AI DEBUG] family_context ai_bilan cleared after growth update', { profileId: normalizedProfileId });
   } catch (err) {
     console.warn('[api/child-updates] unable to invalidate family_context', {
       profileId: normalizedProfileId,
@@ -160,7 +157,7 @@ export default async function handler(req, res) {
       }
     );
     const row = Array.isArray(inserted) ? inserted[0] : inserted || null;
-    await invalidateFamilyContext(supaUrl, serviceKey, child.user_id);
+    await invalidateFamilyContext(supaUrl, serviceKey, child.user_id, { childId });
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).json({ update: row });
   } catch (err) {

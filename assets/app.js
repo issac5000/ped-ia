@@ -517,7 +517,8 @@ const TIMELINE_MILESTONES = [
         parts.push(`${label}: ${formatted}`);
       }
     });
-    const text = parts.join(' • ');
+    let text = parts.join(' • ');
+    text = text || '(Pas encore de bilan généré)';
     return text.slice(0, 400);
   }
 
