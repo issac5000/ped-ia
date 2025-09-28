@@ -1748,6 +1748,9 @@ Propose des recommandations précises et actionnables plutôt que des générali
           console.warn('[family-bilan] profile not found in Supabase', { profileId });
           return res.status(404).json({ error: 'No profile data', profileId });
         }
+        if (!childrenRows.length) {
+          console.warn('[AI DEBUG] family-bilan cacheUsed');
+        }
         const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
         if (childIds.length) {
           const inParam = childIds.map((id) => `${encodeURIComponent(id)}`).join(',');
@@ -1805,6 +1808,30 @@ Propose des recommandations précises et actionnables plutôt que des générali
             })
           );
         }
+        const collectedChildDataLog = childrenRows.map((child, index) => {
+          if (!child) {
+            return { childId: null, name: `#${index + 1}`, height_cm: null, weight_kg: null };
+          }
+          const id = child.id != null ? String(child.id) : '';
+          const growth = id ? growthByChild.get(id) : null;
+          const measurements = Array.isArray(growth?.measurements) ? growth.measurements : [];
+          const latestMeasurement = measurements.length ? measurements[0] : null;
+          const teethEntries = Array.isArray(growth?.teeth) ? growth.teeth : [];
+          const latestTeeth = teethEntries.length ? teethEntries[0] : null;
+          return {
+            childId: id || null,
+            name: typeof child.first_name === 'string' ? child.first_name.trim() : `#${index + 1}`,
+            height_cm: latestMeasurement?.height_cm ?? null,
+            weight_kg: latestMeasurement?.weight_kg ?? null,
+            status_global: latestMeasurement?.status_global ?? null,
+            status_height: latestMeasurement?.status_height ?? null,
+            status_weight: latestMeasurement?.status_weight ?? null,
+            measurement_created_at: latestMeasurement?.created_at ?? null,
+            teeth_count: latestTeeth?.count ?? null,
+            teeth_created_at: latestTeeth?.created_at ?? null,
+          };
+        });
+        console.log('[AI DEBUG] family-bilan collected childData', collectedChildDataLog);
         const growthContextText = buildFamilyGrowthSection(childrenRows, growthByChild);
         const childStatusLines = buildFamilyChildrenGlobalStatus({
           children: childrenRows,
@@ -1843,6 +1870,43 @@ Propose des recommandations précises et actionnables plutôt que des générali
             ? `Historique parental récent:\n${parentUpdatesText.join('\n')}`
             : 'Historique parental: aucun changement récent consigné.',
         ];
+        const updatesByChildForLog = new Map();
+        (Array.isArray(childUpdates) ? childUpdates : []).forEach((row) => {
+          if (!row || !Object.prototype.hasOwnProperty.call(row, 'child_id')) return;
+          const id = row.child_id != null ? String(row.child_id) : '';
+          if (!id) return;
+          const list = updatesByChildForLog.get(id) || [];
+          list.push(row);
+          updatesByChildForLog.set(id, list);
+        });
+        const promptChildFacts = childrenRows.map((child, index) => {
+          if (!child) {
+            return { childId: null, name: `#${index + 1}`, updatesCount: 0 };
+          }
+          const id = child.id != null ? String(child.id) : '';
+          const updates = id ? updatesByChildForLog.get(id) || [] : [];
+          const latestUpdate = updates.length ? updates[0] : null;
+          const growth = id ? growthByChild.get(id) : null;
+          const measurements = Array.isArray(growth?.measurements) ? growth.measurements : [];
+          const latestMeasurement = measurements.length ? measurements[0] : null;
+          return {
+            childId: id || null,
+            name: typeof child.first_name === 'string' ? child.first_name.trim() : `#${index + 1}`,
+            updatesCount: updates.length,
+            latestUpdateAt: latestUpdate?.created_at ?? null,
+            latestUpdateType: latestUpdate?.update_type ?? null,
+            height_cm: latestMeasurement?.height_cm ?? null,
+            weight_kg: latestMeasurement?.weight_kg ?? null,
+            status_global: latestMeasurement?.status_global ?? null,
+            status_height: latestMeasurement?.status_height ?? null,
+            status_weight: latestMeasurement?.status_weight ?? null,
+          };
+        });
+        console.log('[AI DEBUG] family-bilan prompt childFacts', {
+          children: promptChildFacts,
+          childUpdatesCount: Array.isArray(childUpdates) ? childUpdates.length : 0,
+          parentUpdatesCount: Array.isArray(parentUpdates) ? parentUpdates.length : 0,
+        });
         const system = `Tu es Ped’IA, coach familial bienveillant. À partir des observations enfants et du contexte parental, rédige un bilan structuré en français (400 mots max).
 Structure attendue :
 1. État général de la famille (quelques phrases)
@@ -1964,7 +2028,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           }
         }
 
-        let childUpdates;
+        let childUpdates = [];
         try {
           childUpdates = await fetchChildUpdatesForReport({ supaUrl, headers: supabaseHeaders, childId, limit: 15 });
         } catch (err) {
@@ -1972,11 +2036,8 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           const status = err instanceof HttpError && err.status ? err.status : 500;
           return res.status(status).json({ error: 'Unable to fetch child updates' });
         }
-        if (!childUpdates.length) {
-          console.info('[ai] updates counts', { child: 0, parent: 0 });
-          return res.status(404).json({ error: 'Not enough updates' });
-        }
-        const childSummaries = childUpdates.map(summarizeChildUpdateForReport);
+        const normalizedChildUpdates = Array.isArray(childUpdates) ? childUpdates : [];
+        const childSummaries = normalizedChildUpdates.map(summarizeChildUpdateForReport);
 
         let childBaselineRow = null;
         try {
@@ -1984,7 +2045,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         } catch (err) {
           console.warn('[ai] child-full-report baseline fetch failed', { childId, err });
         }
-        const mergedChildData = mergeChildBaselineData(childBaselineRow, childUpdates);
+        const mergedChildData = mergeChildBaselineData(childBaselineRow, normalizedChildUpdates);
 
         let parentUpdates = [];
         if (profileId) {
@@ -2023,6 +2084,16 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }
         const hasMeasurements = Array.isArray(growthData?.measurements) && growthData.measurements.length > 0;
         const hasTeeth = Array.isArray(growthData?.teeth) && growthData.teeth.length > 0;
+        const latestMeasurement = hasMeasurements ? growthData.measurements[0] || null : null;
+        const measurementLog = {
+          height_cm: latestMeasurement?.height_cm ?? null,
+          weight_kg: latestMeasurement?.weight_kg ?? null,
+          status_global: latestMeasurement?.status_global ?? null,
+          status_height: latestMeasurement?.status_height ?? null,
+          status_weight: latestMeasurement?.status_weight ?? null,
+          created_at: latestMeasurement?.created_at ?? null,
+        };
+        console.log('[AI DEBUG] child-full-report using measurements', measurementLog);
         console.info('[ai] growth presence', { hasMeasurements, hasTeeth });
 
         if (mergedChildData) {
@@ -3200,23 +3271,26 @@ async function fetchGrowthDataForPrompt({
   const baseHeaders = headers && typeof headers === 'object' && !Array.isArray(headers) ? { ...headers } : {};
   const serviceHeaders = { apikey: config.serviceKey, Authorization: `Bearer ${config.serviceKey}` };
   const effectiveHeaders = { ...baseHeaders, ...serviceHeaders };
-  const limitedMeasurements = Math.max(1, Math.min(3, Number(measurementLimit) || 3));
-  const limitedTeeth = Math.max(1, Math.min(3, Number(teethLimit) || 3));
+  const limitedMeasurements = 1;
+  const limitedTeeth = 1;
   try {
-    const measurementUrl = `${effectiveUrl}/rest/v1/child_growth_with_status?select=agemos,height_cm,weight_kg,status_weight,status_height,status_global&child_id=eq.${encodeURIComponent(childId)}&order=agemos.desc.nullslast&limit=${limitedMeasurements}`;
+    const measurementUrl = `${effectiveUrl}/rest/v1/growth_measurements?select=*&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc.nullslast&limit=${limitedMeasurements}`;
     const measurementRows = await supabaseRequest(measurementUrl, { headers: effectiveHeaders });
     const measurements = (Array.isArray(measurementRows) ? measurementRows : [])
       .filter(Boolean)
       .map((row) => ({
-        agemos: row?.agemos ?? null,
+        agemos: row?.agemos ?? row?.age_month ?? row?.ageMonth ?? null,
+        month: row?.month ?? null,
         height_cm: row?.height_cm ?? null,
         weight_kg: row?.weight_kg ?? null,
         status_weight: row?.status_weight ?? null,
         status_height: row?.status_height ?? null,
         status_global: row?.status_global ?? null,
+        recorded_at: row?.recorded_at ?? null,
+        created_at: row?.created_at ?? null,
       }));
 
-    const teethUrl = `${effectiveUrl}/rest/v1/growth_teeth?select=month,count,created_at&child_id=eq.${encodeURIComponent(childId)}&order=month.desc.nullslast&limit=${limitedTeeth}`;
+    const teethUrl = `${effectiveUrl}/rest/v1/growth_teeth?select=*&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc.nullslast&limit=${limitedTeeth}`;
     const teethRows = await supabaseRequest(teethUrl, { headers: effectiveHeaders });
     const teeth = (Array.isArray(teethRows) ? teethRows : [])
       .filter(Boolean)
@@ -3224,6 +3298,7 @@ async function fetchGrowthDataForPrompt({
         month: row?.month ?? null,
         count: row?.count ?? null,
         created_at: row?.created_at ?? null,
+        recorded_at: row?.recorded_at ?? null,
       }));
 
     if (!measurements.length && !teeth.length) {
