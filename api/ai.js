@@ -664,7 +664,7 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
 
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
           method:'POST', headers:{ 'Authorization':`Bearer ${apiKey}`, 'Content-Type':'application/json' },
-          body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.7, messages:[
+          body: JSON.stringify({ model:'gpt-4.1-nano', temperature:0.7, messages:[
             {role:'system', content: system}, {role:'user', content: user}
           ]})
         });
@@ -696,7 +696,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4.1-nano',
             temperature: 0.4,
             messages: [
               { role: 'system', content: system },
@@ -736,7 +736,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
       'Content-Type': 'application/json' 
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4.1-nano',
       temperature: 0.4,
       messages: [
         { role: 'system', content: system },
@@ -996,7 +996,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4.1-nano',
             temperature: 0.35,
             max_tokens: 420,
             messages: [
@@ -1189,7 +1189,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
               'Authorization': `Bearer ${apiKey}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.2, messages: summaryMessages })
+            body: JSON.stringify({ model: 'gpt-4.1-nano', temperature: 0.2, messages: summaryMessages })
           });
           if (summaryRes.ok) {
             const summaryJson = await summaryRes.json();
@@ -1234,7 +1234,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
               'Authorization': `Bearer ${apiKey}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.35, messages: commentMessages })
+            body: JSON.stringify({ model: 'gpt-4.1-nano', temperature: 0.35, messages: commentMessages })
           });
           if (commentRes.ok) {
             const commentJson = await commentRes.json();
@@ -1438,7 +1438,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              model: 'gpt-4o-mini',
+              model: 'gpt-4.1-nano',
               temperature: 0.35,
               max_tokens: 700,
               messages: [
@@ -1650,7 +1650,7 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
             },
             signal: controller.signal,
             body: JSON.stringify({
-              model: 'gpt-4o-mini',
+              model: 'gpt-4.1-nano',
               temperature: 0.3,
               max_tokens: 900,
               messages: [
@@ -1707,7 +1707,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
 
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
           method:'POST', headers:{ 'Authorization':`Bearer ${apiKey}`, 'Content-Type':'application/json' },
-          body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
+          body: JSON.stringify({ model:'gpt-4.1-nano', temperature:0.4, messages:[
             {role:'system', content: system}, {role:'user', content: user}
           ]})
         });

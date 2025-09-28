@@ -227,7 +227,7 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
       'Authorization': `Bearer ${API_KEY}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.4, messages: convo })
+    body: JSON.stringify({ model: 'gpt-4.1-nano', temperature: 0.4, messages: convo })
   });
   if (!res.ok) {
     const t = await res.text();
@@ -252,7 +252,7 @@ Structure la réponse avec: Idées de repas, Portions suggérées, Conseils prat
   const user = `Contexte enfant: ${JSON.stringify(child)}\nPréférences/contraintes: ${prefs}`;
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
+    body: JSON.stringify({ model:'gpt-4.1-nano', temperature:0.4, messages:[
       {role:'system', content: system}, {role:'user', content: user}
     ]})
   });
@@ -278,7 +278,7 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
   const user = `Contexte enfant: ${JSON.stringify(child)}\nThème souhaité: ${theme || 'libre'}`;
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.7, messages:[
+    body: JSON.stringify({ model:'gpt-4.1-nano', temperature:0.7, messages:[
       {role:'system', content: system}, {role:'user', content: user}
     ]})
   });
@@ -300,7 +300,7 @@ async function aiComment(body){
 - Montre de l’empathie sans compliments excessifs ni exclamations automatiques.`;
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST', headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ model:'gpt-4o-mini', temperature:0.4, messages:[
+    body: JSON.stringify({ model:'gpt-4.1-nano', temperature:0.4, messages:[
       {role:'system', content: system}, {role:'user', content}
     ]})
   });
@@ -411,7 +411,7 @@ Ne copie pas mot pour mot le commentaire du parent : reformule et apporte un éc
     method:'POST',
     headers:{ 'Authorization':`Bearer ${API_KEY}`, 'Content-Type':'application/json' },
     body: JSON.stringify({
-      model:'gpt-4o-mini',
+      model:'gpt-4.1-nano',
       temperature:0.35,
       messages:[
         {role:'system', content: system},
