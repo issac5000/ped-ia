@@ -216,6 +216,24 @@ async function fetchChildrenContextForPrompt(supaUrl, headers, profileId) {
   return { childrenFromDb, anomaliesFromDb };
 }
 
+function buildChildrenFacts(childrenFromDb) {
+  const lines = [];
+  for (const child of childrenFromDb) {
+    if (!child) continue;
+    const g = child.growth || {};
+    const facts = [];
+    if (typeof g.weight_kg === 'number') facts.push(`${g.weight_kg} kg (${g.status_weight})`);
+    if (typeof g.height_cm === 'number') facts.push(`${g.height_cm} cm (${g.status_height})`);
+    facts.push(`croissance globale = ${g.status_global}`);
+    let line = `**${child.name}** : ${facts.join(', ')}`;
+    if (child.flags && child.flags.length > 0) {
+      line += `. Particularités : ${child.flags.join(', ')}`;
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
 function buildContextFromDb(childrenFromDb = [], anomaliesFromDb = []) {
   if (!Array.isArray(childrenFromDb) || !childrenFromDb.length) {
     return '';
@@ -303,6 +321,50 @@ function fallbackFromAiBilan(aiBilan) {
   } catch {
     return '';
   }
+}
+
+function sanitizeAiBilan(raw) {
+  if (!raw) return '';
+
+  const candidates = [];
+  const pushCandidate = (value) => {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    candidates.push(trimmed);
+  };
+
+  if (typeof raw === 'string') {
+    pushCandidate(raw);
+  } else if (typeof raw === 'object') {
+    pushCandidate(raw.text);
+    pushCandidate(raw.ai_preview);
+    pushCandidate(raw.summary);
+    pushCandidate(raw.resume);
+    pushCandidate(raw.resume_global);
+    pushCandidate(raw.comment);
+  }
+
+  if (!candidates.length) {
+    try {
+      const serialized = JSON.stringify(raw);
+      pushCandidate(serialized);
+    } catch (_err) {
+      // ignore serialization issues
+    }
+  }
+
+  const seen = new Set();
+  const unique = [];
+  for (const candidate of candidates) {
+    const truncated = truncateForPrompt(candidate, 1200);
+    const key = truncated.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(truncated);
+  }
+
+  return unique.join('\n\n');
 }
 
 const DEFAULT_PARENT_CHILD_CONTEXT = Object.freeze({
@@ -1843,27 +1905,33 @@ Propose des recommandations précises et actionnables plutôt que des générali
         } catch (err) {
           console.warn('[family-bilan] children context fetch failed', { profileId, err });
         }
-        const { childrenFromDb, anomaliesFromDb } = childrenContext;
+        const { childrenFromDb } = childrenContext;
         console.log('[AI DEBUG] family_full_report data', { children: childrenFromDb });
-        let contextText = '';
-        let contextFromDb = false;
-        if (Array.isArray(childrenFromDb) && childrenFromDb.length) {
-          contextFromDb = true;
-          contextText = buildContextFromDb(childrenFromDb, anomaliesFromDb);
-        } else {
-          let aiBilanForContext = null;
-          try {
-            aiBilanForContext = await fetchFamilyBilanForPrompt({
-              profileId,
-              codeUnique,
-              supaUrl,
-              headers,
-            });
-          } catch (err) {
-            console.warn('[family-bilan] unable to fetch ai_bilan for fallback', { profileId, err });
-          }
-          contextText = fallbackFromAiBilan(aiBilanForContext);
+        let childrenFactsText = '';
+        const hasChildrenFromDb = Array.isArray(childrenFromDb) && childrenFromDb.length > 0;
+        if (hasChildrenFromDb) {
+          childrenFactsText = buildChildrenFacts(childrenFromDb);
         }
+        console.log('[AI DEBUG] family_bilan childrenFactsText', childrenFactsText);
+        let aiBilanForContext = null;
+        try {
+          aiBilanForContext = await fetchFamilyBilanForPrompt({
+            profileId,
+            codeUnique,
+            supaUrl,
+            headers,
+          });
+        } catch (err) {
+          console.warn('[family-bilan] unable to fetch ai_bilan for fallback', { profileId, err });
+        }
+        const aiBilanNarrative = sanitizeAiBilan(aiBilanForContext);
+        const contextText = [
+          '--- CONTEXTE ENFANTS ---',
+          childrenFactsText || '(aucune donnée disponible en BDD)',
+          '',
+          aiBilanNarrative ? `--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}` : '',
+        ].join('\n');
+        const contextFromDb = hasChildrenFromDb;
         const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
         if (childIds.length) {
           const inParam = childIds.map((id) => `${encodeURIComponent(id)}`).join(',');
@@ -1960,9 +2028,16 @@ Propose des recommandations précises et actionnables plutôt que des générali
             : 'Historique parental: aucun changement récent consigné.',
         ];
         if (contextText) {
-          const contextLabel = contextFromDb
-            ? 'Synthèse enfants (BDD)'
-            : 'Synthèse enfants (ai_bilan)';
+          let contextLabel = 'Synthèse enfants (BDD)';
+          if (contextFromDb) {
+            contextLabel = aiBilanNarrative
+              ? 'Synthèse enfants (BDD + ai_bilan)'
+              : 'Synthèse enfants (BDD)';
+          } else {
+            contextLabel = aiBilanNarrative
+              ? 'Synthèse enfants (ai_bilan)'
+              : 'Synthèse enfants (BDD)';
+          }
           userPromptSections.unshift(`${contextLabel}:\n${contextText}`);
         }
         const system = `Tu es Ped’IA, coach familial bienveillant. À partir des observations enfants et du contexte parental, rédige un bilan structuré en français (400 mots max).
@@ -2082,22 +2157,22 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         } catch (err) {
           console.warn('[ai] child-full-report children context fetch failed', { profileId: profileId || null, err });
         }
-        const { childrenFromDb, anomaliesFromDb } = childrenContext;
+        const { childrenFromDb } = childrenContext;
         console.log('[AI DEBUG] child_full_report data', { children: childrenFromDb });
-        let contextText = '';
-        let contextFromDb = false;
-        if (Array.isArray(childrenFromDb) && childrenFromDb.length) {
-          contextFromDb = true;
-          contextText = buildContextFromDb(childrenFromDb, anomaliesFromDb);
-        } else if (profileId || codeUnique) {
+        let childrenFactsText = '';
+        const hasChildrenFromDb = Array.isArray(childrenFromDb) && childrenFromDb.length > 0;
+        if (hasChildrenFromDb) {
+          childrenFactsText = buildChildrenFacts(childrenFromDb);
+        }
+        let aiBilanForContext = null;
+        if (profileId || codeUnique) {
           try {
-            const aiBilanForContext = await fetchFamilyBilanForPrompt({
+            aiBilanForContext = await fetchFamilyBilanForPrompt({
               profileId,
               codeUnique,
               supaUrl,
               headers: supabaseHeaders,
             });
-            contextText = fallbackFromAiBilan(aiBilanForContext);
           } catch (err) {
             console.warn('[ai] child-full-report family bilan fallback failed', {
               profileId: profileId || null,
@@ -2106,6 +2181,14 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
             });
           }
         }
+        const aiBilanNarrative = sanitizeAiBilan(aiBilanForContext);
+        const contextText = [
+          '--- CONTEXTE ENFANTS ---',
+          childrenFactsText || '(aucune donnée disponible en BDD)',
+          '',
+          aiBilanNarrative ? `--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}` : '',
+        ].join('\n');
+        const contextFromDb = hasChildrenFromDb;
 
         if (!profileId && codeUnique) {
           try {
@@ -2207,9 +2290,16 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         if (baselineSection) promptSections.push(baselineSection);
         promptSections.push(growthSection, detailsSection);
         if (contextText) {
-          const contextLabel = contextFromDb
-            ? 'Contexte familial (BDD)'
-            : 'Contexte familial (ai_bilan)';
+          let contextLabel = 'Contexte familial (BDD)';
+          if (contextFromDb) {
+            if (aiBilanNarrative) {
+              contextLabel = 'Contexte familial (BDD + ai_bilan)';
+            }
+          } else {
+            contextLabel = aiBilanNarrative
+              ? 'Contexte familial (ai_bilan)'
+              : 'Contexte familial (BDD)';
+          }
           promptSections.push(`${contextLabel}:\n${contextText}`);
         }
         const userPrompt = promptSections.join('\n---\n');
