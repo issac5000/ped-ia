@@ -85,7 +85,7 @@ async function fetchChildrenContextForPrompt(supaUrl, headers, profileId) {
   const childrenFromDb = [];
 
   try {
-    const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex&user_id=eq.${encodeURIComponent(
+    const childrenUrl = `${supaUrl}/rest/v1/children?select=id,first_name,sex,eating_style,sleep_night_wakings&user_id=eq.${encodeURIComponent(
       profileId
     )}`;
     const childrenRows = await supabaseRequest(childrenUrl, { headers }).catch((err) => {
@@ -116,7 +116,18 @@ async function fetchChildrenContextForPrompt(supaUrl, headers, profileId) {
         sex: normalizeText(childRow?.sex),
         growth: null,
         recent_updates: [],
+        flags: [],
       };
+
+      const flags = [];
+      if (childRow?.eating_style === 'selectif_difficile') {
+        flags.push('Alimentation sélective/difficile');
+      }
+      if (childRow?.sleep_night_wakings === '3+') {
+        flags.push('Réveils nocturnes fréquents (3+)');
+      }
+      childEntry.flags = flags;
+      console.log('[AI DEBUG] child_flags', { name: childEntry.name, flags: childEntry.flags });
 
       const growthUrl = `${supaUrl}/rest/v1/child_growth_with_status?select=child_id,first_name,sex,agemos,height_cm,weight_kg,status_height,status_weight,status_global&child_id=eq.${encodeURIComponent(
         childId
@@ -1100,7 +1111,13 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
               if (growth.status_height) growthParts.push(`statut taille: ${growth.status_height}`);
               if (growth.status_weight) growthParts.push(`statut poids: ${growth.status_weight}`);
               const details = growthParts.filter(Boolean).join(' ; ');
-              return details ? `${parts.join(' – ')} : ${details}` : parts.join(' – ');
+              const lines = [];
+              const header = parts.join(' – ');
+              lines.push(details ? `${header} : ${details}` : header);
+              if (child?.flags && child.flags.length > 0) {
+                lines.push(`⚠️ Particularités signalées : ${child.flags.join(', ')}`);
+              }
+              return lines.join('\n');
             })
           : [];
         const childSummary = childrenFactLines.length
