@@ -976,7 +976,8 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
   Ta mission est de rédiger un commentaire bref et clair (max 80 mots) sur la mise à jour donnée. 
 
   - Sois objectif et factuel.  
-  - Si le changement est positif, félicite et encourage.  
+  - Si le changement est positif, félicite et encourage. 
+  - Répond au commentaire du parent si celui-ci en a laissé un (important).
   - Si le changement est négatif ou préoccupant, relève la difficulté avec empathie et propose un conseil pratique adapté, tout en terminant sur une note rassurante.  
   - Évite les tournures vagues ou trop générales.  
   - Le ton doit être chaleureux, encourageant et accessible à tous les parents.`;
@@ -1447,7 +1448,7 @@ Ton ton reste chaleureux, mais privilégie l'analyse factuelle et les actions co
 Relie explicitement les informations concernant les enfants (prénoms, croissance, incidents, santé) aux conseils que tu donnes.
 Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
 Propose des recommandations précises et actionnables plutôt que des généralités.`;
-        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental. Sois concret et bienveillant, 150 mots max.`;
+        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent, NE NEGLIGE SURTOUT PAS LE COMMENTAIRE DU PARENT, PREND LE EN CONSIDERATION ET REPONDS Y DE FAçON ADAPTEE. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental. Sois concret et bienveillant, 150 mots max.`;
         if (growthAnomalyChildren.length) {
           const anomalyLines = growthAnomalyChildren
             .map((entry) => `- ${entry.name}: ${entry.growth}`)
@@ -1464,7 +1465,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         const parentCommentLower = parentComment.toLowerCase();
         const wantsChildFocus = /enfant|croissance|sant[eé]/i.test(parentComment) && /(uniquement|juste|parle.*enfant|rien.*parent)/i.test(parentCommentLower);
         if (wantsChildFocus) {
-          system += `\n[FOCUS ENFANTS] Limite toute mention du parent à la manière dont il peut soutenir ses enfants. Ne renvoie pas la discussion sur l’adulte.`;
+          system += `\n[FOCUS ENFANTS] Prend en compte le contexte de l'enfant pour comprendre l'état du parent et fais des liens entre les deux.`;
         }
         const criticalTextAggregate = [
           familyBilanText,
