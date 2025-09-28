@@ -6678,16 +6678,50 @@ const TIMELINE_MILESTONES = [
     const promise = (async () => {
       try {
         const result = await regenerateFamilyContext(targetProfileId || null, targetProfileId ? '' : anonCode);
-        const bilan = typeof result?.bilan === 'string' ? result.bilan : '';
-        const generatedAt = result?.lastGeneratedAt || new Date().toISOString();
-        const previousData = state.data && typeof state.data === 'object' ? state.data : {};
-        const nextFamilyContext = {
-          ...(previousData.familyContext || {}),
-          ai_bilan: bilan,
-          last_generated_at: generatedAt,
-        };
-        state.data = { ...previousData, familyContext: nextFamilyContext };
-        state.lastFetchedAt = Date.now();
+        let bilan = typeof result?.bilan === 'string' ? result.bilan : '';
+        let generatedAt = result?.lastGeneratedAt || new Date().toISOString();
+        const refreshed = Boolean(result?.refreshed);
+        if (refreshed) {
+          try {
+            const cacheKeyProfileId = result?.profileId || targetProfileId || null;
+            const cacheKey = cacheKeyProfileId ? `family_context_${cacheKeyProfileId}` : null;
+            if (cacheKey && typeof localStorage !== 'undefined') {
+              try { localStorage.removeItem(cacheKey); } catch {}
+            }
+          } catch {}
+          state.data = null;
+          state.lastFetchedAt = 0;
+          let refreshedOverview = null;
+          try {
+            refreshedOverview = await fetchFamilyOverview({ force: true });
+          } catch (refreshErr) {
+            console.warn('family overview refresh after regeneration failed', refreshErr);
+          }
+          if (refreshedOverview?.familyContext) {
+            bilan = typeof refreshedOverview.familyContext.ai_bilan === 'string'
+              ? refreshedOverview.familyContext.ai_bilan
+              : bilan;
+            generatedAt = refreshedOverview.familyContext.last_generated_at || generatedAt;
+          } else {
+            const previousData = state.data && typeof state.data === 'object' ? state.data : {};
+            const fallbackContext = {
+              ...(previousData.familyContext || {}),
+              ai_bilan: bilan,
+              last_generated_at: generatedAt,
+            };
+            state.data = { ...previousData, familyContext: fallbackContext };
+            state.lastFetchedAt = Date.now();
+          }
+        } else {
+          const previousData = state.data && typeof state.data === 'object' ? state.data : {};
+          const nextFamilyContext = {
+            ...(previousData.familyContext || {}),
+            ai_bilan: bilan,
+            last_generated_at: generatedAt,
+          };
+          state.data = { ...previousData, familyContext: nextFamilyContext };
+          state.lastFetchedAt = Date.now();
+        }
         if (refreshDashboard && dashboardState.viewMode === 'family') {
           try {
             await renderDashboard();
@@ -6695,7 +6729,7 @@ const TIMELINE_MILESTONES = [
             console.warn('family dashboard render failed after regeneration', renderErr);
           }
         }
-        return { bilan, lastGeneratedAt: generatedAt };
+        return { bilan, lastGeneratedAt: generatedAt, refreshed };
       } catch (err) {
         state.error = err;
         throw err;

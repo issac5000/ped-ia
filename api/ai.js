@@ -1,6 +1,64 @@
 import { HttpError, getServiceConfig, supabaseRequest } from '../lib/anon-children.js';
 import { buildGrowthPromptLines, summarizeGrowthStatus } from '../assets/ia.js';
 
+function createServiceSupabaseClient({ supaUrl, serviceKey }) {
+  const baseUrl = typeof supaUrl === 'string' ? supaUrl.replace(/\/$/, '') : '';
+  if (!baseUrl) {
+    throw new Error('Supabase URL is required');
+  }
+  if (!serviceKey) {
+    throw new Error('Supabase service key is required');
+  }
+  const baseHeaders = {
+    apikey: serviceKey,
+    Authorization: `Bearer ${serviceKey}`,
+    'Content-Type': 'application/json',
+  };
+  return {
+    from(table) {
+      const normalizedTable = typeof table === 'string' ? table.trim() : '';
+      if (!normalizedTable) {
+        throw new Error('Table name is required for Supabase upsert');
+      }
+      const tableUrl = `${baseUrl}/rest/v1/${encodeURIComponent(normalizedTable)}`;
+      return {
+        async upsert(values, options = {}) {
+          const rows = Array.isArray(values) ? values : [values];
+          const params = new URLSearchParams();
+          if (options.onConflict) params.set('on_conflict', options.onConflict);
+          const url = params.size ? `${tableUrl}?${params.toString()}` : tableUrl;
+          const preferParts = ['resolution=merge-duplicates'];
+          if (options.returning === 'minimal') preferParts.push('return=minimal');
+          else preferParts.push('return=representation');
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { ...baseHeaders, Prefer: preferParts.join(',') },
+            body: JSON.stringify(rows),
+          });
+          const text = await response.text().catch(() => '');
+          let json = null;
+          if (text) {
+            try {
+              json = JSON.parse(text);
+            } catch {}
+          }
+          if (!response.ok) {
+            const err = new HttpError(response.status, 'Supabase upsert error', json ?? text);
+            throw err;
+          }
+          const data = json;
+          let count = null;
+          if (typeof data === 'object' && data !== null) {
+            if (Array.isArray(data)) count = data.length;
+            else if (typeof data.count === 'number') count = data.count;
+          }
+          return { data, count };
+        },
+      };
+    },
+  };
+}
+
 async function resolveProfileIdFromCode(codeUnique, { supaUrl, headers }) {
   if (!codeUnique) return null;
   const lookup = await supabaseRequest(
@@ -1699,6 +1757,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         });
         const { supaUrl, serviceKey } = getServiceConfig();
         const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+        const serviceSupabase = createServiceSupabaseClient({ supaUrl, serviceKey });
         if (!profileId && codeUnique) {
           try {
             const resolvedId = await resolveProfileIdFromCode(codeUnique, { supaUrl, headers });
@@ -1951,27 +2010,47 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           return res.status(502).json({ error: 'Bilan indisponible' });
         }
         const nowIso = new Date().toISOString();
-        const payload = [{
-          profile_id: profileId,
+        const resolvedProfileId = profileId || codeUnique || '';
+        const aiBilanTexte = typeof bilan === 'string' ? bilan : '';
+        const truncatedAiBilan = aiBilanTexte.slice(0, 4000);
+        const upsertPayload = {
+          profile_id: resolvedProfileId,
           children_ids: childIds,
-          ai_bilan: bilan.slice(0, 4000),
+          ai_bilan: truncatedAiBilan,
           last_generated_at: nowIso,
-        }];
+        };
+        let upsertSuccess = false;
+        let upsertCount = null;
+        console.log('[AI DEBUG] family-bilan upsert start', {
+          profileId: resolvedProfileId || null,
+          length: truncatedAiBilan.length,
+        });
         try {
-          await supabaseRequest(
-            `${supaUrl}/rest/v1/family_context?on_conflict=profile_id`,
-            {
-              method: 'POST',
-              headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
-              body: JSON.stringify(payload),
-            }
-          );
+          const { data, count } = await serviceSupabase
+            .from('family_context')
+            .upsert(upsertPayload, { onConflict: 'profile_id' });
+          upsertSuccess = true;
+          upsertCount = typeof count === 'number' ? count : Array.isArray(data) ? data.length : null;
+          console.log('[AI DEBUG] family-bilan upsert success', {
+            count: upsertCount,
+            profileId: resolvedProfileId || null,
+          });
         } catch (err) {
-          console.warn('[family-bilan] unable to upsert family_context', err);
+          const errorDetail = err?.details || err?.message || String(err);
+          console.warn('[AI DEBUG] family-bilan upsert fail', {
+            error: errorDetail,
+            profileId: resolvedProfileId || null,
+          });
         }
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        return res.status(200).send(JSON.stringify({ bilan, lastGeneratedAt: nowIso }));
+        const responseBody = {
+          bilan: aiBilanTexte,
+          lastGeneratedAt: nowIso,
+          refreshed: upsertSuccess,
+          profileId: resolvedProfileId || null,
+        };
+        return res.status(200).send(JSON.stringify(responseBody));
       }
       case 'child-full-report': {
         const apiKey = process.env.OPENAI_API_KEY;
