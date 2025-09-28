@@ -384,6 +384,12 @@ function extractChildrenFromStructuredAiBilan(aiBilan) {
 }
 
 function parseChildrenFromAiBilan(aiBilanText) {
+  const skipSections = [
+    'Bilan familial',
+    'Points marquants pour chaque enfant',
+    'Contexte parental',
+    'Recommandations pratiques',
+  ];
   if (typeof aiBilanText !== 'string') return [];
   const trimmedText = aiBilanText.trim();
   if (!trimmedText) return [];
@@ -403,11 +409,17 @@ function parseChildrenFromAiBilan(aiBilanText) {
       if (currentSection) {
         childrenSections.push(currentSection);
       }
-      const name = headerMatch[1]?.trim().slice(0, 80) || '';
+      const rawName = headerMatch[1] ?? '';
+      const cleanedName = rawName.replace(/^[\s*:-]+/, '').replace(/[\s*:-]+$/, '').trim();
+      const name = cleanedName.slice(0, 80);
       const rest = headerMatch[2]?.trim() || '';
-      currentSection = { name, lines: [] };
-      if (rest) {
-        currentSection.lines.push(rest);
+      if (name && !skipSections.includes(name)) {
+        currentSection = { name, lines: [] };
+        if (rest) {
+          currentSection.lines.push(rest);
+        }
+      } else {
+        currentSection = null;
       }
       continue;
     }
@@ -433,7 +445,7 @@ function parseChildrenFromAiBilan(aiBilanText) {
   };
 
   return childrenSections
-    .filter((section) => section.name)
+    .filter((section) => section.name && !skipSections.includes(section.name))
     .map((section, index) => {
       const infoLines = Array.isArray(section.lines) ? section.lines : [];
       const growthLine = findInfoLine(infoLines, ['poids', 'taille', 'croissance']);
