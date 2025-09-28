@@ -1906,9 +1906,9 @@ Propose des recommandations précises et actionnables plutôt que des générali
           console.warn('[family-bilan] children context fetch failed', { profileId, err });
         }
         const { childrenFromDb } = childrenContext;
+        const hasChildrenFromDb = Array.isArray(childrenFromDb) && childrenFromDb.length > 0;
         console.log('[AI DEBUG] family_full_report data', { children: childrenFromDb });
         let childrenFactsText = '';
-        const hasChildrenFromDb = Array.isArray(childrenFromDb) && childrenFromDb.length > 0;
         if (hasChildrenFromDb) {
           childrenFactsText = buildChildrenFacts(childrenFromDb);
         }
@@ -1925,12 +1925,17 @@ Propose des recommandations précises et actionnables plutôt que des générali
           console.warn('[family-bilan] unable to fetch ai_bilan for fallback', { profileId, err });
         }
         const aiBilanNarrative = sanitizeAiBilan(aiBilanForContext);
-        const contextText = [
+        console.log('[AI DEBUG] family-bilan source', {
+          usedChildren: hasChildrenFromDb,
+          usedAiBilan: !hasChildrenFromDb && !!aiBilanNarrative,
+        });
+        let contextText = [
           '--- CONTEXTE ENFANTS ---',
           childrenFactsText || '(aucune donnée disponible en BDD)',
-          '',
-          aiBilanNarrative ? `--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}` : '',
         ].join('\n');
+        if (!hasChildrenFromDb && aiBilanNarrative) {
+          contextText += `\n\n--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}`;
+        }
         const contextFromDb = hasChildrenFromDb;
         const childIds = childrenRows.map((child) => child?.id).filter(Boolean).map(String);
         if (childIds.length) {
@@ -2159,8 +2164,8 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
         }
         const { childrenFromDb } = childrenContext;
         console.log('[AI DEBUG] child_full_report data', { children: childrenFromDb });
-        let childrenFactsText = '';
         const hasChildrenFromDb = Array.isArray(childrenFromDb) && childrenFromDb.length > 0;
+        let childrenFactsText = '';
         if (hasChildrenFromDb) {
           childrenFactsText = buildChildrenFacts(childrenFromDb);
         }
@@ -2182,12 +2187,17 @@ Ton ton est chaleureux, réaliste et encourageant. Mets en lien les difficultés
           }
         }
         const aiBilanNarrative = sanitizeAiBilan(aiBilanForContext);
-        const contextText = [
+        console.log('[AI DEBUG] family-bilan source', {
+          usedChildren: hasChildrenFromDb,
+          usedAiBilan: !hasChildrenFromDb && !!aiBilanNarrative,
+        });
+        let contextText = [
           '--- CONTEXTE ENFANTS ---',
           childrenFactsText || '(aucune donnée disponible en BDD)',
-          '',
-          aiBilanNarrative ? `--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}` : '',
         ].join('\n');
+        if (!hasChildrenFromDb && aiBilanNarrative) {
+          contextText += `\n\n--- APERÇU NARRATIF (ai_bilan) ---\n${aiBilanNarrative}`;
+        }
         const contextFromDb = hasChildrenFromDb;
 
         if (!profileId && codeUnique) {
