@@ -7,6 +7,7 @@ import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
+import { renderMarkdownSimple } from './markdown.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -3466,7 +3467,8 @@ const TIMELINE_MILESTONES = [
           const role = m.role === 'user' ? 'user' : 'assistant';
           const avatar = role === 'user' ? userAvatar : '🤖';
           const label = role === 'user' ? 'Vous' : 'Assistant';
-          return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
+          const bubbleHtml = renderMarkdownSimple(m.content).replace(/\n/g, '<br/>');
+          return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${bubbleHtml}</div></div></div>`;
         })
         .join('');
       safeScrollTo(el, { top: el.scrollHeight, behavior: 'smooth' });
@@ -3501,7 +3503,7 @@ const TIMELINE_MILESTONES = [
         try {
           const text = await askAIRecipes(child, prefs);
           if (aiPageState.instance !== runId || !isRouteAttached()) return;
-          if (outRecipes) outRecipes.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
+          if (outRecipes) outRecipes.innerHTML = `<div>${renderMarkdownSimple(text).replace(/\n/g,'<br/>')}</div>`;
         } catch (err) {
           if (aiPageState.instance !== runId || !isRouteAttached()) return;
           const msg = err instanceof Error && err.message ? err.message : 'Serveur IA indisponible.';
@@ -3550,7 +3552,7 @@ const TIMELINE_MILESTONES = [
         try {
           const text = await askAIStory(child, { theme, duration, sleepy });
           if (aiPageState.instance !== runId || !isRouteAttached()) return;
-          if (outStory) outStory.innerHTML = `<div>${escapeHtml(text).replace(/\n/g,'<br/>')}</div>`;
+          if (outStory) outStory.innerHTML = `<div>${renderMarkdownSimple(text).replace(/\n/g,'<br/>')}</div>`;
         } catch (err) {
           if (aiPageState.instance !== runId || !isRouteAttached()) return;
           const msg = err instanceof Error && err.message ? err.message : 'Serveur IA indisponible.';
@@ -5309,7 +5311,7 @@ const TIMELINE_MILESTONES = [
         const comment = commentText
           ? `<div class="timeline-ai-note">
               <span class="timeline-ai-note__label">Réponse de Ped’IA</span>
-              <div class="timeline-ai-note__text">${escapeHtml(commentText).replace(/\n/g, '<br>')}</div>
+              <div class="timeline-ai-note__text">${renderMarkdownSimple(commentText).replace(/\n/g, '<br>')}</div>
             </div>`
           : '';
         return `
@@ -6065,13 +6067,13 @@ const TIMELINE_MILESTONES = [
     const renderNote = (label, text) => `
       <div class="timeline-parent-note">
         <span class="timeline-parent-note__label">${escapeHtml(label)}</span>
-        <div class="timeline-parent-note__text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+        <div class="timeline-parent-note__text">${renderMarkdownSimple(text).replace(/\n/g, '<br>')}</div>
       </div>
     `;
     const renderAi = (label, text) => `
       <div class="timeline-ai-note">
         <span class="timeline-ai-note__label">${escapeHtml(label)}</span>
-        <div class="timeline-ai-note__text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+        <div class="timeline-ai-note__text">${renderMarkdownSimple(text).replace(/\n/g, '<br>')}</div>
       </div>
     `;
     const blocksHtml = [
