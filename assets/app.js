@@ -6931,7 +6931,8 @@ const TIMELINE_MILESTONES = [
             const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
             const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
             const id = genId();
-            forum.topics.push({ id, title: fullTitle, content, author: whoAmI, createdAt: Date.now(), replies: [] });
+            const uid = getActiveProfileId();
+            forum.topics.push({ id, title: fullTitle, content, author: whoAmI, createdAt: Date.now(), replies: [], user_id: uid || null });
             store.set(K.forum, forum);
             newTopicId = id;
           }
@@ -7000,7 +7001,8 @@ const TIMELINE_MILESTONES = [
             const children = store.get(K.children, []);
             const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
             const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
-            topic.replies.push({ content, author: whoAmI, createdAt: Date.now() });
+            const uid = getActiveProfileId();
+            topic.replies.push({ content, author: whoAmI, createdAt: Date.now(), user_id: uid || null });
             store.set(K.forum, forum);
             renderCommunity();
           } finally {
@@ -7106,6 +7108,23 @@ const TIMELINE_MILESTONES = [
           || normalized.includes('ped ia')
           || normalized.includes('ped-ia');
       };
+      const resolveAuthorId = (item) => {
+        if (!item || typeof item !== 'object') return null;
+        const candidates = [
+          item.user_id,
+          item.userId,
+          item.profile_id,
+          item.profileId,
+          item.author_id,
+          item.authorId,
+        ];
+        for (const candidate of candidates) {
+          if (candidate == null) continue;
+          const str = String(candidate).trim();
+          if (str) return str;
+        }
+        return null;
+      };
       const renderThreadEntry = ({
         authorName,
         authorMetaHtml,
@@ -7116,10 +7135,12 @@ const TIMELINE_MILESTONES = [
         messageBtn,
         label,
         isAi,
+        isSelf,
       }) => {
-        const noteClass = isAi ? 'timeline-ai-note' : 'timeline-parent-note';
-        const labelClass = isAi ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
-        const textClass = isAi ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
+        const highlight = !!(isAi || isSelf);
+        const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
+        const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
+        const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
         const safeInitials = escapeHtml(initials || '✦');
         const safeAuthor = escapeHtml(authorName || 'Anonyme');
         const safeLabel = escapeHtml(label || (isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`));
@@ -7129,8 +7150,12 @@ const TIMELINE_MILESTONES = [
         const actionsHtml = messageBtn
           ? `<div class="topic-entry__actions">${messageBtn}</div>`
           : '';
+        let entryClass = 'topic-entry';
+        if (highlight) entryClass += ' topic-entry--highlight';
+        if (isAi) entryClass += ' topic-entry--ai';
+        if (isSelf) entryClass += ' topic-entry--self';
         return `
-          <article class="topic-entry${isAi ? ' topic-entry--ai' : ''}">
+          <article class="${entryClass}">
             <div class="topic-entry__head">
               <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
               <div class="topic-entry__meta">
@@ -7184,6 +7209,8 @@ const TIMELINE_MILESTONES = [
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
         const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
         const topicIsAi = isAiAuthor(displayAuthor);
+        const topicOwnerId = resolveAuthorId(t);
+        const topicIsSelf = activeId && topicOwnerId ? String(topicOwnerId) === String(activeId) : false;
         const topicEntryHtml = renderThreadEntry({
           authorName: displayAuthor,
           authorMetaHtml: topicAuthorMetaHtml,
@@ -7194,6 +7221,7 @@ const TIMELINE_MILESTONES = [
           messageBtn: '',
           label: topicIsAi ? 'Message de Ped’IA' : 'Publication initiale',
           isAi: topicIsAi,
+          isSelf: topicIsSelf,
         });
         const repliesHtml = rs.map(r=>{
           const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
@@ -7209,6 +7237,8 @@ const TIMELINE_MILESTONES = [
           const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
           const isReplyAi = isAiAuthor(replyAuthor);
           const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
+          const replyOwnerId = resolveAuthorId(r);
+          const replyIsSelf = activeId && replyOwnerId ? String(replyOwnerId) === String(activeId) : false;
           return renderThreadEntry({
             authorName: replyAuthor,
             authorMetaHtml: replyAuthorMetaHtml,
@@ -7219,6 +7249,7 @@ const TIMELINE_MILESTONES = [
             messageBtn: replyMessageBtn,
             label: replyLabel,
             isAi: isReplyAi,
+            isSelf: replyIsSelf,
           });
         }).join('');
         const repliesBlock = repliesCount
