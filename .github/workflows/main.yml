@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Installation manuelle de la CLI
+      # Installation manuelle de la CLI avec le bon lien
       - name: Install Supabase CLI (manual, no action)
         run: |
           echo "➡️ Download Supabase CLI"
