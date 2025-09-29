@@ -18,17 +18,16 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Supabase CLI
-        run: |
-          curl -fsSL https://get.supabase.com/cli | sh -s -- --version 1.204.4
-          echo "$HOME/.supabase/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.supabase/bin:$PATH"
-          supabase --version
+      - name: Install Supabase CLI (official action)
+        uses: supabase/setup-cli@v1
+        with:
+          version: 1.204.4
+
+      - name: Check Supabase CLI version
+        run: supabase --version
 
       - name: Deploy Supabase Functions
-        run: |
-          export PATH="$HOME/.supabase/bin:$PATH"
-          supabase functions deploy --project-ref $PROJECT --no-verify-jwt --debug
+        run: supabase functions deploy --project-ref $PROJECT --no-verify-jwt --debug
         env:
           PROJECT: myrwcjurblksypvekuzb
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
