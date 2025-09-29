@@ -983,11 +983,15 @@ async function loadConversations(){
     try {
       const { data: { session: s } } = await supabase.auth.getSession();
       const token = s?.access_token || '';
-      const r = await fetch('/api/profiles/by-ids', {
+      const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/profiles-by-ids';
+      const payload = { ids };
+      console.debug('[profiles-by-ids request]', payload);
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ids })
+        body: JSON.stringify(payload)
       });
+      console.debug('[profiles-by-ids response]', r);
       if (r.ok) {
         const j = await r.json();
         profiles = (j.profiles||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
@@ -1063,11 +1067,15 @@ async function ensureConversation(otherId){
   try {
     const { data: { session: s } } = await supabase.auth.getSession();
     const token = s?.access_token || '';
-    const r = await fetch('/api/profiles/by-ids', {
+    const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/profiles-by-ids';
+    const payload = { ids: [id] };
+    console.debug('[profiles-by-ids request]', payload);
+    const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ ids: [id] })
+      body: JSON.stringify(payload)
     });
+    console.debug('[profiles-by-ids response]', r);
     if (r.ok) {
       const j = await r.json();
       const p = (j.profiles||[])[0];
