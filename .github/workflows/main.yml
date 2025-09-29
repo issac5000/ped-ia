@@ -15,16 +15,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Supabase CLI manually
+      - name: Install Supabase CLI (manual, no action)
         run: |
-          echo "➡️ Téléchargement du Supabase CLI"
-          curl -L https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz -o supabase.tar.gz
+          echo "➡️ Download Supabase CLI"
+          curl -fsSL -o supabase.tar.gz https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz
+          echo "➡️ Extract"
           tar -xzf supabase.tar.gz
+          echo "➡️ Move binary"
           sudo mv supabase /usr/local/bin/
+          echo "➡️ Which supabase?"
+          which supabase
+          echo "➡️ Version"
           supabase --version
 
       - name: Deploy Supabase Functions
-        run: supabase functions deploy --project-ref $PROJECT --no-verify-jwt --debug
+        run: |
+          echo "➡️ Deploying functions…"
+          supabase functions deploy --project-ref "$PROJECT" --no-verify-jwt --debug
         env:
           PROJECT: myrwcjurblksypvekuzb
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
