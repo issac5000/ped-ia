@@ -142,6 +142,7 @@ export async function processAnonCommunityRequest(body) {
       }
 
       const authors = {};
+      const pendingCountFallback = [];
       profiles.forEach((p) => {
         if (!p?.id) return;
         const key = String(p.id);
@@ -153,7 +154,40 @@ export async function processAnonCommunityRequest(body) {
           child_count: childrenCount,
           show_children_count: showFlag,
         };
+        if (showFlag && (!Number.isFinite(childrenCount) || childrenCount === 0)) {
+          pendingCountFallback.push(key);
+        }
       });
+
+      if (pendingCountFallback.length) {
+        const fallbackFilter = buildInFilter(pendingCountFallback);
+        if (fallbackFilter) {
+          try {
+            const params = new URLSearchParams({ select: 'id,children_count,show_children_count' });
+            params.append('id', fallbackFilter);
+            const fallbackRows = await supabaseRequest(
+              `${supaUrl}/rest/v1/profiles_with_children?${params.toString()}`,
+              { headers }
+            );
+            (Array.isArray(fallbackRows) ? fallbackRows : []).forEach((row) => {
+              if (!row?.id) return;
+              const key = String(row.id);
+              if (!authors[key]) return;
+              const countRaw = row.children_count ?? row.child_count ?? row.childrenCount ?? null;
+              const parsed = Number(countRaw);
+              if (Number.isFinite(parsed)) {
+                authors[key].children_count = parsed;
+                authors[key].child_count = parsed;
+              }
+              if (Object.prototype.hasOwnProperty.call(row, 'show_children_count')) {
+                authors[key].show_children_count = !!row.show_children_count;
+              }
+            });
+          } catch (fallbackErr) {
+            console.warn('profiles_with_children fallback failed', fallbackErr);
+          }
+        }
+      }
 
       return {
         status: 200,
@@ -278,6 +312,7 @@ export async function processAnonCommunityRequest(body) {
       }
       const authorIds = Array.from(new Set(replies.map((r) => r.user_id).filter(Boolean)));
       const authors = {};
+      const pendingCountFallback = [];
       if (authorIds.length) {
         const authorFilter = buildInFilter(authorIds);
         if (authorFilter) {
@@ -313,7 +348,39 @@ export async function processAnonCommunityRequest(body) {
               child_count: childrenCount,
               show_children_count: showFlag,
             };
+            if (showFlag && (!Number.isFinite(childrenCount) || childrenCount === 0)) {
+              pendingCountFallback.push(key);
+            }
           });
+        }
+      }
+      if (pendingCountFallback.length) {
+        const fallbackFilter = buildInFilter(pendingCountFallback);
+        if (fallbackFilter) {
+          try {
+            const params = new URLSearchParams({ select: 'id,children_count,show_children_count' });
+            params.append('id', fallbackFilter);
+            const fallbackRows = await supabaseRequest(
+              `${supaUrl}/rest/v1/profiles_with_children?${params.toString()}`,
+              { headers }
+            );
+            (Array.isArray(fallbackRows) ? fallbackRows : []).forEach((row) => {
+              if (!row?.id) return;
+              const key = String(row.id);
+              if (!authors[key]) return;
+              const countRaw = row.children_count ?? row.child_count ?? row.childrenCount ?? null;
+              const parsed = Number(countRaw);
+              if (Number.isFinite(parsed)) {
+                authors[key].children_count = parsed;
+                authors[key].child_count = parsed;
+              }
+              if (Object.prototype.hasOwnProperty.call(row, 'show_children_count')) {
+                authors[key].show_children_count = !!row.show_children_count;
+              }
+            });
+          } catch (fallbackErr) {
+            console.warn('profiles_with_children fallback (recent replies) failed', fallbackErr);
+          }
         }
       }
       const replyTopicIds = new Set(replies.map((r) => r.topic_id).filter(Boolean));
