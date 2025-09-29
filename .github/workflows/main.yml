@@ -20,9 +20,8 @@ jobs:
           wget -q https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz
           tar -xzf supabase_1.204.4_linux_amd64.tar.gz
           sudo mv supabase /usr/local/bin/
-
-      - name: Check Supabase CLI version
-        run: supabase --version
+          which supabase
+          supabase --version
 
       - name: Deploy Supabase Functions
         run: supabase functions deploy --project-ref $PROJECT --no-verify-jwt --debug
