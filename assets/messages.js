@@ -457,20 +457,28 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
     if (since) payload.since = since;
     const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-messages';
     console.debug("Calling Supabase function:", url, payload);
-    const response = await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const text = await response.text().catch(() => '');
-    const responsePayload = text ? JSON.parse(text) : {};
-    if (!response.ok) {
-      const err = new Error(responsePayload?.error || 'Service indisponible');
-      if (responsePayload?.details) err.details = responsePayload.details;
+    console.debug("[anon-messages response]", res);
+    const text = await res.text().catch(() => '');
+    let json = {};
+    if (text) {
+      try { json = JSON.parse(text); } catch {}
+    }
+    if (!res.ok) {
+      const err = new Error(json?.error || 'Service indisponible');
+      if (json?.details) err.details = json.details;
       throw err;
     }
-    const messages = Array.isArray(responsePayload?.messages) ? responsePayload.messages : [];
-    const senders = responsePayload?.senders && typeof responsePayload.senders === 'object' ? responsePayload.senders : {};
+    const payloadData = json?.data || {};
+    const messages = Array.isArray(payloadData.messages) ? payloadData.messages : [];
+    const senders = payloadData?.senders && typeof payloadData.senders === 'object' ? payloadData.senders : {};
+    if (payloadData.self?.full_name) {
+      anonProfile.fullName = payloadData.self.full_name;
+    }
     return { messages, senders };
   } catch (err) {
     console.error('anonMessagesRequest failed', err);
@@ -537,17 +545,18 @@ async function anonMessagesActionRequest(action, payload = {}) {
   const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-messages';
   const payloadToSend = { action, code: anonProfile.code, ...payload };
   console.debug("Calling Supabase function:", url, payloadToSend);
-  const response = await fetch(url, {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payloadToSend),
   });
-  const text = await response.text().catch(() => '');
+  console.debug("[anon-messages response]", res);
+  const text = await res.text().catch(() => '');
   let json = null;
   if (text) {
     try { json = JSON.parse(text); } catch {}
   }
-  if (!response.ok) {
+  if (!res.ok) {
     const err = new Error(json?.error || 'Service indisponible');
     if (json?.details) err.details = json.details;
     throw err;
@@ -796,9 +805,13 @@ async function init(){
         if (initialName) myInitial = initialName[0].toUpperCase();
         try {
           const resSelf = await anonMessagesActionRequest('profile-self', {});
-          if (resSelf.profile?.full_name) {
-            anonProfile.fullName = resSelf.profile.full_name;
-            const first = (resSelf.profile.full_name || '').trim()[0];
+          const payloadSelf = resSelf?.data || {};
+          const profileSelf = payloadSelf.self || payloadSelf.profile || null;
+          if (payloadSelf.self?.full_name) {
+            anonProfile.fullName = payloadSelf.self.full_name;
+          }
+          if (profileSelf?.full_name) {
+            const first = (profileSelf.full_name || '').trim()[0];
             if (first) myInitial = first.toUpperCase();
           }
         } catch (e) {
@@ -910,22 +923,23 @@ async function loadConversations(){
   if (isAnon) {
     try {
       const res = await anonMessagesActionRequest('list-conversations', {});
-      const convs = Array.isArray(res.conversations) ? res.conversations : [];
-      const profileList = Array.isArray(res.profiles) ? res.profiles : [];
-      if (res.self?.full_name) {
-        anonProfile.fullName = res.self.full_name;
-        const initial = (res.self.full_name || '').trim()[0];
+      const payload = res?.data || {};
+      const convs = Array.isArray(payload.conversations) ? payload.conversations : [];
+      const profileList = Array.isArray(payload.profiles) ? payload.profiles : [];
+      if (payload.self?.full_name) {
+        anonProfile.fullName = payload.self.full_name;
+        const initial = (payload.self.full_name || '').trim()[0];
         if (initial) myInitial = initial.toUpperCase();
       }
-      const profileMap = new Map(profileList.map(p => [idStr(p.id), p.full_name || 'Parent']));
+      const profileMap = new Map(profileList.map(p => [idStr(p.id), p.full_name || anonProfile?.fullName || 'Anonyme']));
       parents = convs.map(conv => {
         const pid = idStr(conv.otherId);
-        const fullName = profileMap.get(pid) || 'Parent';
+        const fullName = profileMap.get(pid) || anonProfile?.fullName || 'Anonyme';
         return { id: pid, full_name: fullName };
       });
       profileList.forEach(p => {
         const pid = idStr(p.id);
-        if (!parents.some(x => x.id === pid)) parents.push({ id: pid, full_name: p.full_name || 'Parent' });
+        if (!parents.some(x => x.id === pid)) parents.push({ id: pid, full_name: p.full_name || anonProfile?.fullName || 'Anonyme' });
       });
       lastMessages = new Map();
       convs.forEach(conv => {
@@ -1011,9 +1025,10 @@ function renderParentList(){
     li.dataset.id = p.id;
     const time = last? new Date(last.created_at).toLocaleString() : '';
     const unreadDot = hasUnreadFrom(p.id) ? '<span class="dot-unread" title="Nouveau message"></span>' : '';
+    const authorName = p.full_name || anonProfile?.fullName || 'Anonyme';
     li.innerHTML = `
       <div class="meta">
-        <div class="name">${escapeHTML(p.full_name||'Parent')} ${unreadDot}</div>
+        <div class="name">${escapeHTML(authorName)} ${unreadDot}</div>
         ${time?`<time>${time}</time>`:''}
       </div>
       <button class="del-btn" title="Supprimer">✖</button>`;
@@ -1028,10 +1043,16 @@ async function ensureConversation(otherId){
   const id = idStr(otherId);
   if(parents.some(p=>p.id===id)) return;
   if (isAnon) {
-    let profile = { id, full_name: 'Parent' };
+    let profile = { id, full_name: anonProfile?.fullName || 'Anonyme' };
     try {
       const res = await anonMessagesActionRequest('profile', { otherId: id });
-      if (res.profile) profile = { id: idStr(res.profile.id), full_name: res.profile.full_name || 'Parent' };
+      const payload = res?.data || {};
+      if (payload.self?.full_name) {
+        anonProfile.fullName = payload.self.full_name;
+      }
+      if (payload.profile) {
+        profile = { id: idStr(payload.profile.id), full_name: payload.profile.full_name || anonProfile?.fullName || 'Anonyme' };
+      }
     } catch (e) {}
     parents.push(profile);
     if (!lastMessages.has(id)) lastMessages.set(id, null);
@@ -1131,14 +1152,18 @@ async function fetchConversation(otherId){
   if (isAnon) {
     try {
       const res = await anonMessagesActionRequest('get-conversation', { otherId: id });
-      const messages = Array.isArray(res.messages) ? res.messages.map(m => ({
+      const payload = res?.data || {};
+      const messages = Array.isArray(payload.messages) ? payload.messages.map(m => ({
         ...m,
         sender_id: idStr(m.sender_id),
         receiver_id: idStr(m.receiver_id),
       })) : [];
       currentMessages = messages;
-      if (res.profile) {
-        const fullName = res.profile.full_name || 'Parent';
+      if (payload.self?.full_name) {
+        anonProfile.fullName = payload.self.full_name;
+      }
+      if (payload.profile) {
+        const fullName = payload.profile.full_name || anonProfile?.fullName || 'Anonyme';
         const existing = parents.find(p => p.id === id);
         if (existing) existing.full_name = fullName;
         else parents.push({ id, full_name: fullName });
@@ -1185,21 +1210,22 @@ $('#message-form').addEventListener('submit', async e=>{
   if (isAnon) {
     try {
       const res = await anonMessagesActionRequest('send', { otherId: idStr(activeParent.id), content });
-      const data = res.message || {
-        sender_id: anonProfile?.id,
-        receiver_id: idStr(activeParent.id),
-        content,
-        created_at: new Date().toISOString(),
-      };
-      const msg = {
-        ...data,
-        sender_id: idStr(data.sender_id),
-        receiver_id: idStr(data.receiver_id),
-      };
-      currentMessages.push(msg);
-      renderMessages();
-      lastMessages.set(activeParent.id, msg);
-      renderParentList();
+      const payload = res?.data || {};
+      if (payload.self?.full_name) {
+        anonProfile.fullName = payload.self.full_name;
+      }
+      const saved = payload.message;
+      if (saved) {
+        const msg = {
+          ...saved,
+          sender_id: idStr(saved.sender_id),
+          receiver_id: idStr(saved.receiver_id),
+        };
+        currentMessages.push(msg);
+        renderMessages();
+        lastMessages.set(activeParent.id, msg);
+        renderParentList();
+      }
     } catch (err) {
       console.error('send message anon', err);
       alert('Envoi impossible pour le moment.');
