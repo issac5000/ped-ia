@@ -7599,9 +7599,9 @@ const TIMELINE_MILESTONES = [
                 .map((value) => (value != null ? String(value) : ''))
                 .filter(Boolean);
               if (!idArray.length) return new Map();
-              const buildProfileEntry = (profile) => {
+              const buildProfileEntry = (profile, explicitId) => {
                 const fallbackName = profile?.full_name || profile?.name || 'Utilisateur';
-                return (
+                const base =
                   normalizeAuthorMeta({
                     name: fallbackName,
                     child_count:
@@ -7612,8 +7612,41 @@ const TIMELINE_MILESTONES = [
                       profile?.show_stats ??
                       profile?.showStats ??
                       null,
-                  }) || { name: fallbackName || 'Utilisateur', childCount: null, showChildCount: false }
-                );
+                  }) || { name: fallbackName || 'Utilisateur', childCount: null, showChildCount: false };
+                const profileId = explicitId != null ? String(explicitId) : profile?.id != null ? String(profile.id) : '';
+                const activeId = getActiveProfileId();
+                if (profileId && activeId && profileId === String(activeId)) {
+                  let localChildCount = null;
+                  if (Array.isArray(settingsState.children)) {
+                    localChildCount = settingsState.children.length;
+                  }
+                  if (!Number.isFinite(localChildCount)) {
+                    try {
+                      const storedChildren = store.get(K.children, []);
+                      if (Array.isArray(storedChildren)) localChildCount = storedChildren.length;
+                    } catch {
+                      localChildCount = base.childCount;
+                    }
+                  }
+                  const localPrivacy =
+                    settingsState.privacy?.showStats != null
+                      ? !!settingsState.privacy.showStats
+                      : (() => {
+                          try {
+                            const storedPrivacy = store.get(K.privacy, {});
+                            return storedPrivacy?.showStats != null ? !!storedPrivacy.showStats : null;
+                          } catch {
+                            return null;
+                          }
+                        })();
+                  if (Number.isFinite(localChildCount)) {
+                    base.childCount = Math.max(0, Math.trunc(localChildCount));
+                  }
+                  if (localPrivacy != null) {
+                    base.showChildCount = localPrivacy;
+                  }
+                }
+                return base;
               };
               try {
                 const { data: rows, error: viewError } = await supabase
@@ -7625,7 +7658,7 @@ const TIMELINE_MILESTONES = [
                     .map((row) => {
                       const id = row?.id != null ? String(row.id) : '';
                       if (!id) return null;
-                      return [id, buildProfileEntry(row)];
+                      return [id, buildProfileEntry(row, id)];
                     })
                     .filter(Boolean);
                   const missingIds = entries
@@ -7640,7 +7673,7 @@ const TIMELINE_MILESTONES = [
                             .map((profile) => {
                               const pid = profile?.id != null ? String(profile.id) : '';
                               if (!pid) return null;
-                              return [pid, buildProfileEntry(profile)];
+                              return [pid, buildProfileEntry(profile, pid)];
                             })
                             .filter(Boolean)
                         );
@@ -7684,7 +7717,7 @@ const TIMELINE_MILESTONES = [
                     .map((profile) => {
                       const id = profile?.id != null ? String(profile.id) : '';
                       if (!id) return null;
-                      return [id, buildProfileEntry(profile)];
+                      return [id, buildProfileEntry(profile, id)];
                     })
                     .filter(Boolean);
                   if (entries.length) {
@@ -7724,12 +7757,15 @@ const TIMELINE_MILESTONES = [
                     if (!id) return null;
                     return [
                       id,
-                      buildProfileEntry({
-                        id: profile.id,
-                        full_name: profile.full_name,
-                        child_count: counts.get(id) ?? null,
-                        show_children_count: profile.show_children_count,
-                      }),
+                      buildProfileEntry(
+                        {
+                          id: profile.id,
+                          full_name: profile.full_name,
+                          child_count: counts.get(id) ?? null,
+                          show_children_count: profile.show_children_count,
+                        },
+                        id
+                      ),
                     ];
                   })
                   .filter(Boolean)
