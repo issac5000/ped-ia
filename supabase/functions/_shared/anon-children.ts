@@ -980,15 +980,19 @@ export async function processAnonChildrenRequest(body) {
       const updateContent = JSON.stringify(parsedContent ?? {});
       const parentComment = extractParentComment(parsedContent);
       const updateText = buildUpdateText(updateType, parsedContent);
-      let aiSummary = '';
-      let aiCommentaire = '';
-      if (OPENAI_API_KEY) {
+      let aiSummary = normalizeString(body.aiSummary ?? body.ai_summary ?? '', 1200, { allowNull: true }) || '';
+      let aiCommentaire = normalizeString(body.aiCommentaire ?? body.ai_commentaire ?? '', 2000, { allowNull: true }) || '';
+      if (OPENAI_API_KEY && (!aiSummary || !aiCommentaire)) {
         const growthData = await fetchGrowthDataForAnonPrompt(supaUrl, headers, childId, { measurementLimit: 3, teethLimit: 3 });
         const growthSection = formatGrowthSectionForAnonPrompt(growthData);
         const growthAlert = buildGrowthAlertSummary(growthData?.measurements);
-        aiSummary = await generateAiSummary(updateType, updateText, parentComment, growthSection, growthAlert);
-        const previousSummaries = await fetchRecentSummaries(supaUrl, headers, childId, 10);
-        aiCommentaire = await generateAiCommentaire(updateType, updateText, parentComment, previousSummaries, aiSummary, growthSection, growthAlert);
+        if (!aiSummary) {
+          aiSummary = await generateAiSummary(updateType, updateText, parentComment, growthSection, growthAlert);
+        }
+        if (!aiCommentaire) {
+          const previousSummaries = await fetchRecentSummaries(supaUrl, headers, childId, 10);
+          aiCommentaire = await generateAiCommentaire(updateType, updateText, parentComment, previousSummaries, aiSummary, growthSection, growthAlert);
+        }
       }
       const payload = {
         child_id: childId,

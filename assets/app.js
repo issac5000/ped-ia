@@ -8306,17 +8306,27 @@ const TIMELINE_MILESTONES = [
     const normalizedContent = normalizeUpdateContentForLog(updateContent);
     const content = JSON.stringify(normalizedContent);
     const childAccess = dataProxy.children();
-    if (childAccess.isAnon) {
+    const isAnon = childAccess.isAnon;
+    let historySummaries = [];
+    if (isAnon) {
+      historySummaries = await fetchAnonChildUpdateSummaries(childAccess, remoteChildId);
+    } else {
+      historySummaries = await fetchChildUpdateSummaries(remoteChildId);
+    }
+    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(remoteChildId, updateType, normalizedContent, historySummaries);
+    if (isAnon) {
       await childAccess.callAnon('log-update', {
         childId: remoteChildId,
         updateType,
-        updateContent: content
+        updateContent: content,
+        aiSummary,
+        aiCommentaire,
       });
+      invalidateGrowthStatus(remoteChildId);
+      scheduleFamilyContextRefresh();
       return;
     }
     const supaClient = await childAccess.getClient();
-    const historySummaries = await fetchChildUpdateSummaries(remoteChildId);
-    const { summary: aiSummary, comment: aiCommentaire } = await generateAiSummaryAndComment(remoteChildId, updateType, normalizedContent, historySummaries);
     const payload = { child_id: remoteChildId, update_type: updateType, update_content: content };
     if (aiSummary) payload.ai_summary = aiSummary;
     if (aiCommentaire) payload.ai_commentaire = aiCommentaire;
@@ -8342,6 +8352,20 @@ const TIMELINE_MILESTONES = [
     }
     invalidateGrowthStatus(remoteChildId);
     scheduleFamilyContextRefresh();
+  }
+
+  async function fetchAnonChildUpdateSummaries(childAccess, childId) {
+    if (!childId || !childAccess || !childAccess.isAnon) return [];
+    try {
+      const res = await childAccess.callAnon('list-updates', { childId, limit: 10 });
+      const updates = Array.isArray(res?.updates) ? res.updates : [];
+      return updates
+        .map((row) => (typeof row?.ai_summary === 'string' ? row.ai_summary.trim() : ''))
+        .filter(Boolean);
+    } catch (err) {
+      console.warn('anon child update summaries fetch failed', err);
+      return [];
+    }
   }
 
   async function logChildUpdateViaApi({ childId, updateType, updateContent, aiSummary, aiCommentaire }) {
