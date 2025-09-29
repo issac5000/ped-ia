@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "supabase/functions/**"
-  workflow_dispatch: {}   # permet de lancer manuellement
+  workflow_dispatch: {}   # permet de déclencher manuellement depuis l'UI
 
 jobs:
   deploy:
@@ -16,14 +16,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Installation MANUELLE (aucune action externe)
+      # Installation manuelle de la CLI
       - name: Install Supabase CLI (manual, no action)
         run: |
           echo "➡️ Download Supabase CLI"
           curl -fsSL -o supabase.tar.gz https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz
           echo "➡️ Extract"
           tar -xzf supabase.tar.gz
-          echo "➡️ Move to /usr/local/bin"
+          echo "➡️ Move binary"
           sudo mv supabase /usr/local/bin/
           echo "➡️ Check binary path"
           which supabase || (echo "❌ supabase not in PATH" && exit 1)
