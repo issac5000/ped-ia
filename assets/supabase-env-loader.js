@@ -38,12 +38,17 @@ export async function loadSupabaseEnv() {
   }
   if (!loadingPromise) {
     loadingPromise = (async () => {
-      const sources = ['https://myrwcjurblksypvekuzb.supabase.co/functions/v1/env', '/assets/supabase-env.json'];
+      let loaded = false;
+      const sources = ['/assets/supabase-env.json'];
       for (const src of sources) {
         const candidate = await fetchEnvCandidate(src);
         if (!candidate) continue;
         remember(candidate);
+        loaded = true;
         if (candidate.url && candidate.anonKey) break;
+      }
+      if (!loaded) {
+        console.warn('supabase-env.json manquant, vérifiez vos assets');
       }
       if (!cache) remember({});
       return cache;
