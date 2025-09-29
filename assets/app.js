@@ -7599,26 +7599,79 @@ const TIMELINE_MILESTONES = [
                 .map((value) => (value != null ? String(value) : ''))
                 .filter(Boolean);
               if (!idArray.length) return new Map();
+              const buildProfileEntry = (profile) => {
+                const fallbackName = profile?.full_name || profile?.name || 'Utilisateur';
+                return (
+                  normalizeAuthorMeta({
+                    name: fallbackName,
+                    child_count:
+                      profile?.child_count ?? profile?.children_count ?? profile?.childrenCount ?? null,
+                    show_children_count:
+                      profile?.show_children_count ??
+                      profile?.showChildCount ??
+                      profile?.show_stats ??
+                      profile?.showStats ??
+                      null,
+                  }) || { name: fallbackName || 'Utilisateur', childCount: null, showChildCount: false }
+                );
+              };
               try {
                 const { data: rows, error: viewError } = await supabase
                   .from('profiles_with_children')
                   .select('id,full_name,children_count,show_children_count')
                   .in('id', idArray);
                 if (!viewError && Array.isArray(rows) && rows.length) {
-                  return new Map(
-                    rows
-                      .map((row) => {
-                        const id = row?.id != null ? String(row.id) : '';
-                        if (!id) return null;
-                        const entry = normalizeAuthorMeta({
-                          name: row.full_name || 'Utilisateur',
-                          child_count: row.children_count ?? null,
-                          show_children_count: row.show_children_count,
-                        }) || { name: row.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                        return [id, entry];
-                      })
-                      .filter(Boolean)
-                  );
+                  const entries = rows
+                    .map((row) => {
+                      const id = row?.id != null ? String(row.id) : '';
+                      if (!id) return null;
+                      return [id, buildProfileEntry(row)];
+                    })
+                    .filter(Boolean);
+                  const missingIds = entries
+                    .filter(([, entry]) => entry.showChildCount && !Number.isFinite(entry.childCount))
+                    .map(([id]) => id);
+                  if (missingIds.length) {
+                    try {
+                      const payload = await callEdgeFunction('profiles-by-ids', { body: { ids: missingIds } });
+                      if (payload?.profiles) {
+                        const fallbackMap = new Map(
+                          payload.profiles
+                            .map((profile) => {
+                              const pid = profile?.id != null ? String(profile.id) : '';
+                              if (!pid) return null;
+                              return [pid, buildProfileEntry(profile)];
+                            })
+                            .filter(Boolean)
+                        );
+                        if (fallbackMap.size) {
+                          const missingSet = new Set(missingIds);
+                          entries.forEach((pair, index) => {
+                            const [id, entry] = pair;
+                            if (!missingSet.has(id)) return;
+                            const fallbackEntry = fallbackMap.get(id);
+                            if (!fallbackEntry) return;
+                            entries[index] = [
+                              id,
+                              {
+                                ...entry,
+                                childCount: Number.isFinite(fallbackEntry.childCount)
+                                  ? fallbackEntry.childCount
+                                  : entry.childCount,
+                                showChildCount:
+                                  fallbackEntry.showChildCount != null
+                                    ? fallbackEntry.showChildCount
+                                    : entry.showChildCount,
+                              },
+                            ];
+                          });
+                        }
+                      }
+                    } catch (err) {
+                      console.warn('profiles-by-ids enrichment failed', err);
+                    }
+                  }
+                  return new Map(entries);
                 }
                 if (viewError) throw viewError;
               } catch (err) {
@@ -7631,13 +7684,7 @@ const TIMELINE_MILESTONES = [
                     .map((profile) => {
                       const id = profile?.id != null ? String(profile.id) : '';
                       if (!id) return null;
-                      const entry = normalizeAuthorMeta({
-                        name: profile.full_name || profile.name || 'Utilisateur',
-                        child_count: profile.child_count ?? profile.children_count ?? null,
-                        show_children_count:
-                          profile.show_children_count ?? profile.showChildCount ?? profile.show_stats ?? profile.showStats,
-                      }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                      return [id, entry];
+                      return [id, buildProfileEntry(profile)];
                     })
                     .filter(Boolean);
                   if (entries.length) {
@@ -7675,12 +7722,15 @@ const TIMELINE_MILESTONES = [
                   .map((profile) => {
                     const id = profile?.id != null ? String(profile.id) : '';
                     if (!id) return null;
-                    const entry = normalizeAuthorMeta({
-                      name: profile.full_name || 'Utilisateur',
-                      child_count: counts.get(id) ?? null,
-                      show_children_count: profile.show_children_count,
-                    }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                    return [id, entry];
+                    return [
+                      id,
+                      buildProfileEntry({
+                        id: profile.id,
+                        full_name: profile.full_name,
+                        child_count: counts.get(id) ?? null,
+                        show_children_count: profile.show_children_count,
+                      }),
+                    ];
                   })
                   .filter(Boolean)
               );
