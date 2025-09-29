@@ -15,27 +15,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Supabase CLI (manual, with debug)
+      - name: Install Supabase CLI manually
         run: |
-          echo "➡️ Téléchargement du binaire Supabase CLI"
-          wget -q https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz
-
-          echo "➡️ Extraction de l’archive"
-          tar -xzf supabase_1.204.4_linux_amd64.tar.gz || (echo "❌ Extraction échouée" && exit 1)
-
-          echo "➡️ Déplacement du binaire dans /usr/local/bin"
-          sudo mv supabase /usr/local/bin/ || (echo "❌ mv échoué" && exit 1)
-
-          echo "➡️ Vérification des droits et de la présence"
-          ls -lah /usr/local/bin/supabase
-
-          echo "➡️ Vérification version Supabase CLI"
-          supabase --version || (echo "❌ Supabase CLI introuvable après install" && exit 1)
+          echo "➡️ Téléchargement du Supabase CLI"
+          curl -L https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz -o supabase.tar.gz
+          tar -xzf supabase.tar.gz
+          sudo mv supabase /usr/local/bin/
+          supabase --version
 
       - name: Deploy Supabase Functions
-        run: |
-          echo "➡️ Déploiement des fonctions Supabase"
-          supabase functions deploy --project-ref $PROJECT --no-verify-jwt --debug
+        run: supabase functions deploy --project-ref $PROJECT --no-verify-jwt --debug
         env:
           PROJECT: myrwcjurblksypvekuzb
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
