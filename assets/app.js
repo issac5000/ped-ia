@@ -7200,7 +7200,9 @@ const TIMELINE_MILESTONES = [
       const payload = { ids: missing.slice(0, 200) };
       const isAnon = typeof anonCode === 'string' && anonCode.trim().length > 0;
       if (isAnon) {
-        payload.anonCode = anonCode.trim().toUpperCase();
+        const normalizedCode = anonCode.trim().toUpperCase();
+        payload.anonCode = normalizedCode;
+        payload.code = normalizedCode;
       }
       try {
         const data = await callEdgeFunction('profiles-by-ids', {
