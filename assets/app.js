@@ -6875,23 +6875,16 @@ const TIMELINE_MILESTONES = [
     if (!unique.length) return;
     const state = forumLikesState;
 
-    const candidates = refresh ? unique : unique.filter((id) => !state.counts.has(id));
-    const inFlight = candidates.map((id) => state.loading.get(id)).filter(Boolean);
-
-    if (!refresh && !candidates.length) {
+    const existingPromises = unique.map((id) => state.loading.get(id)).filter(Boolean);
+    if (!refresh && unique.every((id) => state.counts.has(id))) {
+      if (existingPromises.length) await Promise.allSettled(existingPromises);
       unique.forEach((id) => updateReplyLikeUI(id));
       return;
     }
 
-    if (!refresh && candidates.length && candidates.length === inFlight.length && inFlight.length) {
-      await Promise.allSettled(inFlight);
-      unique.forEach((id) => updateReplyLikeUI(id));
-      return;
-    }
-
-    const idsToFetch = refresh ? unique : candidates.filter((id) => !state.loading.has(id));
+    const idsToFetch = refresh ? unique : unique.filter((id) => !state.counts.has(id) && !state.loading.has(id));
     if (!idsToFetch.length) {
-      if (inFlight.length) await Promise.allSettled(inFlight);
+      if (existingPromises.length) await Promise.allSettled(existingPromises);
       unique.forEach((id) => updateReplyLikeUI(id));
       return;
     }
@@ -6906,43 +6899,81 @@ const TIMELINE_MILESTONES = [
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const requests = idsToFetch.map((id) => {
-      const promise = (async () => {
-        try {
-          const payload = { action: 'get-likes', replyId: id };
-          if (code) payload.code = code;
-          const response = await fetch('/api/server', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload),
+    const requestPromise = (async () => {
+      try {
+        const payload = { replyIds: idsToFetch };
+        if (code) payload.code = code;
+        const response = await fetch('/api/server?action=get-likes', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        const json = await response.json().catch(() => null);
+        if (!response.ok || json?.success !== true) {
+          throw new Error(json?.error || `HTTP ${response.status}`);
+        }
+
+        const likedIds = new Set();
+        if (Array.isArray(json?.likedIds)) {
+          json.likedIds.forEach((rid) => {
+            const key = rid == null ? '' : String(rid);
+            if (key) likedIds.add(key);
           });
-          const json = await response.json().catch(() => null);
-          if (!response.ok || json?.success !== true) {
-            throw new Error(json?.error || `HTTP ${response.status}`);
-          }
-          const count = Number(json.count);
-          if (Number.isFinite(count)) state.counts.set(id, Math.max(0, count));
+        }
+        if (Array.isArray(json?.liked)) {
+          json.liked.forEach((rid) => {
+            const key = rid == null ? '' : String(rid);
+            if (key) likedIds.add(key);
+          });
+        }
+
+        const applyResult = (replyId, info) => {
+          const id = replyId == null ? '' : String(replyId);
+          if (!id) return;
+          const countValue = Number(info?.count ?? info?.likes ?? info?.likeCount ?? info);
+          if (Number.isFinite(countValue)) state.counts.set(id, Math.max(0, countValue));
           else if (!state.counts.has(id)) state.counts.set(id, 0);
-          if (json.liked === true) state.liked.add(id);
-          else state.liked.delete(id);
-        } catch (err) {
-          console.warn('loadReplyLikes failed', err);
+          const likedValue = info?.liked;
+          if (likedValue === true || likedIds.has(id)) state.liked.add(id);
+          else if (likedValue === false || (likedIds.size && !likedIds.has(id))) state.liked.delete(id);
+        };
+
+        const results = json?.results ?? json?.data ?? json?.counts ?? json?.likes;
+        if (Array.isArray(results)) {
+          results.forEach((entry) => {
+            if (!entry) return;
+            const replyId = entry.replyId ?? entry.id ?? entry.reply_id ?? entry.replyID;
+            const info = typeof entry === 'object' ? entry : { count: entry };
+            applyResult(replyId, info);
+          });
+        } else if (results && typeof results === 'object') {
+          Object.entries(results).forEach(([key, value]) => {
+            const entry = typeof value === 'object' && value !== null ? value : { count: value };
+            const replyId = entry.replyId ?? entry.id ?? entry.reply_id ?? key;
+            applyResult(replyId, entry);
+          });
+        } else if (idsToFetch.length === 1) {
+          applyResult(idsToFetch[0], { count: json?.count, liked: json?.liked });
+        }
+
+        idsToFetch.forEach((id) => {
+          if (!state.counts.has(id)) state.counts.set(id, 0);
+          if (!state.liked.has(id) && likedIds.has(id)) state.liked.add(id);
+        });
+      } catch (err) {
+        console.warn('loadReplyLikes failed', err);
+        idsToFetch.forEach((id) => {
           if (!state.counts.has(id)) state.counts.set(id, 0);
           state.liked.delete(id);
-        } finally {
-          state.loading.delete(id);
-          updateReplyLikeUI(id);
-        }
-      })();
-      state.loading.set(id, promise);
-      return promise;
-    });
+        });
+      } finally {
+        idsToFetch.forEach((id) => state.loading.delete(id));
+      }
+    })();
 
-    await Promise.allSettled(requests);
-    const handled = new Set(idsToFetch);
-    unique.forEach((id) => {
-      if (!handled.has(id)) updateReplyLikeUI(id);
-    });
+    idsToFetch.forEach((id) => state.loading.set(id, requestPromise));
+    await Promise.allSettled([...existingPromises, requestPromise]);
+    unique.forEach((id) => updateReplyLikeUI(id));
   }
 
   async function toggleLike(replyId) {
@@ -6977,11 +7008,11 @@ const TIMELINE_MILESTONES = [
     updateReplyLikeUI(id);
     state.pending.add(id);
     try {
-      const payload = { action, replyId: id };
+      const payload = { replyId: id };
       if (code) payload.code = code;
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch('/api/server', {
+      const response = await fetch(`/api/server?action=${encodeURIComponent(action)}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
