@@ -1196,6 +1196,8 @@ function renderMessages(){
     const meInitial = (myInitial||'').toUpperCase();
     line.innerHTML = `\n      <div class="avatar">${mine? meInitial : otherInitial}</div>\n      <div class="message"><div class="bubble ${mine?'user':'assistant'}">${escapeHTML(m.content)}</div></div>`;
     wrap.appendChild(line);
+    const convo = document.getElementById("conversation");
+    if (convo) convo.scrollTop = convo.scrollHeight;
   });
   wrap.scrollTop = wrap.scrollHeight;
 }
