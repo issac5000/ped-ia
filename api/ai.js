@@ -847,38 +847,28 @@ function endsWithSentencePunct(s = '') {
 
 function trimToWordsAndSentences(text, maxWords = 80, softMaxWords = 92) {
   if (!text) return '';
-  const preserved = text.replace(/[ \t]+/g, ' ').replace(/\r/g, '').trim();
-  const allWords = preserved.split(/\s+/).filter(Boolean);
-  if (allWords.length <= maxWords && endsWithSentencePunct(preserved)) {
+  const preserved = text.replace(/[ \t]+/g, ' ').replace(/\r/g, '');
+  const words = preserved.split(/\s+/);
+  if (words.length <= maxWords && endsWithSentencePunct(preserved)) {
     return preserved;
   }
 
-  const effectiveSoftLimit = Math.max(maxWords, Math.min(softMaxWords, maxWords + 20));
-  const limitedWords = allWords.slice(0, Math.min(allWords.length, effectiveSoftLimit));
-  const limitedText = limitedWords.join(' ').trim();
+  const limit = Math.min(words.length, softMaxWords);
+  let candidate = words.slice(0, limit).join(' ').trim();
 
-  const sentences = limitedText
-    .split(/(?<=[.!?…])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
+  const lastPunct = Math.max(
+    candidate.lastIndexOf('.'),
+    candidate.lastIndexOf('!'),
+    candidate.lastIndexOf('?'),
+    candidate.lastIndexOf('…')
+  );
 
-  let assembled = '';
-  let wordCount = 0;
-  for (const sentence of sentences) {
-    const sentenceWords = sentence.split(/\s+/).filter(Boolean);
-    if (!sentenceWords.length) continue;
-    if (wordCount + sentenceWords.length > maxWords) break;
-    assembled = assembled ? `${assembled} ${sentence}` : sentence;
-    wordCount += sentenceWords.length;
+  if (lastPunct >= 0 && lastPunct >= candidate.length - 60) {
+    return candidate.slice(0, lastPunct + 1).trim();
   }
 
-  if (assembled) {
-    return assembled;
-  }
-
-  const hardWords = limitedWords.slice(0, maxWords);
-  const hardText = hardWords.join(' ').trim();
-  return endsWithSentencePunct(hardText) ? hardText : `${hardText}.`;
+  const hard = words.slice(0, maxWords).join(' ').trim();
+  return endsWithSentencePunct(hard) ? hard : `${hard}…`;
 }
 
 function respondAiUnavailable(res) {
@@ -1429,9 +1419,6 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         if (parentContextLines.length) {
           userParts.push(`Contexte parental actuel:\n${parentContextLines.map((line) => `- ${line}`).join('\n')}`);
         }
-        if (parentComment) {
-          userParts.push(`Le parent écrit: « ${parentComment} ». Réponds-lui explicitement en reformulant l'idée clé et en montrant que tu l'as entendue.`);
-        }
         if (!hasChildrenFromDb && familyBilanText) {
           userParts.push(`Contexte global des enfants (ai_bilan):\n${familyBilanText}`);
         }
@@ -1456,17 +1443,12 @@ Prends en compte les champs du profil (allergies, type d’alimentation, style d
         userContentBlocks.push(userParts.filter(Boolean).join('\n\n'));
         const userContent = userContentBlocks.filter(Boolean).join('\n\n') || 'Aucune donnée fournie.';
 
-        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (125 mots max).
+        let system = `Tu es Ped’IA, coach parental bienveillant. Analyse les informations factuelles ci-dessous et rédige un commentaire personnalisé (150 mots max).
 Ton ton reste chaleureux, mais privilégie l'analyse factuelle et les actions concrètes.
 Relie explicitement les informations concernant les enfants (prénoms, croissance, incidents, santé) aux conseils que tu donnes.
 Si le parent demande des informations centrées sur les enfants, respecte cette consigne.
 Propose des recommandations précises et actionnables plutôt que des généralités.`;
-        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent, NE NEGLIGE SURTOUT PAS LE COMMENTAIRE DU PARENT, PRENDS-LE EN CONSIDÉRATION ET REPONDS-Y DE FAçON ADAPTÉE. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental.`;
-        system += `\nStructure ta réponse en trois blocs clairement identifiables :
-- « Côté parent » : remercie le parent, reformule en une à deux phrases l'idée principale de son commentaire et résume son état émotionnel, son stress et sa fatigue (même si c'est pour signaler que les données manquent).
-- « Actualité des enfants » : développe les observations sur chaque enfant en reliant leur situation aux ressentis parentaux.
-- « Pistes concrètes » : propose des actions pratiques et adaptées à la famille.`;
-        system += `\nSois concret, bienveillant et reste dans la limite de 125 mots.`;
+        system += `\nRéponds à la fois au contexte global (parent + enfants) **et** au commentaire du parent, NE NEGLIGE SURTOUT PAS LE COMMENTAIRE DU PARENT, PREND LE EN CONSIDERATION ET REPONDS Y DE FAçON ADAPTEE. Relie l’état du parent (stress, fatigue, emploi) avec celui des enfants (croissance, réveils nocturnes, appétit). Si un enfant a 3 réveils nocturnes ou plus, mentionne-le explicitement comme facteur de stress parental. Sois concret et bienveillant, 150 mots max.`;
         if (growthAnomalyChildren.length) {
           const anomalyLines = growthAnomalyChildren
             .map((entry) => `- ${entry.name}: ${entry.growth}`)
@@ -1528,7 +1510,7 @@ Propose des recommandations précises et actionnables plutôt que des générali
         if (finishReason === 'length') {
           comment = `${comment}…`;
         }
-        comment = trimToWordsAndSentences(comment, 125, 135);
+        comment = trimToWordsAndSentences(comment, 130, 150);
         if (comment.length > 2000) comment = comment.slice(0, 2000).trim();
         if (!comment || areTextsTooSimilar(comment, parentComment)) {
           comment = fallbackParentAiComment(parentComment);
