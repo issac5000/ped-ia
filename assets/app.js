@@ -7169,7 +7169,12 @@ const TIMELINE_MILESTONES = [
     const normalizeAuthorMetaForId = (raw, profileId) => {
       const normalized = normalizeAuthorMeta(raw) || { name: 'Utilisateur', childCount: null, showChildCount: false };
       const activeId = getActiveProfileId();
-      if (profileId != null && activeId != null && String(profileId) === String(activeId)) {
+      const isSelf = profileId != null && activeId != null && String(profileId) === String(activeId);
+      if (!isSelf && isAnonProfile()) {
+        normalized.childCount = null;
+        normalized.showChildCount = false;
+      }
+      if (isSelf) {
         const localCount = resolveLocalChildCount();
         if (
           Number.isFinite(localCount)
