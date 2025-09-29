@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "supabase/functions/**"
-  workflow_dispatch: {}   # permet de déclencher manuellement depuis l'UI
+  workflow_dispatch: {}   # permet de déclencher manuellement depuis l’UI
 
 jobs:
   deploy:
@@ -16,24 +16,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Installation manuelle de la CLI avec le bon lien
+      # Installation CLI Supabase avec bon lien
       - name: Install Supabase CLI (manual, no action)
         run: |
           echo "➡️ Download Supabase CLI"
-          curl -fsSL -o supabase.tar.gz https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz
+          curl -fsSL -o supabase.tar.gz https://github.com/supabase/cli/releases/download/v1.204.4/supabase_linux_amd64.tar.gz
           echo "➡️ Extract"
           tar -xzf supabase.tar.gz
           echo "➡️ Move binary"
           sudo mv supabase /usr/local/bin/
           echo "➡️ Check binary path"
           which supabase || (echo "❌ supabase not in PATH" && exit 1)
-          echo "➡️ Version"
-          supabase --version || (echo "❌ supabase not runnable" && exit 1)
-
-      - name: Deploy Supabase Functions
-        env:
-          PROJECT: myrwcjurblksypvekuzb
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          echo "➡️ Deploying functions…"
-          supabase functions deploy --project-ref "$PROJECT" --no-verify-jwt --debug
