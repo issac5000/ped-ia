@@ -7169,12 +7169,9 @@ const TIMELINE_MILESTONES = [
     const normalizeAuthorMetaForId = (raw, profileId) => {
       const normalized = normalizeAuthorMeta(raw) || { name: 'Utilisateur', childCount: null, showChildCount: false };
       const activeId = getActiveProfileId();
-      const isSelf = profileId != null && activeId != null && String(profileId) === String(activeId);
-      if (!isSelf && isAnonProfile()) {
-        if (!normalized.showChildCount) {
-          normalized.childCount = null;
-        }
-      }
+      const profileIdStr = profileId != null ? String(profileId) : '';
+      const activeIdStr = activeId != null ? String(activeId) : '';
+      const isSelf = profileIdStr && activeIdStr && profileIdStr === activeIdStr;
       if (isSelf) {
         const localCount = resolveLocalChildCount();
         if (
@@ -7188,7 +7185,11 @@ const TIMELINE_MILESTONES = [
           normalized.showChildCount = localShow;
         }
       }
-      return normalized;
+      return {
+        ...normalized,
+        profileId: profileIdStr || null,
+        isSelf,
+      };
     };
 
     const enrichAuthorsMapWithProfiles = async (map, anonCode) => {
@@ -7283,9 +7284,30 @@ const TIMELINE_MILESTONES = [
         const normalized = (typeof meta === 'object' && meta !== null && 'childCount' in meta && 'showChildCount' in meta)
           ? meta
           : normalizeAuthorMeta(meta);
-        if (!normalized || !normalized.showChildCount) return '';
-        if (!Number.isFinite(normalized.childCount)) return '';
-        const count = normalized.childCount;
+        if (!normalized) return '';
+        const isAnon = isAnonProfile();
+        const viewerProfileIdRaw = getActiveProfileId();
+        const viewerProfileId = viewerProfileIdRaw != null ? String(viewerProfileIdRaw) : null;
+        const targetProfileIdRaw = normalized.profileId != null ? normalized.profileId : null;
+        const targetProfileId = targetProfileIdRaw != null ? String(targetProfileIdRaw) : null;
+        const parsedCount = Number(normalized.childCount);
+        const hasChildrenCount = Number.isFinite(parsedCount);
+        const numberOfChildren = hasChildrenCount ? parsedCount : null;
+        const showChildrenCount = !!normalized.showChildCount;
+        const isSameProfile = (
+          targetProfileId && viewerProfileId ? targetProfileId === viewerProfileId
+            : normalized.isSelf === true
+        );
+        const shouldDisplay = hasChildrenCount && (isSameProfile || showChildrenCount);
+        console.debug('Render children_count', {
+          isAnon,
+          viewerProfileId,
+          targetProfileId,
+          showChildrenCount,
+          numberOfChildren,
+        });
+        if (!shouldDisplay) return '';
+        const count = numberOfChildren;
         const suffix = count > 1 ? 'enfants' : 'enfant';
         const label = `Parent de ${count} ${suffix}`;
         return `<span class="author-meta">${escapeHtml(label)}</span>`;
