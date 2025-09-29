@@ -2901,7 +2901,10 @@ const TIMELINE_MILESTONES = [
     }
     try {
       if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-      const payload = await callEdgeFunction('profiles-create-anon', { body: {} });
+      const currentUser = store.get(K.user) || {};
+      const fullNameRaw = typeof currentUser?.pseudo === 'string' ? currentUser.pseudo.trim() : '';
+      const requestBody = fullNameRaw ? { fullName: fullNameRaw } : {};
+      const payload = await callEdgeFunction('profiles-create-anon', { body: requestBody });
       const data = payload?.profile;
       if (!data) {
         throw new Error('Création impossible pour le moment.');
