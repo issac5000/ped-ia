@@ -7113,7 +7113,13 @@ const TIMELINE_MILESTONES = [
     const normalizeAuthorMeta = (raw) => {
       if (!raw) return null;
       if (typeof raw === 'string') {
-        return { name: raw, childCount: null, showChildCount: false };
+        const authorMeta = { name: raw, childCount: null, showChildCount: null };
+        console.debug('normalizeAuthorMeta', {
+          id: null,
+          showChildCount: authorMeta.showChildCount,
+          childCount: authorMeta.childCount,
+        });
+        return authorMeta;
       }
       if (typeof raw === 'object') {
         const name = raw.name || raw.full_name || raw.fullName || '';
@@ -7124,8 +7130,21 @@ const TIMELINE_MILESTONES = [
         const count = Number(rawCount);
         const childCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
         const rawShow = raw.show_children_count ?? raw.showChildCount ?? raw.show_stats ?? raw.showStats;
-        const showChildCount = typeof rawShow === 'string' ? rawShow === 'true' : !!rawShow;
-        return { name: name || 'Utilisateur', childCount, showChildCount };
+        let showChildCount = null;
+        if (rawShow === undefined || rawShow === null) {
+          showChildCount = null;
+        } else if (typeof rawShow === 'string') {
+          showChildCount = rawShow === 'true';
+        } else {
+          showChildCount = !!rawShow;
+        }
+        const authorMeta = { name: name || 'Utilisateur', childCount, showChildCount };
+        console.debug('normalizeAuthorMeta', {
+          id: raw.id ?? null,
+          showChildCount: authorMeta.showChildCount,
+          childCount: authorMeta.childCount,
+        });
+        return authorMeta;
       }
       return null;
     };
@@ -7167,7 +7186,7 @@ const TIMELINE_MILESTONES = [
     };
 
     const normalizeAuthorMetaForId = (raw, profileId) => {
-      const normalized = normalizeAuthorMeta(raw) || { name: 'Utilisateur', childCount: null, showChildCount: false };
+      const normalized = normalizeAuthorMeta(raw) || { name: 'Utilisateur', childCount: null, showChildCount: null };
       const activeId = getActiveProfileId();
       const profileIdStr = profileId != null ? String(profileId) : '';
       const activeIdStr = activeId != null ? String(activeId) : '';
@@ -7199,7 +7218,14 @@ const TIMELINE_MILESTONES = [
         const normalized = normalizeAuthorMetaForId(value, key);
         if (!normalized) return;
         map.set(String(key), normalized);
-        if (normalized.showChildCount && !Number.isFinite(normalized.childCount)) {
+        console.debug('enrichAuthorsMapWithProfiles check', {
+          id: normalized.profileId || String(key),
+          showChildCount: normalized.showChildCount,
+        });
+        if (
+          (normalized.showChildCount === true || normalized.showChildCount === null)
+          && !Number.isFinite(normalized.childCount)
+        ) {
           missing.push(String(key));
         }
       });

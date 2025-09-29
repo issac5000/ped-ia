@@ -146,15 +146,27 @@ export async function processAnonCommunityRequest(body) {
       profiles.forEach((p) => {
         if (!p?.id) return;
         const key = String(p.id);
-        const childrenCount = includeChildren && Array.isArray(p.children) ? p.children.length : 0;
-        const showFlag = showColumn ? !!p.show_children_count : false;
+        const childrenCount = includeChildren && Array.isArray(p.children) ? p.children.length : null;
+        let showFlag = null;
+        if (showColumn) {
+          if (Object.prototype.hasOwnProperty.call(p, 'show_children_count')) {
+            showFlag = !!p.show_children_count;
+          }
+        }
         authors[key] = {
           full_name: p.full_name || '',
           children_count: childrenCount,
           child_count: childrenCount,
           show_children_count: showFlag,
+          showChildCount: showFlag,
         };
-        if (showFlag) {
+        const meta = authors[key];
+        console.debug('anon-community profile meta', {
+          profileId: p.id,
+          show_children_count: p.show_children_count,
+          normalized: meta ? meta.showChildCount ?? meta.show_children_count ?? null : null,
+        });
+        if (showFlag === true || showFlag === null) {
           pendingCountFallback.push(key);
         }
       });
@@ -180,8 +192,16 @@ export async function processAnonCommunityRequest(body) {
                 authors[key].child_count = parsed;
               }
               if (Object.prototype.hasOwnProperty.call(row, 'show_children_count')) {
-                authors[key].show_children_count = !!row.show_children_count;
+                const normalizedShow = row.show_children_count === undefined ? null : !!row.show_children_count;
+                authors[key].show_children_count = normalizedShow;
+                authors[key].showChildCount = normalizedShow;
               }
+              const meta = authors[key];
+              console.debug('anon-community profile meta', {
+                profileId: row.id,
+                show_children_count: row.show_children_count,
+                normalized: meta ? meta.showChildCount ?? meta.show_children_count ?? null : null,
+              });
             });
           } catch (fallbackErr) {
             console.warn('profiles_with_children fallback failed', fallbackErr);
@@ -340,15 +360,27 @@ export async function processAnonCommunityRequest(body) {
           authorRows.forEach((p) => {
             if (p?.id == null) return;
             const key = String(p.id);
-            const childrenCount = includeChildren && Array.isArray(p.children) ? p.children.length : 0;
-            const showFlag = showColumn ? !!p.show_children_count : false;
+            const childrenCount = includeChildren && Array.isArray(p.children) ? p.children.length : null;
+            let showFlag = null;
+            if (showColumn) {
+              if (Object.prototype.hasOwnProperty.call(p, 'show_children_count')) {
+                showFlag = !!p.show_children_count;
+              }
+            }
             authors[key] = {
               full_name: p.full_name || '',
               children_count: childrenCount,
               child_count: childrenCount,
               show_children_count: showFlag,
+              showChildCount: showFlag,
             };
-            if (showFlag) {
+            const meta = authors[key];
+            console.debug('anon-community profile meta', {
+              profileId: p.id,
+              show_children_count: p.show_children_count,
+              normalized: meta ? meta.showChildCount ?? meta.show_children_count ?? null : null,
+            });
+            if (showFlag === true || showFlag === null) {
               pendingCountFallback.push(key);
             }
           });
@@ -375,8 +407,16 @@ export async function processAnonCommunityRequest(body) {
                 authors[key].child_count = parsed;
               }
               if (Object.prototype.hasOwnProperty.call(row, 'show_children_count')) {
-                authors[key].show_children_count = !!row.show_children_count;
+                const normalizedShow = row.show_children_count === undefined ? null : !!row.show_children_count;
+                authors[key].show_children_count = normalizedShow;
+                authors[key].showChildCount = normalizedShow;
               }
+              const meta = authors[key];
+              console.debug('anon-community profile meta', {
+                profileId: row.id,
+                show_children_count: row.show_children_count,
+                normalized: meta ? meta.showChildCount ?? meta.show_children_count ?? null : null,
+              });
             });
           } catch (fallbackErr) {
             console.warn('profiles_with_children fallback (recent replies) failed', fallbackErr);
