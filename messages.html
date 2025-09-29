@@ -17,10 +17,10 @@
     .parent-item time{display:block;font-size:.75rem;opacity:.7;color:var(--muted,#666)}
     .parent-item .del-btn{background:none;border:none;color:var(--muted,#666);cursor:pointer;padding:2px;margin-left:auto}
     .parent-item .del-btn:hover{color:#c00}
-    .chat-window{flex:1;display:none;flex-direction:column;height:100%}
+    .chat-window{display:none;flex-direction:column;flex:1 1 auto;max-height:70vh;min-height:320px}
     .chat-window.open{display:flex}
     .chat-placeholder{flex:1;display:flex;align-items:center;justify-content:center;height:100%;text-align:center}
-    #conversation{flex:1;overflow-y:auto}
+    #conversation{flex:1 1 auto;overflow-y:auto;min-height:0}
     /* Ensure my sent bubbles use solid black text */
     .chat-window .bubble.user{color:#000}
     /* Small green dot for unread conversations */
@@ -28,8 +28,9 @@
     @media(max-width:600px){
         .chat-area{flex-direction:column;height:auto}
         .parent-list{flex:0 0 auto;width:100%;max-height:30vh;height:auto}
-        .chat-window{flex:1 1 auto;width:100%;min-height:70vh;height:auto}
-        .chat-placeholder{flex:1 1 auto;width:100%;min-height:70vh;height:auto}
+        .chat-window{flex:1 1 auto;width:100%;max-height:60vh;min-height:auto}
+        .chat-placeholder{flex:1 1 auto;width:100%;min-height:60vh;height:auto}
+        #conversation{max-height:55vh}
       }
   </style>
 </head>
