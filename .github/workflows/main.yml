@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "supabase/functions/**"
 
 jobs:
   deploy:
@@ -18,10 +20,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Supabase CLI (official action)
-        uses: supabase/setup-cli@v1
-        with:
-          version: 1.204.4
+      - name: Install Supabase CLI
+        run: |
+          wget -qO- https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz | tar -xz
+          sudo mv supabase /usr/local/bin/
 
       - name: Check Supabase CLI version
         run: supabase --version
