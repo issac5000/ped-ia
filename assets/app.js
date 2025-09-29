@@ -7130,6 +7130,61 @@ const TIMELINE_MILESTONES = [
       return null;
     };
 
+    const resolveLocalChildCount = () => {
+      if (Array.isArray(settingsState.children) && settingsState.children.length) {
+        return settingsState.children.length;
+      }
+      try {
+        const storedChildren = store.get(K.children, []);
+        if (Array.isArray(storedChildren) && storedChildren.length) {
+          return storedChildren.length;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (Array.isArray(settingsState.children)) {
+        return settingsState.children.length;
+      }
+      return null;
+    };
+
+    const resolveLocalShowChildrenPref = () => {
+      if (settingsState.privacy && settingsState.privacy.showStats != null) {
+        return !!settingsState.privacy.showStats;
+      }
+      if (activeProfile && Object.prototype.hasOwnProperty.call(activeProfile, 'show_children_count')) {
+        return !!activeProfile.show_children_count;
+      }
+      try {
+        const storedPrivacy = store.get(K.privacy, {});
+        if (storedPrivacy && storedPrivacy.showStats != null) {
+          return !!storedPrivacy.showStats;
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    };
+
+    const normalizeAuthorMetaForId = (raw, profileId) => {
+      const normalized = normalizeAuthorMeta(raw) || { name: 'Utilisateur', childCount: null, showChildCount: false };
+      const activeId = getActiveProfileId();
+      if (profileId != null && activeId != null && String(profileId) === String(activeId)) {
+        const localCount = resolveLocalChildCount();
+        if (
+          Number.isFinite(localCount)
+          && (localCount > 0 || !Number.isFinite(normalized.childCount))
+        ) {
+          normalized.childCount = Math.max(0, Math.trunc(localCount));
+        }
+        const localShow = resolveLocalShowChildrenPref();
+        if (localShow != null) {
+          normalized.showChildCount = localShow;
+        }
+      }
+      return normalized;
+    };
+
     const renderTopics = (topics, replies, authorsMap, replyLikes = new Map()) => {
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
@@ -7315,7 +7370,7 @@ const TIMELINE_MILESTONES = [
         const el = document.createElement('div');
         el.className = 'topic';
         const authorMeta = authorsMap.get(String(t.user_id)) || authorsMap.get(t.user_id) || null;
-        const normalizedAuthor = normalizeAuthorMeta(authorMeta);
+        const normalizedAuthor = normalizeAuthorMetaForId(authorMeta, t.user_id);
         const rawAuthorName = (normalizedAuthor && normalizedAuthor.name)
           || (typeof authorMeta === 'string' ? authorMeta : authorMeta?.full_name || authorMeta?.name)
           || t.author
@@ -7358,7 +7413,7 @@ const TIMELINE_MILESTONES = [
         });
         const repliesHtml = rs.map(r=>{
           const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
-          const normalizedReply = normalizeAuthorMeta(replyMeta);
+          const normalizedReply = normalizeAuthorMetaForId(replyMeta, r.user_id);
           const rawReplyAuthor = (normalizedReply && normalizedReply.name)
             || (typeof replyMeta === 'string' ? replyMeta : replyMeta?.full_name || replyMeta?.name)
             || r.author
@@ -7527,8 +7582,11 @@ const TIMELINE_MILESTONES = [
             const authorsRaw = res.authors || {};
             const authorsMap = new Map();
             Object.entries(authorsRaw).forEach(([id, value]) => {
-              const meta = normalizeAuthorMeta(value);
-              const entry = meta || { name: (value == null ? '' : String(value)) || 'Utilisateur', childCount: null, showChildCount: false };
+              const entry = normalizeAuthorMetaForId(value, id) || {
+                name: (value == null ? '' : String(value)) || 'Utilisateur',
+                childCount: null,
+                showChildCount: false,
+              };
               authorsMap.set(String(id), entry);
             });
             const repliesMap = new Map();
@@ -7601,52 +7659,19 @@ const TIMELINE_MILESTONES = [
               if (!idArray.length) return new Map();
               const buildProfileEntry = (profile, explicitId) => {
                 const fallbackName = profile?.full_name || profile?.name || 'Utilisateur';
-                const base =
-                  normalizeAuthorMeta({
-                    name: fallbackName,
-                    child_count:
-                      profile?.child_count ?? profile?.children_count ?? profile?.childrenCount ?? null,
-                    show_children_count:
-                      profile?.show_children_count ??
-                      profile?.showChildCount ??
-                      profile?.show_stats ??
-                      profile?.showStats ??
-                      null,
-                  }) || { name: fallbackName || 'Utilisateur', childCount: null, showChildCount: false };
+                const rawMeta = {
+                  name: fallbackName,
+                  child_count:
+                    profile?.child_count ?? profile?.children_count ?? profile?.childrenCount ?? null,
+                  show_children_count:
+                    profile?.show_children_count ??
+                    profile?.showChildCount ??
+                    profile?.show_stats ??
+                    profile?.showStats ??
+                    null,
+                };
                 const profileId = explicitId != null ? String(explicitId) : profile?.id != null ? String(profile.id) : '';
-                const activeId = getActiveProfileId();
-                if (profileId && activeId && profileId === String(activeId)) {
-                  let localChildCount = null;
-                  if (Array.isArray(settingsState.children)) {
-                    localChildCount = settingsState.children.length;
-                  }
-                  if (!Number.isFinite(localChildCount)) {
-                    try {
-                      const storedChildren = store.get(K.children, []);
-                      if (Array.isArray(storedChildren)) localChildCount = storedChildren.length;
-                    } catch {
-                      localChildCount = base.childCount;
-                    }
-                  }
-                  const localPrivacy =
-                    settingsState.privacy?.showStats != null
-                      ? !!settingsState.privacy.showStats
-                      : (() => {
-                          try {
-                            const storedPrivacy = store.get(K.privacy, {});
-                            return storedPrivacy?.showStats != null ? !!storedPrivacy.showStats : null;
-                          } catch {
-                            return null;
-                          }
-                        })();
-                  if (Number.isFinite(localChildCount)) {
-                    base.childCount = Math.max(0, Math.trunc(localChildCount));
-                  }
-                  if (localPrivacy != null) {
-                    base.showChildCount = localPrivacy;
-                  }
-                }
-                return base;
+                return normalizeAuthorMetaForId(rawMeta, profileId);
               };
               try {
                 const { data: rows, error: viewError } = await supabase
