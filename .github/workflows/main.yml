@@ -15,9 +15,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Supabase CLI
+      - name: Install Supabase CLI (manual)
         run: |
-          wget -qO- https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz | tar -xz
+          wget -q https://github.com/supabase/cli/releases/download/v1.204.4/supabase_1.204.4_linux_amd64.tar.gz
+          tar -xzf supabase_1.204.4_linux_amd64.tar.gz
           sudo mv supabase /usr/local/bin/
 
       - name: Check Supabase CLI version
