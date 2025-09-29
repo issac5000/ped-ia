@@ -7171,8 +7171,9 @@ const TIMELINE_MILESTONES = [
       const activeId = getActiveProfileId();
       const isSelf = profileId != null && activeId != null && String(profileId) === String(activeId);
       if (!isSelf && isAnonProfile()) {
-        normalized.childCount = null;
-        normalized.showChildCount = false;
+        if (!normalized.showChildCount) {
+          normalized.childCount = null;
+        }
       }
       if (isSelf) {
         const localCount = resolveLocalChildCount();
