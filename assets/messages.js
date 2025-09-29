@@ -134,20 +134,23 @@ async function createAnonymousProfile(){
   }
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-    const response = await fetch('/api/profiles/create-anon', {
+    const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/profiles-create-anon';
+    const payload = {};
+    console.debug("Calling Supabase function:", url, payload);
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
+      body: JSON.stringify(payload)
     });
-    let payload = null;
-    try { payload = await response.json(); } catch (e) { payload = null; }
-    if (!response.ok || !payload?.profile) {
-      const msg = payload?.error || 'Création impossible pour le moment.';
+    let responsePayload = null;
+    try { responsePayload = await response.json(); } catch (e) { responsePayload = null; }
+    if (!response.ok || !responsePayload?.profile) {
+      const msg = responsePayload?.error || 'Création impossible pour le moment.';
       const err = new Error(msg);
-      if (payload?.details) err.details = payload.details;
+      if (responsePayload?.details) err.details = responsePayload.details;
       throw err;
     }
-    const data = payload.profile;
+    const data = responsePayload.profile;
     if (status) {
       status.classList.remove('error');
       status.innerHTML = `Ton code unique&nbsp;: <strong>${data.code_unique}</strong>.<br>Garde-le précieusement et saisis-le juste en dessous dans «&nbsp;Se connecter avec un code&nbsp;».`;
@@ -450,22 +453,24 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
   const code = typeof code_unique === 'string' ? code_unique.trim().toUpperCase() : '';
   if (!code) return { messages: [], senders: {} };
   try {
-    const body = { action: 'recent-activity', code };
-    if (since) body.since = since;
-    const response = await fetch('/api/anon/messages', {
+    const payload = { action: 'recent-activity', code };
+    if (since) payload.since = since;
+    const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-messages';
+    console.debug("Calling Supabase function:", url, payload);
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
     const text = await response.text().catch(() => '');
-    const payload = text ? JSON.parse(text) : {};
+    const responsePayload = text ? JSON.parse(text) : {};
     if (!response.ok) {
-      const err = new Error(payload?.error || 'Service indisponible');
-      if (payload?.details) err.details = payload.details;
+      const err = new Error(responsePayload?.error || 'Service indisponible');
+      if (responsePayload?.details) err.details = responsePayload.details;
       throw err;
     }
-    const messages = Array.isArray(payload?.messages) ? payload.messages : [];
-    const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
+    const messages = Array.isArray(responsePayload?.messages) ? responsePayload.messages : [];
+    const senders = responsePayload?.senders && typeof responsePayload.senders === 'object' ? responsePayload.senders : {};
     return { messages, senders };
   } catch (err) {
     console.error('anonMessagesRequest failed', err);
@@ -529,11 +534,13 @@ function startAnonNotifPolling(){ stopAnonNotifPolling(); anonNotifTick(); anonN
 
 async function anonMessagesActionRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
-  const body = { action, code: anonProfile.code, ...payload };
-  const response = await fetch('/api/anon/messages', {
+  const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-messages';
+  const payloadToSend = { action, code: anonProfile.code, ...payload };
+  console.debug("Calling Supabase function:", url, payloadToSend);
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payloadToSend),
   });
   const text = await response.text().catch(() => '');
   let json = null;
@@ -550,11 +557,13 @@ async function anonMessagesActionRequest(action, payload = {}) {
 
 async function anonCommunityRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
-  const body = { action, code: anonProfile.code, ...payload };
-  const response = await fetch('/api/anon/community', {
+  const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-community';
+  const payloadToSend = { action, code: anonProfile.code, ...payload };
+  console.debug("Calling Supabase function:", url, payloadToSend);
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payloadToSend),
   });
   const text = await response.text().catch(() => '');
   let json = null;
@@ -1062,13 +1071,16 @@ async function deleteConversation(otherId){
     if (isAnon) {
       await anonMessagesActionRequest('delete-conversation', { otherId: id });
     } else {
-      const r = await fetch('/api/messages/delete-conversation', {
+      const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/messages-delete-conversation';
+      const payload = { otherId: id };
+      console.debug("Calling Supabase function:", url, payload);
+      const r = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`
         },
-        body: JSON.stringify({ otherId: id })
+        body: JSON.stringify(payload)
       });
       if(!r.ok){
         let info = '';
