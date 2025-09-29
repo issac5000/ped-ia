@@ -1044,6 +1044,20 @@ const TIMELINE_MILESTONES = [
 
   const EDGE_FUNCTION_BASE_URL = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1';
 
+  function resolveEdgeFunctionBase() {
+    if (typeof window !== 'undefined') {
+      const envUrl = window.__SUPABASE_ENV__?.url;
+      if (typeof envUrl === 'string' && envUrl.trim()) {
+        const trimmed = envUrl.trim().replace(/\/+$/, '');
+        if (/\/functions\/v1$/i.test(trimmed)) {
+          return trimmed;
+        }
+        return `${trimmed}/functions/v1`;
+      }
+    }
+    return EDGE_FUNCTION_BASE_URL;
+  }
+
   async function callEdgeFunction(endpoint, { method = 'POST', body, includeAuth = true, headers = {} } = {}) {
     const finalHeaders = { ...headers };
     if (body !== undefined && finalHeaders['Content-Type'] == null) {
@@ -1062,7 +1076,7 @@ const TIMELINE_MILESTONES = [
     if (body !== undefined) {
       requestInit.body = JSON.stringify(body);
     }
-    const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/${endpoint}`, requestInit);
+    const response = await fetch(`${resolveEdgeFunctionBase()}/${endpoint}`, requestInit);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.success) {
       const errorMessage = payload?.error || 'Service indisponible';
