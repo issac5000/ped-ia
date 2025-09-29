@@ -7185,6 +7185,41 @@ const TIMELINE_MILESTONES = [
       return normalized;
     };
 
+    const enrichAuthorsMapWithProfiles = async (map, anonCode) => {
+      if (!(map instanceof Map) || !map.size) return;
+      const missing = [];
+      map.forEach((value, key) => {
+        const normalized = normalizeAuthorMetaForId(value, key);
+        if (!normalized) return;
+        if (normalized.showChildCount && !Number.isFinite(normalized.childCount)) {
+          missing.push(key);
+        }
+      });
+      if (!missing.length) return;
+      const payload = { ids: missing.slice(0, 200) };
+      const isAnon = typeof anonCode === 'string' && anonCode.trim().length > 0;
+      if (isAnon) {
+        payload.anonCode = anonCode.trim();
+      }
+      try {
+        const data = await callEdgeFunction('profiles-by-ids', {
+          body: payload,
+          includeAuth: !isAnon,
+        });
+        const profiles = data?.profiles;
+        if (!Array.isArray(profiles) || !profiles.length) return;
+        profiles.forEach((profile) => {
+          const id = profile?.id != null ? String(profile.id) : '';
+          if (!id || !map.has(id)) return;
+          const entry = normalizeAuthorMetaForId(profile, id);
+          if (!entry) return;
+          map.set(id, entry);
+        });
+      } catch (err) {
+        console.warn('enrichAuthorsMapWithProfiles failed', err);
+      }
+    };
+
     const renderTopics = (topics, replies, authorsMap, replyLikes = new Map()) => {
       const activeId = getActiveProfileId();
       if (!topics.length) return showEmpty();
@@ -7589,6 +7624,7 @@ const TIMELINE_MILESTONES = [
               };
               authorsMap.set(String(id), entry);
             });
+            await enrichAuthorsMapWithProfiles(authorsMap, getActiveAnonCode());
             const repliesMap = new Map();
             const replyIds = [];
             repliesArr.forEach((r) => {
@@ -7798,6 +7834,7 @@ const TIMELINE_MILESTONES = [
             };
             authorsMap = await withRetry(() => loadCommunityProfiles());
           }
+          await enrichAuthorsMapWithProfiles(authorsMap, getActiveAnonCode());
           const repliesMap = new Map();
           const replyIds = [];
           replies.forEach((reply) => {
