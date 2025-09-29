@@ -154,7 +154,7 @@ export async function processAnonCommunityRequest(body) {
           child_count: childrenCount,
           show_children_count: showFlag,
         };
-        if (showFlag && (!Number.isFinite(childrenCount) || childrenCount === 0)) {
+        if (showFlag) {
           pendingCountFallback.push(key);
         }
       });
@@ -348,7 +348,7 @@ export async function processAnonCommunityRequest(body) {
               child_count: childrenCount,
               show_children_count: showFlag,
             };
-            if (showFlag && (!Number.isFinite(childrenCount) || childrenCount === 0)) {
+            if (showFlag) {
               pendingCountFallback.push(key);
             }
           });
