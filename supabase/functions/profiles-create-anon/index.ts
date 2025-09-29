@@ -68,18 +68,32 @@ serve(async (req) => {
     return jsonResponse({ error: "Method Not Allowed" }, 405);
   }
   try {
-    const context = await resolveUserContext(req);
-    if (context?.error) {
-      const status = context.error.status ?? 400;
-      return new Response(JSON.stringify(context.error), {
-        status,
-        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      });
+    let context: Record<string, unknown> | null = null;
+    try {
+      context = await resolveUserContext(req);
+    } catch (err) {
+      console.error('[profiles-create-anon] resolveUserContext failed', err);
+      throw err;
     }
+
+    let resolvedContext: Record<string, unknown> | null = context;
+    if (context?.error) {
+      const msg = String(context.error.message ?? '');
+      if (/code or token required/i.test(msg)) {
+        resolvedContext = null;
+      } else {
+        const status = context.error.status ?? 400;
+        return new Response(JSON.stringify(context.error), {
+          status,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+    }
+
     console.log('[resolveUserContext] profiles-create-anon', {
-      userId: context.userId,
-      mode: context.mode,
-      anon: context.anon ?? false,
+      userId: resolvedContext?.userId ?? null,
+      mode: resolvedContext?.mode ?? 'public',
+      anon: resolvedContext?.anon ?? false,
     });
     const body = await req.json().catch(() => {
       throw new HttpError(400, "Invalid JSON body");
