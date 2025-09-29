@@ -7191,15 +7191,16 @@ const TIMELINE_MILESTONES = [
       map.forEach((value, key) => {
         const normalized = normalizeAuthorMetaForId(value, key);
         if (!normalized) return;
+        map.set(String(key), normalized);
         if (normalized.showChildCount && !Number.isFinite(normalized.childCount)) {
-          missing.push(key);
+          missing.push(String(key));
         }
       });
       if (!missing.length) return;
       const payload = { ids: missing.slice(0, 200) };
       const isAnon = typeof anonCode === 'string' && anonCode.trim().length > 0;
       if (isAnon) {
-        payload.anonCode = anonCode.trim();
+        payload.anonCode = anonCode.trim().toUpperCase();
       }
       try {
         const data = await callEdgeFunction('profiles-by-ids', {
