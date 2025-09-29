@@ -3359,6 +3359,41 @@ section[data-route="/community"] .topic-entry__actions{
   gap:8px;
   flex:0 0 auto;
 }
+section[data-route="/community"] .btn-like{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(226,233,255,.24);
+  background:rgba(255,255,255,.08);
+  color:#e2e9ff;
+  font-size:13px;
+  font-weight:600;
+  line-height:1;
+  transition:background .2s ease,border-color .2s ease,color .2s ease;
+}
+section[data-route="/community"] .btn-like:not([disabled]):hover{
+  background:rgba(255,255,255,.18);
+  border-color:rgba(226,233,255,.48);
+}
+section[data-route="/community"] .btn-like__icon{
+  font-size:16px;
+  line-height:1;
+}
+section[data-route="/community"] .btn-like__count{
+  min-width:1.5em;
+  text-align:center;
+}
+section[data-route="/community"] .btn-like--active{
+  background:rgba(255,221,153,.22);
+  border-color:rgba(255,221,153,.6);
+  color:#ffdda3;
+}
+section[data-route="/community"] .btn-like[disabled]{
+  opacity:.6;
+  cursor:wait;
+}
 section[data-route="/community"] .topic-entry .timeline-parent-note,
 section[data-route="/community"] .topic-entry .timeline-ai-note{
   margin:0;
