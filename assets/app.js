@@ -5,7 +5,6 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
-import { loadSupabaseEnv } from './supabase-env-loader.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
 
@@ -1063,20 +1062,6 @@ const TIMELINE_MILESTONES = [
     const finalHeaders = { ...headers };
     if (body !== undefined && finalHeaders['Content-Type'] == null) {
       finalHeaders['Content-Type'] = 'application/json';
-    }
-    if (!finalHeaders.apikey && typeof window !== 'undefined') {
-      let anonKey = window.__SUPABASE_ENV__?.anonKey;
-      if (!anonKey) {
-        try {
-          const env = await loadSupabaseEnv();
-          anonKey = env?.anonKey || null;
-        } catch (err) {
-          console.warn('loadSupabaseEnv failed for callEdgeFunction', err);
-        }
-      }
-      if (anonKey) {
-        finalHeaders.apikey = anonKey;
-      }
     }
     if (includeAuth) {
       const token = await resolveAccessToken();
