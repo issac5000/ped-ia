@@ -70,30 +70,30 @@ serve(async (req) => {
   try {
     let context: Record<string, unknown> | null = null;
     try {
-      context = await resolveUserContext(req);
+      const candidate = await resolveUserContext(req);
+      if (candidate?.error) {
+        const msg = String(candidate.error.message ?? '');
+        if (/code or token required/i.test(msg)) {
+          context = null;
+        } else {
+          const status = candidate.error.status ?? 400;
+          return new Response(JSON.stringify(candidate.error), {
+            status,
+            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+          });
+        }
+      } else {
+        context = candidate;
+      }
     } catch (err) {
       console.error('[profiles-create-anon] resolveUserContext failed', err);
-      throw err;
-    }
-
-    let resolvedContext: Record<string, unknown> | null = context;
-    if (context?.error) {
-      const msg = String(context.error.message ?? '');
-      if (/code or token required/i.test(msg)) {
-        resolvedContext = null;
-      } else {
-        const status = context.error.status ?? 400;
-        return new Response(JSON.stringify(context.error), {
-          status,
-          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-        });
-      }
+      context = null;
     }
 
     console.log('[resolveUserContext] profiles-create-anon', {
-      userId: resolvedContext?.userId ?? null,
-      mode: resolvedContext?.mode ?? 'public',
-      anon: resolvedContext?.anon ?? false,
+      userId: context?.userId ?? null,
+      mode: context?.mode ?? 'public',
+      anon: context?.anon ?? false,
     });
     const body = await req.json().catch(() => {
       throw new HttpError(400, "Invalid JSON body");
