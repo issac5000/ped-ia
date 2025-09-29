@@ -24,7 +24,8 @@ async function fetchEnvCandidate(src) {
     const res = await fetch(src, { cache: 'no-store' });
     if (!res?.ok) return null;
     const data = await res.json().catch(() => ({}));
-    return normalize(data);
+    const payload = data && typeof data === 'object' && data.success ? (data.data || {}) : data;
+    return normalize(payload);
   } catch {
     return null;
   }
@@ -37,7 +38,7 @@ export async function loadSupabaseEnv() {
   }
   if (!loadingPromise) {
     loadingPromise = (async () => {
-      const sources = ['/api/env', '/assets/supabase-env.json'];
+      const sources = ['https://myrwcjurblksypvekuzb.supabase.co/functions/v1/env', '/assets/supabase-env.json'];
       for (const src of sources) {
         const candidate = await fetchEnvCandidate(src);
         if (!candidate) continue;

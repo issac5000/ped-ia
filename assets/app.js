@@ -1042,6 +1042,37 @@ const TIMELINE_MILESTONES = [
 
   restoreAnonSession();
 
+  const EDGE_FUNCTION_BASE_URL = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1';
+
+  async function callEdgeFunction(endpoint, { method = 'POST', body, includeAuth = true, headers = {} } = {}) {
+    const finalHeaders = { ...headers };
+    if (body !== undefined && finalHeaders['Content-Type'] == null) {
+      finalHeaders['Content-Type'] = 'application/json';
+    }
+    if (includeAuth) {
+      const token = await resolveAccessToken();
+      if (token) {
+        finalHeaders['Authorization'] = `Bearer ${token}`;
+      }
+    }
+    const requestInit = {
+      method,
+      headers: finalHeaders,
+    };
+    if (body !== undefined) {
+      requestInit.body = JSON.stringify(body);
+    }
+    const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/${endpoint}`, requestInit);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.success) {
+      const errorMessage = payload?.error || 'Service indisponible';
+      const err = new Error(errorMessage);
+      if (payload?.details != null) err.details = payload.details;
+      throw err;
+    }
+    return payload.data ?? null;
+  }
+
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
     const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
@@ -1059,23 +1090,8 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const response = await fetch('/api/anon/children', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const text = await response.text().catch(() => '');
-    let json = null;
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
-    }
-    if (!response.ok) {
-      console.error('Anon response:', response.status, text);
-      const err = new Error(json?.error || 'Service indisponible');
-      if (json?.details) err.details = json.details;
-      throw err;
-    }
-    return json || {};
+    const data = await callEdgeFunction('anon-children', { body });
+    return data || {};
   }
 
   async function anonParentRequest(action, payload = {}) {
@@ -1089,23 +1105,8 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const response = await fetch('/api/anon/parent-updates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const text = await response.text().catch(() => '');
-    let json = null;
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
-    }
-    if (!response.ok) {
-      console.error('Anon response:', response.status, text);
-      const err = new Error(json?.error || 'Service indisponible');
-      if (json?.details) err.details = json.details;
-      throw err;
-    }
-    return json || {};
+    const data = await callEdgeFunction('anon-parent-updates', { body });
+    return data || {};
   }
 
   async function anonFamilyRequest(action, payload = {}) {
@@ -1119,23 +1120,8 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const response = await fetch('/api/anon/family', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const text = await response.text().catch(() => '');
-    let json = null;
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
-    }
-    if (!response.ok) {
-      console.error('Anon response:', response.status, text);
-      const err = new Error(json?.error || 'Service indisponible');
-      if (json?.details) err.details = json.details;
-      throw err;
-    }
-    return json || {};
+    const data = await callEdgeFunction('anon-family', { body });
+    return data || {};
   }
 
   async function anonMessagesRequest(code_unique, { since = null } = {}) {
@@ -1145,18 +1131,7 @@ const TIMELINE_MILESTONES = [
     try {
       const body = { action: 'recent-activity', code };
       if (since) body.since = since;
-      const response = await fetch('/api/anon/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const text = await response.text().catch(() => '');
-      const payload = text ? JSON.parse(text) : {};
-      if (!response.ok) {
-        const err = new Error(payload?.error || 'Service indisponible');
-        if (payload?.details) err.details = payload.details;
-        throw err;
-      }
+      const payload = await callEdgeFunction('anon-messages', { body });
       const messages = Array.isArray(payload?.messages) ? payload.messages : [];
       const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
       return { messages, senders };
@@ -1177,31 +1152,16 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const response = await fetch('/api/anon/community', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const text = await response.text().catch(() => '');
-    let json = null;
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
-    }
-    if (!response.ok) {
-      console.error('Anon response:', response.status, text);
-      const err = new Error(json?.error || 'Service indisponible');
-      if (json?.details) err.details = json.details;
-      throw err;
-    }
-    return json || {};
+    const data = await callEdgeFunction('anon-community', { body });
+    return data || {};
   }
 
-  anonChildRequest.__anonEndpoint = '/api/anon/children';
+  anonChildRequest.__anonEndpoint = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-children';
   anonChildRequest.__expectsCode = true;
   anonChildRequest.__normalizePayload = normalizeAnonChildPayload;
-  anonParentRequest.__anonEndpoint = '/api/anon/parent-updates';
+  anonParentRequest.__anonEndpoint = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-parent-updates';
   anonParentRequest.__expectsCode = true;
-  anonFamilyRequest.__anonEndpoint = '/api/anon/family';
+  anonFamilyRequest.__anonEndpoint = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-family';
   anonFamilyRequest.__expectsCode = true;
 
   dataProxy = createDataProxy({
@@ -1216,23 +1176,8 @@ const TIMELINE_MILESTONES = [
   async function fetchAnonProfileByCode(rawCode) {
     const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
     if (!code) throw new Error('Code unique manquant');
-    const response = await fetch('/api/anon/parent-updates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'profile', code })
-    });
-    const text = await response.text().catch(() => '');
-    let payload = null;
-    if (text) {
-      try { payload = JSON.parse(text); }
-      catch { payload = null; }
-    }
-    if (!response.ok) {
-      const err = new Error(payload?.error || 'Connexion impossible pour le moment.');
-      if (payload?.details) err.details = payload.details;
-      throw err;
-    }
-    const profile = payload?.profile || null;
+    const data = await callEdgeFunction('anon-parent-updates', { body: { action: 'profile', code } });
+    const profile = data?.profile || null;
     if (!profile || !profile.id) {
       throw new Error('Profil introuvable pour ce code.');
     }
@@ -2956,20 +2901,11 @@ const TIMELINE_MILESTONES = [
     }
     try {
       if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-      const response = await fetch('/api/profiles/create-anon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      let payload = null;
-      try { payload = await response.json(); } catch { payload = null; }
-      if (!response.ok || !payload?.profile) {
-        const msg = payload?.error || 'Création impossible pour le moment.';
-        const err = new Error(msg);
-        if (payload?.details) err.details = payload.details;
-        throw err;
+      const payload = await callEdgeFunction('profiles-create-anon', { body: {} });
+      const data = payload?.profile;
+      if (!data) {
+        throw new Error('Création impossible pour le moment.');
       }
-      const data = payload.profile;
       // Ne pas connecter automatiquement l’utilisateur : on lui fournit le code et on le laisse se connecter manuellement.
       setActiveProfile(null);
       authSession = null;
@@ -6983,18 +6919,13 @@ const TIMELINE_MILESTONES = [
     };
 
     async function buildLikeRequestPayload(extra = {}) {
-      const headers = { 'Content-Type': 'application/json' };
       const payload = { ...extra };
       if (isAnonProfile()) {
         const code = getActiveAnonCode();
         if (!code) throw new Error('Code unique requis');
         payload.code = code;
-        return { headers, payload };
       }
-      const token = await resolveAccessToken();
-      if (!token) throw new Error('Missing access token');
-      headers.Authorization = `Bearer ${token}`;
-      return { headers, payload };
+      return payload;
     }
 
     async function fetchReplyLikesByIds(replyIds = []) {
@@ -7008,25 +6939,8 @@ const TIMELINE_MILESTONES = [
       );
       if (!ids.length) return new Map();
       try {
-        const { headers, payload } = await buildLikeRequestPayload({ replyIds: ids });
-        const response = await fetch('/api/likes/get', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        });
-        const text = await response.text().catch(() => '');
-        let data = null;
-        if (text) {
-          try {
-            data = JSON.parse(text);
-          } catch (err) {
-            console.warn('fetchReplyLikes parse failed', err);
-          }
-        }
-        if (!response.ok) {
-          const message = data?.error || `HTTP ${response.status}`;
-          throw new Error(message);
-        }
+        const payload = await buildLikeRequestPayload({ replyIds: ids });
+        const data = await callEdgeFunction('likes-get', { body: payload });
         const map = new Map();
         if (data && typeof data === 'object') {
           Object.entries(data).forEach(([key, value]) => {
@@ -7100,9 +7014,9 @@ const TIMELINE_MILESTONES = [
       if (!replyId) return;
       const current = communityLikes.get(replyId) || { count: 0, liked: false };
       const action = current.liked ? 'remove' : 'add';
-      let request;
+      let payload;
       try {
-        request = await buildLikeRequestPayload({ replyId });
+        payload = await buildLikeRequestPayload({ replyId });
       } catch (err) {
         console.warn('toggleReplyLike build payload failed', err);
         alert('Connectez-vous pour aimer cette réponse.');
@@ -7111,24 +7025,8 @@ const TIMELINE_MILESTONES = [
       button.dataset.busy = '1';
       button.disabled = true;
       try {
-        const response = await fetch(`/api/likes/${action}`, {
-          method: 'POST',
-          headers: request.headers,
-          body: JSON.stringify(request.payload),
-        });
-        const text = await response.text().catch(() => '');
-        let data = null;
-        if (text) {
-          try {
-            data = JSON.parse(text);
-          } catch (err) {
-            console.warn('toggleReplyLike parse failed', err);
-          }
-        }
-        if (!response.ok) {
-          const message = data?.error || (action === 'add' ? 'Impossible de liker cette réponse.' : 'Impossible de retirer ce like.');
-          throw new Error(message);
-        }
+        const endpoint = action === 'add' ? 'likes-add' : 'likes-remove';
+        const data = await callEdgeFunction(endpoint, { body: payload });
         const countRaw = Number(data?.count ?? 0);
         const normalized = {
           count: Number.isFinite(countRaw) ? countRaw : 0,
@@ -7710,34 +7608,23 @@ const TIMELINE_MILESTONES = [
                 console.warn('profiles_with_children fetch failed', err);
               }
               try {
-                const { data: authData } = await supabase.auth.getSession();
-                const token = authData?.session?.access_token || '';
-                if (token) {
-                  const response = await fetch('/api/profiles/by-ids', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ ids: idArray }),
-                  });
-                  if (response.ok) {
-                    const payload = await response.json().catch(() => null);
-                    if (payload?.profiles) {
-                      const entries = payload.profiles
-                        .map((profile) => {
-                          const id = profile?.id != null ? String(profile.id) : '';
-                          if (!id) return null;
-                          const entry = normalizeAuthorMeta({
-                            name: profile.full_name || profile.name || 'Utilisateur',
-                            child_count: profile.child_count ?? profile.children_count ?? null,
-                            show_children_count:
-                              profile.show_children_count ?? profile.showChildCount ?? profile.show_stats ?? profile.showStats,
-                          }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
-                          return [id, entry];
-                        })
-                        .filter(Boolean);
-                      if (entries.length) {
-                        return new Map(entries);
-                      }
-                    }
+                const payload = await callEdgeFunction('profiles-by-ids', { body: { ids: idArray } });
+                if (payload?.profiles) {
+                  const entries = payload.profiles
+                    .map((profile) => {
+                      const id = profile?.id != null ? String(profile.id) : '';
+                      if (!id) return null;
+                      const entry = normalizeAuthorMeta({
+                        name: profile.full_name || profile.name || 'Utilisateur',
+                        child_count: profile.child_count ?? profile.children_count ?? null,
+                        show_children_count:
+                          profile.show_children_count ?? profile.showChildCount ?? profile.show_stats ?? profile.showStats,
+                      }) || { name: profile.full_name || 'Utilisateur', childCount: null, showChildCount: false };
+                      return [id, entry];
+                    })
+                    .filter(Boolean);
+                  if (entries.length) {
+                    return new Map(entries);
                   }
                 }
               } catch (err) {
@@ -8299,37 +8186,13 @@ const TIMELINE_MILESTONES = [
     body.child_id = remoteChildId;
     if (aiSummary) body.aiSummary = aiSummary;
     if (aiCommentaire) body.aiCommentaire = aiCommentaire;
-    let token = authSession?.access_token || '';
-    if (!token && supabase?.auth) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        token = session?.access_token || '';
-      } catch {}
-    }
+    const token = await resolveAccessToken();
     if (!token) throw new Error('Missing access token for child update logging');
-    const res = await fetch('/api/child-updates', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
+    await callEdgeFunction('child-updates', {
+      body,
+      includeAuth: false,
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) {
-      let details = '';
-      try {
-        const text = await res.text();
-        if (text) {
-          try {
-            const parsed = JSON.parse(text);
-            details = parsed?.details || parsed?.error || text;
-          } catch {
-            details = text;
-          }
-        }
-      } catch {}
-      throw new Error(details || `HTTP ${res.status}`);
-    }
   }
 
   async function fetchChildUpdateSummaries(childId) {

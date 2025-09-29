@@ -40,6 +40,53 @@ let isAnon = false;
 let anonProfile = null;
 let loginUIBound = false;
 
+const EDGE_FUNCTION_BASE_URL = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1';
+
+async function resolveAccessToken() {
+  if (session?.access_token) return session.access_token;
+  if (supabase?.auth) {
+    try {
+      const { data: { session: current } } = await supabase.auth.getSession();
+      if (current?.access_token) {
+        session = current;
+        return current.access_token;
+      }
+    } catch (err) {
+      console.warn('resolveAccessToken (messages) failed', err);
+    }
+  }
+  return '';
+}
+
+async function callEdgeFunction(endpoint, { method = 'POST', body, includeAuth = true, headers = {} } = {}) {
+  const finalHeaders = { ...headers };
+  if (body !== undefined && finalHeaders['Content-Type'] == null) {
+    finalHeaders['Content-Type'] = 'application/json';
+  }
+  if (includeAuth) {
+    const token = await resolveAccessToken();
+    if (token) {
+      finalHeaders['Authorization'] = `Bearer ${token}`;
+    }
+  }
+  const requestInit = {
+    method,
+    headers: finalHeaders,
+  };
+  if (body !== undefined) {
+    requestInit.body = JSON.stringify(body);
+  }
+  const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/${endpoint}`, requestInit);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.success) {
+    const errorMessage = payload?.error || 'Service indisponible';
+    const err = new Error(errorMessage);
+    if (payload?.details != null) err.details = payload.details;
+    throw err;
+  }
+  return payload.data ?? null;
+}
+
 // Normaliser tous les identifiants utilisateur en chaînes pour éviter les incohérences de type
 const idStr = id => String(id);
 
@@ -73,21 +120,7 @@ async function ensureSupabase(){
 async function fetchAnonProfileByCode(rawCode) {
   const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
   if (!code) throw new Error('Code unique manquant.');
-  const response = await fetch('/api/anon/parent-updates', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'profile', code })
-  });
-  const text = await response.text().catch(() => '');
-  let payload = null;
-  if (text) {
-    try { payload = JSON.parse(text); } catch { payload = null; }
-  }
-  if (!response.ok) {
-    const err = new Error(payload?.error || 'Connexion impossible pour le moment.');
-    if (payload?.details) err.details = payload.details;
-    throw err;
-  }
+  const payload = await callEdgeFunction('anon-parent-updates', { body: { action: 'profile', code } });
   const profile = payload?.profile || null;
   if (!profile || !profile.id) {
     throw new Error('Code introuvable.');
@@ -134,20 +167,11 @@ async function createAnonymousProfile(){
   }
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-    const response = await fetch('/api/profiles/create-anon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-    let payload = null;
-    try { payload = await response.json(); } catch (e) { payload = null; }
-    if (!response.ok || !payload?.profile) {
-      const msg = payload?.error || 'Création impossible pour le moment.';
-      const err = new Error(msg);
-      if (payload?.details) err.details = payload.details;
-      throw err;
+    const payload = await callEdgeFunction('profiles-create-anon', { body: {} });
+    const data = payload?.profile;
+    if (!data) {
+      throw new Error('Création impossible pour le moment.');
     }
-    const data = payload.profile;
     if (status) {
       status.classList.remove('error');
       status.innerHTML = `Ton code unique&nbsp;: <strong>${data.code_unique}</strong>.<br>Garde-le précieusement et saisis-le juste en dessous dans «&nbsp;Se connecter avec un code&nbsp;».`;
@@ -452,18 +476,7 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
   try {
     const body = { action: 'recent-activity', code };
     if (since) body.since = since;
-    const response = await fetch('/api/anon/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const text = await response.text().catch(() => '');
-    const payload = text ? JSON.parse(text) : {};
-    if (!response.ok) {
-      const err = new Error(payload?.error || 'Service indisponible');
-      if (payload?.details) err.details = payload.details;
-      throw err;
-    }
+    const payload = await callEdgeFunction('anon-messages', { body });
     const messages = Array.isArray(payload?.messages) ? payload.messages : [];
     const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
     return { messages, senders };
@@ -530,42 +543,14 @@ function startAnonNotifPolling(){ stopAnonNotifPolling(); anonNotifTick(); anonN
 async function anonMessagesActionRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
   const body = { action, code: anonProfile.code, ...payload };
-  const response = await fetch('/api/anon/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text().catch(() => '');
-  let json = null;
-  if (text) {
-    try { json = JSON.parse(text); } catch {}
-  }
-  if (!response.ok) {
-    const err = new Error(json?.error || 'Service indisponible');
-    if (json?.details) err.details = json.details;
-    throw err;
-  }
+  const json = await callEdgeFunction('anon-messages', { body });
   return json || {};
 }
 
 async function anonCommunityRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
   const body = { action, code: anonProfile.code, ...payload };
-  const response = await fetch('/api/anon/community', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text().catch(() => '');
-  let json = null;
-  if (text) {
-    try { json = JSON.parse(text); } catch {}
-  }
-  if (!response.ok) {
-    const err = new Error(json?.error || 'Service indisponible');
-    if (json?.details) err.details = json.details;
-    throw err;
-  }
+  const json = await callEdgeFunction('anon-community', { body });
   return json || {};
 }
 
@@ -958,20 +943,8 @@ async function loadConversations(){
   let profiles = [];
   if(ids.length){
     try {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      const token = s?.access_token || '';
-      const r = await fetch('/api/profiles/by-ids', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ids })
-      });
-      if (r.ok) {
-        const j = await r.json();
-        profiles = (j.profiles||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
-      } else {
-        const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', ids);
-        profiles = (profs||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
-      }
+      const payload = await callEdgeFunction('profiles-by-ids', { body: { ids } });
+      profiles = (payload?.profiles||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
     } catch (e) {
       const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', ids);
       profiles = (profs||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
@@ -1031,21 +1004,9 @@ async function ensureConversation(otherId){
   }
   let profile = { id, full_name:'Parent' };
   try {
-    const { data: { session: s } } = await supabase.auth.getSession();
-    const token = s?.access_token || '';
-    const r = await fetch('/api/profiles/by-ids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ ids: [id] })
-    });
-    if (r.ok) {
-      const j = await r.json();
-      const p = (j.profiles||[])[0];
-      if (p) profile = { id: idStr(p.id), full_name: p.full_name };
-    } else {
-      const { data } = await supabase.from('profiles').select('id,full_name').eq('id', id).maybeSingle();
-      if (data) profile = { id:idStr(data.id), full_name: data.full_name };
-    }
+    const payload = await callEdgeFunction('profiles-by-ids', { body: { ids: [id] } });
+    const p = (payload?.profiles||[])[0];
+    if (p) profile = { id: idStr(p.id), full_name: p.full_name };
   } catch {
     const { data } = await supabase.from('profiles').select('id,full_name').eq('id', id).maybeSingle();
     if (data) profile = { id:idStr(data.id), full_name: data.full_name };
@@ -1062,19 +1023,7 @@ async function deleteConversation(otherId){
     if (isAnon) {
       await anonMessagesActionRequest('delete-conversation', { otherId: id });
     } else {
-      const r = await fetch('/api/messages/delete-conversation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`
-        },
-        body: JSON.stringify({ otherId: id })
-      });
-      if(!r.ok){
-        let info = '';
-        try { const j = await r.json(); info = j?.error ? `${j.error}${j.details?` - ${j.details}`:''}` : (await r.text()); } catch(e){}
-        throw new Error(`HTTP ${r.status}${info?`: ${info}`:''}`);
-      }
+      await callEdgeFunction('messages-delete-conversation', { body: { otherId: id } });
     }
   } catch (e){
     console.error('delete conv', e);
