@@ -71,13 +71,29 @@ async function fetchProfileById(supaUrl, headers, id) {
   return Array.isArray(res) ? res[0] : res;
 }
 
+function summarizeValue(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === 'object') return Object.keys(value).length;
+  return value != null ? 1 : 0;
+}
+
+function logResponse(action, body) {
+  const summary = {};
+  Object.entries(body || {}).forEach(([key, value]) => {
+    summary[key] = summarizeValue(value);
+  });
+  console.debug(`[anon-messages] ${action} response`, summary);
+}
+
 /**
  * Point d’entrée unique pour toutes les actions de messagerie anonyme.
  * Garantit que chaque requête est liée à un profil anonyme valide avant d’interroger Supabase.
  */
 export async function processAnonMessagesRequest(body) {
+  let self = null;
+  let action = '';
   try {
-    const action = String(body?.action || '').trim();
+    action = String(body?.action || '').trim();
     if (!action) throw new HttpError(400, 'action required');
     const code = normalizeCode(body?.code || body?.code_unique);
     if (!code) throw new HttpError(400, 'code required');
@@ -86,17 +102,26 @@ export async function processAnonMessagesRequest(body) {
     const headers = { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` };
     const profile = await fetchAnonProfile(supaUrl, serviceKey, code);
     const profileId = String(profile.id);
+    self = { id: profileId, full_name: profile.full_name || '' };
 
     if (action === 'profile-self') {
-      return { status: 200, body: { profile: { id: profileId, full_name: profile.full_name || '' } } };
+      const body = { self };
+      logResponse(action, body);
+      return { status: 200, body };
     }
 
     if (action === 'profile') {
       const otherId = normalizeId(body?.otherId ?? body?.id);
       if (!otherId) throw new HttpError(400, 'otherId required');
       const other = await fetchProfileById(supaUrl, headers, otherId);
-      if (!other) return { status: 404, body: { error: 'Profile not found' } };
-      return { status: 200, body: { profile: other } };
+      if (!other) {
+        const errorBody = { self, error: 'Profile not found' };
+        logResponse(action, errorBody);
+        return { status: 404, body: errorBody };
+      }
+      const responseBody = { self, profile: other };
+      logResponse(action, responseBody);
+      return { status: 200, body: responseBody };
     }
 
     if (action === 'list-conversations') {
@@ -135,13 +160,15 @@ export async function processAnonMessagesRequest(body) {
         );
         profilesList = Array.isArray(profRes) ? profRes : [];
       }
+      const responseBody = {
+        self,
+        conversations,
+        profiles: profilesList,
+      };
+      logResponse(action, responseBody);
       return {
         status: 200,
-        body: {
-          self: { id: profileId, full_name: profile.full_name || '' },
-          conversations,
-          profiles: profilesList,
-        },
+        body: responseBody,
       };
     }
 
@@ -175,7 +202,9 @@ export async function processAnonMessagesRequest(body) {
           });
         }
       }
-      return { status: 200, body: { messages, senders } };
+      const responseBody = { self, messages, senders };
+      logResponse(action, responseBody);
+      return { status: 200, body: responseBody };
     }
 
     if (action === 'get-conversation') {
@@ -195,7 +224,9 @@ export async function processAnonMessagesRequest(body) {
       );
       const messages = Array.isArray(rows) ? rows.map(mapMessage).filter(Boolean) : [];
       const other = await fetchProfileById(supaUrl, headers, otherId);
-      return { status: 200, body: { messages, profile: other || null } };
+      const responseBody = { self, messages, profile: other || null };
+      logResponse(action, responseBody);
+      return { status: 200, body: responseBody };
     }
 
     if (action === 'send') {
@@ -218,7 +249,9 @@ export async function processAnonMessagesRequest(body) {
         }
       );
       const message = Array.isArray(inserted) ? inserted[0] : inserted;
-      return { status: 200, body: { message: mapMessage(message) } };
+      const responseBody = { self, message: mapMessage(message) };
+      logResponse(action, responseBody);
+      return { status: 200, body: responseBody };
     }
 
     if (action === 'delete-conversation') {
@@ -232,14 +265,25 @@ export async function processAnonMessagesRequest(body) {
         `${supaUrl}/rest/v1/messages?sender_id=eq.${encodeURIComponent(otherId)}&receiver_id=eq.${encodeURIComponent(profileId)}`,
         { method: 'DELETE', headers }
       );
-      return { status: 200, body: { success: true } };
+      const responseBody = { self, success: true };
+      logResponse(action, responseBody);
+      return { status: 200, body: responseBody };
     }
 
     throw new HttpError(400, 'Unknown action');
   } catch (err) {
     if (err instanceof HttpError) {
-      return { status: err.status || 500, body: { error: err.message, details: err.details } };
+      const errorBody = { error: err.message, details: err.details };
+      if (self) errorBody.self = self;
+      if (action) logResponse(action, errorBody);
+      return { status: err.status || 500, body: errorBody };
     }
-    return { status: 500, body: { error: 'Server error', details: String(err && err.message ? err.message : err) } };
+    const errorBody = {
+      error: 'Server error',
+      details: String(err && err.message ? err.message : err),
+    };
+    if (self) errorBody.self = self;
+    if (action) logResponse(action, errorBody);
+    return { status: 500, body: errorBody };
   }
 }
