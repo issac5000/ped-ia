@@ -3,3 +3,5 @@
 .env.local
 .env.local
 .DS_Store
+supabase/functions/debug-claims/
+supabase/config.toml
