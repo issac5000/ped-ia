@@ -2240,7 +2240,7 @@ section[data-route="/"] .route-canvas{
 .flagship-image-wrap{position:relative; width:100%; border-radius:46px; overflow:hidden; padding:0; box-shadow:0 36px 90px rgba(0,0,0,.52); isolation:isolate}
 .flagship-image-wrap::before{content:""; position:absolute; inset:-18% -24% -20%; background:radial-gradient(125% 125% at 20% 15%, rgba(255,170,110,.44), transparent 70%), radial-gradient(125% 125% at 78% 10%, rgba(120,170,255,.4), transparent 74%); filter:blur(55px); opacity:.75; z-index:-1}
 .flagship-image{display:block; width:100%; height:auto; border-radius:inherit}
-.flagship-cards{display:flex; gap:clamp(16px,2.4vw,28px); width:100%; overflow-x:auto; overflow-y:hidden; padding:4px clamp(14px,4vw,28px) 16px; scroll-snap-type:x mandatory; scroll-padding-inline:clamp(14px,4vw,28px); justify-content:flex-start; align-items:stretch; position:relative; margin:0 auto; touch-action:pan-x; overscroll-behavior-inline:contain; overscroll-behavior-block:none}
+.flagship-cards{display:flex; gap:clamp(16px,2.4vw,28px); width:100%; overflow-x:auto; overflow-y:hidden; padding:4px clamp(18px,6vw,34px) 16px; scroll-snap-type:x mandatory; scroll-padding-inline:clamp(14px,4vw,28px); justify-content:flex-start; align-items:stretch; position:relative; margin:0 auto; touch-action:pan-x; overscroll-behavior-inline:contain; overscroll-behavior-block:none}
 .flagship-cards::before{content:""; position:absolute; inset:0; border-radius:40px; background:radial-gradient(120% 120% at 0% 0%, rgba(255,170,110,.12), transparent 70%); opacity:.5; pointer-events:none}
 .flagship-cards::-webkit-scrollbar{height:8px}
 .flagship-cards::-webkit-scrollbar-thumb{background:linear-gradient(135deg, rgba(255,170,110,.6), rgba(120,170,255,.6)); border-radius:999px}
@@ -2261,8 +2261,8 @@ section[data-route="/"] .route-canvas{
 .flagship-card p{margin:0; color:var(--muted); line-height:1.48; font-size:clamp(13px, 1vw, 15px)}
 @media(max-width:900px){
   .flagship-cards{
-    -webkit-mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.9) 12%, rgba(0,0,0,.9) 88%, transparent 100%);
-    mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.9) 12%, rgba(0,0,0,.9) 88%, transparent 100%);
+    -webkit-mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.92) 8%, rgba(0,0,0,.92) 92%, transparent 100%);
+    mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.92) 8%, rgba(0,0,0,.92) 92%, transparent 100%);
   }
   .flagship-cards::before,
   .flagship-cards::after{
@@ -2301,7 +2301,7 @@ section[data-route="/"] .route-canvas{
   .flagship-card-body{justify-content:space-between}
 }
 @media(max-width:640px){
-  .flagship-card{flex:0 0 clamp(230px, 74vw, 280px)}
+  .flagship-card{flex:0 0 clamp(240px, 78vw, 300px)}
 }
 .flagship-cta{display:flex; justify-content:center}
 .flagship-cta .btn{min-width:230px; justify-content:center; font-size:1.06rem; padding:13px 30px; box-shadow:0 18px 40px rgba(0,0,0,.4)}
