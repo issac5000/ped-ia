@@ -3350,7 +3350,7 @@ const TIMELINE_MILESTONES = [
         .map((m) => {
           const role = m.role === 'user' ? 'user' : 'assistant';
           const avatar = role === 'user' ? userAvatar : '🤖';
-          const label = role === 'user' ? 'Vous' : 'Assistant';
+          const label = role === 'user' ? 'Vous' : "Ped'IA";
           return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
         })
         .join('');
