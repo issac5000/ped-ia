@@ -3635,6 +3635,25 @@ const TIMELINE_MILESTONES = [
           txtChat.placeholder = placeholders[idx];
         }
       }, 4000);
+      if (!txtChat.dataset.enterSubmitBound) {
+        txtChat.dataset.enterSubmitBound = '1';
+        txtChat.addEventListener('keydown', (event) => {
+          if (
+            event.key === 'Enter'
+            && !event.shiftKey
+            && !event.ctrlKey
+            && !event.metaKey
+            && !event.altKey
+          ) {
+            if (fChat?.dataset.busy === '1') return;
+            event.preventDefault();
+            const form = fChat;
+            if (!form) return;
+            if (typeof form.requestSubmit === 'function') form.requestSubmit();
+            else form.submit();
+          }
+        });
+      }
     }
     if (btnReset) {
       if (btnReset._aiClickHandler) {

@@ -1350,6 +1350,26 @@ $('#message-form').addEventListener('submit', async e=>{
   renderParentList();
 });
 
+const messageTextarea = $('#message-input');
+if (messageTextarea && !messageTextarea.dataset.enterSubmitBound) {
+  messageTextarea.dataset.enterSubmitBound = '1';
+  messageTextarea.addEventListener('keydown', (event) => {
+    if (
+      event.key === 'Enter'
+      && !event.shiftKey
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+    ) {
+      const form = $('#message-form');
+      if (!form || form.dataset.busy === '1') return;
+      event.preventDefault();
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.submit();
+    }
+  });
+}
+
 function setupMessageSubscription(otherId){
   if (isAnon) { messagesChannel = null; return; }
   const id = idStr(otherId);
