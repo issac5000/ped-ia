@@ -590,23 +590,25 @@
         </div>
 
           <div class="stack">
-            <div class="card stack">
-              <div class="card-header">
-                <h3>Recettes personnalisées</h3>
-                <p class="muted">Propositions adaptées à l’âge, aux allergies et aux préférences (issues de votre profil et de celui de l’enfant).</p>
-              </div>
-              <form id="form-ai-recipes" class="form-grid">
-                <label>Préférences / contraintes (optionnel)
-                  <input type="text" name="prefs" placeholder="Ex: végétarien, sans gluten, sans lait…" />
-                </label>
-                <div class="hstack">
-                  <button class="btn btn-primary" type="submit">Générer des recettes</button>
-                  <a class="btn btn-secondary" href="#/onboarding">Mettre à jour allergies</a>
-                  <span id="ai-recipes-status" class="muted"></span>
+          <div class="card stack chat-card">
+            <div class="card-header">
+              <h3>Chatbot personnalisé</h3>
+              <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
+            </div>
+            <button id="ai-chat-reset" class="btn btn-secondary chat-reset" type="button">Réinitialiser la discussion</button>
+            <div class="chat-window">
+              <div id="ai-chat-messages" class="chat-messages"></div>
+              <form id="form-ai-chat" class="chat-input" autocomplete="off">
+                <div class="chat-row">
+                  <textarea name="q" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
+                  <button class="btn btn-primary chat-send" type="submit" aria-label="Envoyer">Envoyer</button>
+                </div>
+                <div class="chat-actions">
+                  <span id="ai-chat-status" class="muted"></span>
                 </div>
               </form>
-              <div id="ai-recipes-result" class="card"></div>
             </div>
+          </div>
 
           <div class="card stack">
             <div class="card-header">
@@ -636,24 +638,22 @@
             <div id="ai-story-result" class="card"></div>
           </div>
 
-          <div class="card stack chat-card">
+          <div class="card stack">
             <div class="card-header">
-              <h3>Chatbot personnalisé</h3>
-              <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
+              <h3>Recettes personnalisées</h3>
+              <p class="muted">Propositions adaptées à l’âge, aux allergies et aux préférences (issues de votre profil et de celui de l’enfant).</p>
             </div>
-            <button id="ai-chat-reset" class="btn btn-secondary chat-reset" type="button">Réinitialiser la discussion</button>
-            <div class="chat-window">
-              <div id="ai-chat-messages" class="chat-messages"></div>
-              <form id="form-ai-chat" class="chat-input" autocomplete="off">
-                <div class="chat-row">
-                  <textarea name="q" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
-                  <button class="btn btn-primary chat-send" type="submit" aria-label="Envoyer">Envoyer</button>
-                </div>
-                <div class="chat-actions">
-                  <span id="ai-chat-status" class="muted"></span>
-                </div>
-              </form>
-            </div>
+            <form id="form-ai-recipes" class="form-grid">
+              <label>Préférences / contraintes (optionnel)
+                <input type="text" name="prefs" placeholder="Ex: végétarien, sans gluten, sans lait…" />
+              </label>
+              <div class="hstack">
+                <button class="btn btn-primary" type="submit">Générer des recettes</button>
+                <a class="btn btn-secondary" href="#/onboarding">Mettre à jour allergies</a>
+                <span id="ai-recipes-status" class="muted"></span>
+              </div>
+            </form>
+            <div id="ai-recipes-result" class="card"></div>
           </div>
 
           <div class="card stack ai-image-card">
