@@ -1045,6 +1045,9 @@ const TIMELINE_MILESTONES = [
         if (/\/functions\/v1$/i.test(trimmed)) {
           return trimmed;
         }
+        if (trimmed === '/api/edge') {
+          return trimmed;
+        }
         return `${trimmed}/functions/v1`;
       }
     }
