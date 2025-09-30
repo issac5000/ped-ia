@@ -1024,6 +1024,25 @@ export async function processAnonChildrenRequest(body) {
       return { status: 200, body: { updates: Array.isArray(updates) ? updates : [] } };
     }
 
+    if (action === 'latest-growth') {
+      const childId = resolveChildId(body, { required: true });
+      const child = await fetchChild(supaUrl, serviceKey, childId);
+      if (child.user_id !== profileId) throw new HttpError(403, 'Accès non autorisé');
+      const [measurementRows, teethRows] = await Promise.all([
+        supabaseRequest(
+          `${supaUrl}/rest/v1/growth_measurements?select=month,height_cm,weight_kg,created_at&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc.nullslast&limit=1`,
+          { headers }
+        ),
+        supabaseRequest(
+          `${supaUrl}/rest/v1/growth_teeth?select=month,count,created_at&child_id=eq.${encodeURIComponent(childId)}&order=created_at.desc.nullslast&limit=1`,
+          { headers }
+        ),
+      ]);
+      const measurement = Array.isArray(measurementRows) ? measurementRows[0] : measurementRows || null;
+      const teeth = Array.isArray(teethRows) ? teethRows[0] : teethRows || null;
+      return { status: 200, body: { measurement: measurement || null, teeth: teeth || null } };
+    }
+
     if (action === 'add-growth') {
       const childId = resolveChildId(body, { required: true });
       const child = await fetchChild(supaUrl, serviceKey, childId);
