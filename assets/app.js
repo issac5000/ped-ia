@@ -244,7 +244,7 @@ const TIMELINE_MILESTONES = [
   let revealObserver = null;
   const settingsState = {
     user: {},
-    privacy: { showStats: true, allowMessages: true },
+    privacy: { showStats: true },
     children: [],
     childrenMap: new Map(),
     selectedChildId: null,
@@ -930,10 +930,6 @@ const TIMELINE_MILESTONES = [
         snapshot.privacy?.showStats != null
           ? !!snapshot.privacy.showStats
           : true,
-      allowMessages:
-        snapshot.privacy?.allowMessages != null
-          ? !!snapshot.privacy.allowMessages
-          : true,
     };
     const children = Array.isArray(snapshot.children)
       ? snapshot.children.map((child) => cloneChildForSettings(child)).filter(Boolean)
@@ -997,9 +993,6 @@ const TIMELINE_MILESTONES = [
         showStatsInput.dataset.boundShowChildren = '1';
       }
     }
-    const allowMessagesInput = form.elements.namedItem('allowMessages');
-    if (allowMessagesInput) allowMessagesInput.checked = !!normalizedPrivacy.allowMessages;
-
     if (!form.dataset.bound) {
       form.addEventListener('submit', handleSettingsSubmit);
       form.dataset.bound = '1';
@@ -1514,7 +1507,7 @@ const TIMELINE_MILESTONES = [
     }
     const privacyData = store.get(K.privacy);
     if (!privacyData) {
-      store.set(K.privacy, { showStats: true, allowMessages: true });
+      store.set(K.privacy, { showStats: true });
     }
     const sessionData = store.get(K.session);
     if (!sessionData) {
@@ -4030,13 +4023,12 @@ const TIMELINE_MILESTONES = [
     childEdit.innerHTML = '<p class="muted">Chargement…</p>';
 
     const storedUser = store.get(K.user) || {};
-    const storedPrivacyRaw = store.get(K.privacy, { showStats: true, allowMessages: true }) || {};
+    const storedPrivacyRaw = store.get(K.privacy, { showStats: true }) || {};
     const storedChildren = store.get(K.children, []);
     const baseSnapshot = {
       user: { role: 'maman', ...storedUser },
       privacy: {
         showStats: storedPrivacyRaw.showStats != null ? !!storedPrivacyRaw.showStats : true,
-        allowMessages: storedPrivacyRaw.allowMessages != null ? !!storedPrivacyRaw.allowMessages : true,
       },
       children: Array.isArray(storedChildren) ? storedChildren : [],
       primaryId: storedUser.primaryChildId || null,
@@ -4319,7 +4311,6 @@ const TIMELINE_MILESTONES = [
       const pseudo = (fd.get('pseudo') || '').toString().trim();
       const role = (fd.get('role') || 'maman').toString();
       const showStats = !!fd.get('showStats');
-      const allowMessages = !!fd.get('allowMessages');
       const parentContext = readParentContextFromForm(fd);
       const parentComment = sanitizeParentComment(fd.get('parent_comment'));
       const hasParentComment = !!parentComment;
@@ -4328,7 +4319,7 @@ const TIMELINE_MILESTONES = [
       const parentContextChanges = diffParentContexts(previousContext, parentContext);
       const pseudoChanged = (previousUser.pseudo || '') !== pseudo;
       const roleChanged = (previousUser.role || 'maman') !== role;
-      const nextPrivacy = { showStats, allowMessages };
+      const nextPrivacy = { showStats };
       const nextUser = { ...previousUser, pseudo, role, ...parentContext };
       store.set(K.user, nextUser);
       store.set(K.privacy, nextPrivacy);
@@ -4780,7 +4771,7 @@ const TIMELINE_MILESTONES = [
     }
     const checked = !!input.checked;
     input.dataset.busy = '1';
-    const previousPrivacy = settingsState.privacy || { showStats: false, allowMessages: true };
+    const previousPrivacy = settingsState.privacy || { showStats: false };
     const previousValue = !!previousPrivacy.showStats;
     const nextPrivacy = { ...previousPrivacy, showStats: checked };
     settingsState.privacy = nextPrivacy;
