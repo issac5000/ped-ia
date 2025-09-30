@@ -9699,6 +9699,19 @@ const TIMELINE_MILESTONES = [
   // --- Helpers d’appels IA ---
   async function askAI(question, child, history){
     const payload = { question, child, history, type: 'advice' };
+    if (activeProfile?.id != null) {
+      const profileId = String(activeProfile.id).trim();
+      if (profileId) {
+        payload.profileId = profileId;
+        payload.profile_id = profileId;
+      }
+    }
+    if (activeProfile?.code_unique) {
+      const code = String(activeProfile.code_unique).trim().toUpperCase();
+      if (code) {
+        payload.code_unique = code;
+      }
+    }
     const res = await fetch('/api/ai', {
       method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload)
     });

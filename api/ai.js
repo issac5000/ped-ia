@@ -288,6 +288,275 @@ async function fetchChildrenContextForPrompt(supaUrl, headers, profileId) {
   return { childrenFromDb, anomaliesFromDb };
 }
 
+function parseContextParentalValue(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(raw));
+    } catch {
+      return { ...raw };
+    }
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {}
+    return trimmed;
+  }
+  return null;
+}
+
+function ensureSupabaseOptions(options = {}) {
+  let supaUrl = options.supaUrl || '';
+  let headers = options.headers || null;
+  if (!supaUrl || !headers) {
+    try {
+      const { supaUrl: serviceUrl, serviceKey } = getServiceConfig();
+      if (serviceUrl && serviceKey) {
+        supaUrl = serviceUrl;
+        headers = {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+        };
+      }
+    } catch (err) {
+      console.warn('[AI] ensureSupabaseOptions failed', err?.message || err);
+    }
+  }
+  if (!supaUrl || !headers) {
+    return { supaUrl: '', headers: null };
+  }
+  return { supaUrl, headers };
+}
+
+async function fetchParentContext(profileId, options = {}) {
+  const normalized = profileId == null ? '' : String(profileId).trim();
+  if (!normalized) return null;
+  const { supaUrl, headers } = ensureSupabaseOptions(options);
+  if (!supaUrl || !headers) return null;
+  const columns = [
+    'parental_emotion',
+    'parental_stress',
+    'parental_fatigue',
+    'parent_role',
+    'marital_status',
+    'number_of_children',
+    'context_parental',
+  ].join(',');
+  const url = `${supaUrl}/rest/v1/profiles?select=${columns}&id=eq.${encodeURIComponent(normalized)}&limit=1`;
+  try {
+    const data = await supabaseRequest(url, { headers });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || typeof row !== 'object') return null;
+    return {
+      parental_emotion: row?.parental_emotion ?? null,
+      parental_stress: row?.parental_stress ?? null,
+      parental_fatigue: row?.parental_fatigue ?? null,
+      parent_role: row?.parent_role ?? null,
+      marital_status: row?.marital_status ?? null,
+      number_of_children: row?.number_of_children ?? null,
+      context_parental: parseContextParentalValue(row?.context_parental ?? null),
+    };
+  } catch (err) {
+    console.warn('[AI] fetchParentContext failed', {
+      profileId: normalized,
+      error: err?.message || err,
+    });
+    return null;
+  }
+}
+
+function computeAgeParts(dob) {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - birth.getFullYear();
+  let months = now.getMonth() - birth.getMonth();
+  if (now.getDate() < birth.getDate()) {
+    months -= 1;
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  if (years < 0) {
+    years = 0;
+  }
+  if (months < 0) {
+    months = 0;
+  }
+  const totalMonths = years * 12 + months;
+  return {
+    years,
+    months: totalMonths - years * 12,
+  };
+}
+
+function formatAgeForPrompt(dob) {
+  const parts = computeAgeParts(dob);
+  if (!parts) return '';
+  const { years, months } = parts;
+  if (years > 0) {
+    const yearLabel = `an${years > 1 ? 's' : ''}`;
+    if (months > 0) {
+      return `${years} ${yearLabel} ${months} mois`;
+    }
+    return `${years} ${yearLabel}`;
+  }
+  return `${months} mois`;
+}
+
+async function fetchOtherChildren(profileId, currentChildId, options = {}) {
+  const normalizedProfile = profileId == null ? '' : String(profileId).trim();
+  if (!normalizedProfile) return [];
+  const normalizedCurrentChild = currentChildId == null ? '' : String(currentChildId).trim();
+  const { supaUrl, headers } = ensureSupabaseOptions(options);
+  if (!supaUrl || !headers) return [];
+  const params = new URLSearchParams();
+  params.set('select', 'id,first_name,dob');
+  params.set('user_id', `eq.${normalizedProfile}`);
+  if (normalizedCurrentChild) {
+    params.set('id', `neq.${normalizedCurrentChild}`);
+  }
+  params.set('order', 'dob.asc');
+  const url = `${supaUrl}/rest/v1/children?${params.toString()}`;
+  try {
+    const rows = await supabaseRequest(url, { headers }).catch((err) => {
+      console.warn('[AI] fetchOtherChildren children query failed', err?.message || err);
+      return [];
+    });
+    const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    if (!list.length) return [];
+    const childIds = list
+      .map((row) => (row?.id == null ? '' : String(row.id).trim()))
+      .filter((value) => value && /^[0-9a-z-]+$/i.test(value));
+    const summaryMap = new Map();
+    if (childIds.length) {
+      const summaryParams = new URLSearchParams();
+      summaryParams.set('select', 'child_id,last_summary');
+      summaryParams.set('child_id', `in.(${childIds.join(',')})`);
+      const summaryUrl = `${supaUrl}/rest/v1/family_children_summaries?${summaryParams.toString()}`;
+      try {
+        const summaryRows = await supabaseRequest(summaryUrl, { headers });
+        const normalizedSummaries = Array.isArray(summaryRows) ? summaryRows : [];
+        normalizedSummaries.forEach((row) => {
+          const childId = row?.child_id == null ? '' : String(row.child_id).trim();
+          if (!childId) return;
+          const summaryText = typeof row?.last_summary === 'string' ? row.last_summary.trim() : '';
+          summaryMap.set(childId, summaryText);
+        });
+      } catch (err) {
+        console.warn('[AI] fetchOtherChildren summaries query failed', err?.message || err);
+      }
+    }
+    return list.map((row) => {
+      const childId = row?.id == null ? '' : String(row.id).trim();
+      const name = typeof row?.first_name === 'string' ? row.first_name.trim() : '';
+      const ageText = formatAgeForPrompt(row?.dob || null);
+      const summary = summaryMap.get(childId) || '';
+      return {
+        id: childId,
+        first_name: name,
+        age: ageText,
+        last_summary: summary,
+      };
+    });
+  } catch (err) {
+    console.warn('[AI] fetchOtherChildren failed', {
+      profileId: normalizedProfile,
+      error: err?.message || err,
+    });
+    return [];
+  }
+}
+
+function formatParentContextBlock(context) {
+  const labelMap = {
+    parental_emotion: 'Émotion',
+    parental_stress: 'Stress',
+    parental_fatigue: 'Fatigue',
+    parent_role: 'Rôle',
+    marital_status: 'Statut marital',
+    number_of_children: 'Nombre d’enfants',
+  };
+  const values = [];
+  if (context && typeof context === 'object') {
+    Object.entries(labelMap).forEach(([key, label]) => {
+      const raw = context[key];
+      if (raw == null || raw === '') return;
+      const text = truncateForPrompt(raw, 80);
+      if (text) {
+        values.push(`${label}: ${text}`);
+      }
+    });
+  }
+  const extraLines = [];
+  const nested = context?.context_parental;
+  if (nested && typeof nested === 'object') {
+    const parts = Object.entries(nested)
+      .map(([key, value]) => {
+        if (value == null || value === '') return '';
+        const label = truncateForPrompt(key.replace(/_/g, ' '), 60);
+        const text = truncateForPrompt(value, 120);
+        if (!label || !text) return '';
+        return `${label}: ${text}`;
+      })
+      .filter(Boolean);
+    if (parts.length) {
+      extraLines.push(parts.join(', '));
+    }
+  } else if (typeof nested === 'string') {
+    const text = truncateForPrompt(nested, 200);
+    if (text) {
+      extraLines.push(`Notes: ${text}`);
+    }
+  }
+  const lines = [];
+  if (values.length) {
+    lines.push(values.join(', '));
+  }
+  if (extraLines.length) {
+    lines.push(...extraLines);
+  }
+  if (!lines.length) {
+    lines.push('Aucune donnée disponible.');
+  }
+  return `[Contexte parental]\n${lines.join('\n')}`;
+}
+
+function buildSelectedChildBlock(child) {
+  let serialized = '';
+  try {
+    serialized = JSON.stringify(child ?? {});
+  } catch {
+    serialized = String(child ?? '');
+  }
+  const content = serialized ? serialized : 'Aucune information enfant disponible.';
+  return `[Enfant sélectionné]\n${content}`;
+}
+
+function formatOtherChildrenBlock(children) {
+  const list = Array.isArray(children) ? children.filter(Boolean) : [];
+  if (!list.length) {
+    return `[Autres enfants]\nAucun autre enfant enregistré.`;
+  }
+  const lines = list.map((child) => {
+    const name = truncateForPrompt(child?.first_name || 'Enfant', 80);
+    const age = truncateForPrompt(child?.age || '', 40);
+    const summary = truncateForPrompt(child?.last_summary || 'RAS', 200) || 'RAS';
+    const ageText = age ? ` (${age})` : '';
+    return `- ${name}${ageText} — résumé : ${summary}`;
+  });
+  return `[Autres enfants]\n\n${lines.join('\n')}`;
+}
+
 const DEFAULT_PARENT_CHILD_CONTEXT = Object.freeze({
   parent: {
     name: 'non renseigné',
@@ -932,14 +1201,67 @@ Texte clair, phrases courtes. Termine par une petite morale positive.`;
         if (!apiKey) return respondAiUnavailable(res);
 
         const question = String(body.question || '').slice(0, 2000);
-        const child = safeChildSummary(body.child);
+        const rawChild = body?.child || {};
+        const child = safeChildSummary(rawChild);
         const history = Array.isArray(body.history) ? body.history.slice(-20) : [];
 
         const system = `Tu es Ped’IA, un assistant parental pour enfants 0–7 ans.
 Réponds de manière bienveillante, concrète et structurée en puces.
 Inclure: Sommeil, Alimentation, Repères de développement et Quand consulter.
 Prends en compte les champs du profil (allergies, type d’alimentation, style d’appétit, infos de sommeil, jalons, mesures) si présents.`;
-        const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
+        const profileCandidates = [
+          body?.profileId,
+          body?.profile_id,
+          rawChild?.profileId,
+          rawChild?.profile_id,
+        ]
+          .map((value) => (value == null ? '' : String(value).trim()))
+          .filter(Boolean);
+        let effectiveProfileId = profileCandidates[0] || '';
+        const codeCandidates = [
+          body?.code_unique,
+          body?.code,
+          rawChild?.code_unique,
+        ]
+          .map((value) => (value == null ? '' : String(value).trim().toUpperCase()))
+          .filter(Boolean);
+        const codeUnique = codeCandidates[0] || '';
+
+        let supabaseOptions = { supaUrl: '', headers: null };
+        if (effectiveProfileId || codeUnique) {
+          supabaseOptions = ensureSupabaseOptions({});
+          if (!effectiveProfileId && codeUnique && supabaseOptions.supaUrl && supabaseOptions.headers) {
+            try {
+              const resolvedId = await resolveProfileIdFromCode(codeUnique, {
+                supaUrl: supabaseOptions.supaUrl,
+                headers: supabaseOptions.headers,
+              });
+              if (resolvedId) {
+                effectiveProfileId = resolvedId;
+              }
+            } catch (err) {
+              console.warn('[ai] Unable to resolve profileId from code for advice', err?.message || err);
+            }
+          }
+        }
+
+        let parentContextForPrompt = null;
+        let siblingsForPrompt = [];
+        if (effectiveProfileId && supabaseOptions.supaUrl && supabaseOptions.headers) {
+          parentContextForPrompt = await fetchParentContext(effectiveProfileId, supabaseOptions);
+          const childIdCandidates = [rawChild?.id, rawChild?.child_id, rawChild?.childId]
+            .map((value) => (value == null ? '' : String(value).trim()))
+            .filter(Boolean);
+          const currentChildId = childIdCandidates[0] || '';
+          siblingsForPrompt = await fetchOtherChildren(effectiveProfileId, currentChildId, supabaseOptions);
+        }
+
+        const parentContextBlock = formatParentContextBlock(parentContextForPrompt);
+        const selectedChildBlock = buildSelectedChildBlock(child);
+        const otherChildrenBlock = formatOtherChildrenBlock(siblingsForPrompt);
+        const contextText = [parentContextBlock, selectedChildBlock, otherChildrenBlock].join('\n\n');
+        const questionText = question || 'Aucune question fournie.';
+        const user = `${contextText}\n\nQuestion du parent: ${questionText}`;
 
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
