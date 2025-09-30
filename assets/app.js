@@ -7191,21 +7191,32 @@ const TIMELINE_MILESTONES = [
       const profileIdStr = profileId != null ? String(profileId) : '';
       const activeIdStr = activeId != null ? String(activeId) : '';
       const isSelf = profileIdStr && activeIdStr && profileIdStr === activeIdStr;
+      const rawFullName =
+        raw && typeof raw === 'object'
+          ? raw.full_name ?? raw.fullName ?? raw.name ?? ''
+          : '';
+      const sanitizedFullName = typeof rawFullName === 'string' ? rawFullName.trim() : '';
+      const normalizedName = sanitizedFullName || normalized.name || 'Utilisateur';
+      const authorMeta = {
+        ...normalized,
+        name: normalizedName,
+        fullName: sanitizedFullName,
+      };
       if (isSelf) {
         const localCount = resolveLocalChildCount();
         if (
           Number.isFinite(localCount)
-          && (localCount > 0 || !Number.isFinite(normalized.childCount))
+          && (localCount > 0 || !Number.isFinite(authorMeta.childCount))
         ) {
-          normalized.childCount = Math.max(0, Math.trunc(localCount));
+          authorMeta.childCount = Math.max(0, Math.trunc(localCount));
         }
         const localShow = resolveLocalShowChildrenPref();
         if (localShow != null) {
-          normalized.showChildCount = localShow;
+          authorMeta.showChildCount = localShow;
         }
       }
       return {
-        ...normalized,
+        ...authorMeta,
         profileId: profileIdStr || null,
         isSelf,
       };
