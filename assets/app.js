@@ -1035,7 +1035,7 @@ const TIMELINE_MILESTONES = [
 
   restoreAnonSession();
 
-  const EDGE_FUNCTION_BASE_URL = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1';
+  const EDGE_FUNCTION_BASE_URL = '/api/edge';
 
   function resolveEdgeFunctionBase() {
     if (typeof window !== 'undefined') {
@@ -1163,12 +1163,12 @@ const TIMELINE_MILESTONES = [
     return data || {};
   }
 
-  anonChildRequest.__anonEndpoint = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-children';
+  anonChildRequest.__anonEndpoint = '/api/edge/anon-children';
   anonChildRequest.__expectsCode = true;
   anonChildRequest.__normalizePayload = normalizeAnonChildPayload;
-  anonParentRequest.__anonEndpoint = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-parent-updates';
+  anonParentRequest.__anonEndpoint = '/api/edge/anon-parent-updates';
   anonParentRequest.__expectsCode = true;
-  anonFamilyRequest.__anonEndpoint = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-family';
+  anonFamilyRequest.__anonEndpoint = '/api/edge/anon-family';
   anonFamilyRequest.__expectsCode = true;
 
   dataProxy = createDataProxy({

@@ -167,7 +167,7 @@ async function createAnonymousProfile(){
   }
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-    const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/profiles-create-anon';
+    const url = '/api/edge/profiles-create-anon';
     const payload = {};
     console.debug("Calling Supabase function:", url, payload);
     const response = await fetch(url, {
@@ -488,7 +488,7 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
   try {
     const payload = { action: 'recent-activity', code };
     if (since) payload.since = since;
-    const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-messages';
+    const url = '/api/edge/anon-messages';
     console.debug("Calling Supabase function:", url, payload);
     const res = await fetch(url, {
       method: 'POST',
@@ -575,7 +575,7 @@ function startAnonNotifPolling(){ stopAnonNotifPolling(); anonNotifTick(); anonN
 
 async function anonMessagesActionRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
-  const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-messages';
+  const url = '/api/edge/anon-messages';
   const payloadToSend = { action, code: anonProfile.code, ...payload };
   console.debug("Calling Supabase function:", url, payloadToSend);
   const res = await fetch(url, {
@@ -599,7 +599,7 @@ async function anonMessagesActionRequest(action, payload = {}) {
 
 async function anonCommunityRequest(action, payload = {}) {
   if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
-  const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/anon-community';
+  const url = '/api/edge/anon-community';
   const payloadToSend = { action, code: anonProfile.code, ...payload };
   console.debug("Calling Supabase function:", url, payloadToSend);
   const response = await fetch(url, {
@@ -1047,7 +1047,7 @@ async function loadConversations(){
     try {
       const { data: { session: s } } = await supabase.auth.getSession();
       const token = s?.access_token || '';
-      const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/profiles-by-ids';
+      const url = '/api/edge/profiles-by-ids';
       const payload = { ids };
       console.debug('[profiles-by-ids request]', payload);
       const r = await fetch(url, {
@@ -1144,7 +1144,7 @@ async function ensureConversation(otherId){
   try {
     const { data: { session: s } } = await supabase.auth.getSession();
     const token = s?.access_token || '';
-    const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/profiles-by-ids';
+    const url = '/api/edge/profiles-by-ids';
     const payload = { ids: [id] };
     console.debug('[profiles-by-ids request]', payload);
     const r = await fetch(url, {
@@ -1190,7 +1190,7 @@ async function deleteConversation(otherId){
     if (isAnon) {
       await anonMessagesActionRequest('delete-conversation', { otherId: id });
     } else {
-      const url = 'https://myrwcjurblksypvekuzb.supabase.co/functions/v1/messages-delete-conversation';
+      const url = '/api/edge/messages-delete-conversation';
       const payload = { otherId: id };
       console.debug("Calling Supabase function:", url, payload);
       const r = await fetch(url, {
