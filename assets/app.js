@@ -1042,13 +1042,9 @@ const TIMELINE_MILESTONES = [
       const envUrl = window.__SUPABASE_ENV__?.url;
       if (typeof envUrl === 'string' && envUrl.trim()) {
         const trimmed = envUrl.trim().replace(/\/+$/, '');
-        if (/\/functions\/v1$/i.test(trimmed)) {
-          return trimmed;
-        }
         if (trimmed === '/api/edge') {
           return trimmed;
         }
-        return `${trimmed}/functions/v1`;
       }
     }
     return EDGE_FUNCTION_BASE_URL;
