@@ -51,6 +51,12 @@ function isLoggedIn(){
   return isAnon || !!session?.user;
 }
 
+function updateAnonFullNameFromSelf(selfData, context = '') {
+  if (!anonProfile || !selfData?.full_name) return;
+  anonProfile.fullName = selfData.full_name;
+  console.debug(`[anon] anonProfile.fullName updated${context ? ` (${context})` : ''}:`, anonProfile.fullName);
+}
+
 function updateHeaderAuth(){
   const logged = isLoggedIn();
   $('#btn-login').hidden = logged;
@@ -88,7 +94,7 @@ async function fetchAnonProfileByCode(rawCode) {
     if (payload?.details) err.details = payload.details;
     throw err;
   }
-  const profile = payload?.profile || null;
+  const profile = payload?.data?.profile || null;
   if (!profile || !profile.id) {
     throw new Error('Code introuvable.');
   }
@@ -473,11 +479,11 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
       if (json?.details) err.details = json.details;
       throw err;
     }
-    const payloadData = json?.data || {};
-    const messages = Array.isArray(payloadData.messages) ? payloadData.messages : [];
-    const senders = payloadData?.senders && typeof payloadData.senders === 'object' ? payloadData.senders : {};
-    if (payloadData.self?.full_name) {
-      anonProfile.fullName = payloadData.self.full_name;
+    const data = json?.data || {};
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    const senders = data?.senders && typeof data.senders === 'object' ? data.senders : {};
+    if (json?.data?.self?.full_name) {
+      updateAnonFullNameFromSelf(json.data.self, 'anonMessagesRequest');
     }
     return { messages, senders };
   } catch (err) {
@@ -805,10 +811,10 @@ async function init(){
         if (initialName) myInitial = initialName[0].toUpperCase();
         try {
           const resSelf = await anonMessagesActionRequest('profile-self', {});
-          const payloadSelf = resSelf?.data || {};
-          const profileSelf = payloadSelf.self || payloadSelf.profile || null;
-          if (payloadSelf.self?.full_name) {
-            anonProfile.fullName = payloadSelf.self.full_name;
+          const dataSelf = resSelf?.data || {};
+          const profileSelf = dataSelf.self || dataSelf.profile || null;
+          if (resSelf?.data?.self?.full_name) {
+            updateAnonFullNameFromSelf(resSelf.data.self, 'init profile-self');
           }
           if (profileSelf?.full_name) {
             const first = (profileSelf.full_name || '').trim()[0];
@@ -923,12 +929,12 @@ async function loadConversations(){
   if (isAnon) {
     try {
       const res = await anonMessagesActionRequest('list-conversations', {});
-      const payload = res?.data || {};
-      const convs = Array.isArray(payload.conversations) ? payload.conversations : [];
-      const profileList = Array.isArray(payload.profiles) ? payload.profiles : [];
-      if (payload.self?.full_name) {
-        anonProfile.fullName = payload.self.full_name;
-        const initial = (payload.self.full_name || '').trim()[0];
+      const data = res?.data || {};
+      const convs = Array.isArray(data.conversations) ? data.conversations : [];
+      const profileList = Array.isArray(data.profiles) ? data.profiles : [];
+      if (res?.data?.self?.full_name) {
+        updateAnonFullNameFromSelf(res.data.self, 'loadConversations');
+        const initial = (res.data.self.full_name || '').trim()[0];
         if (initial) myInitial = initial.toUpperCase();
       }
       const profileMap = new Map(profileList.map(p => [idStr(p.id), p.full_name || anonProfile?.fullName || 'Anonyme']));
@@ -1050,12 +1056,11 @@ async function ensureConversation(otherId){
     let profile = { id, full_name: anonProfile?.fullName || 'Anonyme' };
     try {
       const res = await anonMessagesActionRequest('profile', { otherId: id });
-      const payload = res?.data || {};
-      if (payload.self?.full_name) {
-        anonProfile.fullName = payload.self.full_name;
+      if (res?.data?.self?.full_name) {
+        updateAnonFullNameFromSelf(res.data.self, 'ensureConversation');
       }
-      if (payload.profile) {
-        profile = { id: idStr(payload.profile.id), full_name: payload.profile.full_name || anonProfile?.fullName || 'Anonyme' };
+      if (res?.data?.profile) {
+        profile = { id: idStr(res.data.profile.id), full_name: res.data.profile.full_name || anonProfile?.fullName || 'Anonyme' };
       }
     } catch (e) {}
     parents.push(profile);
@@ -1160,18 +1165,18 @@ async function fetchConversation(otherId){
   if (isAnon) {
     try {
       const res = await anonMessagesActionRequest('get-conversation', { otherId: id });
-      const payload = res?.data || {};
-      const messages = Array.isArray(payload.messages) ? payload.messages.map(m => ({
+      const data = res?.data || {};
+      const messages = Array.isArray(data.messages) ? data.messages.map(m => ({
         ...m,
         sender_id: idStr(m.sender_id),
         receiver_id: idStr(m.receiver_id),
       })) : [];
       currentMessages = messages;
-      if (payload.self?.full_name) {
-        anonProfile.fullName = payload.self.full_name;
+      if (res?.data?.self?.full_name) {
+        updateAnonFullNameFromSelf(res.data.self, 'fetchConversation');
       }
-      if (payload.profile) {
-        const fullName = payload.profile.full_name || anonProfile?.fullName || 'Anonyme';
+      if (res?.data?.profile) {
+        const fullName = res.data.profile.full_name || anonProfile?.fullName || 'Anonyme';
         const existing = parents.find(p => p.id === id);
         if (existing) existing.full_name = fullName;
         else parents.push({ id, full_name: fullName });
@@ -1220,11 +1225,11 @@ $('#message-form').addEventListener('submit', async e=>{
   if (isAnon) {
     try {
       const res = await anonMessagesActionRequest('send', { otherId: idStr(activeParent.id), content });
-      const payload = res?.data || {};
-      if (payload.self?.full_name) {
-        anonProfile.fullName = payload.self.full_name;
+      const data = res?.data || {};
+      if (res?.data?.self?.full_name) {
+        updateAnonFullNameFromSelf(res.data.self, 'sendMessage');
       }
-      const saved = payload.message;
+      const saved = data.message;
       if (saved) {
         const msg = {
           ...saved,
