@@ -4073,12 +4073,6 @@ const TIMELINE_MILESTONES = [
       const isPrimary = primaryStr && primaryStr === id;
       const isSelected = selectedStr && selectedStr === id;
       const ageLabel = child.dob ? formatAge(child.dob) : 'Âge inconnu';
-      const sexLabel = child.sex ? ` • ${escapeHtml(child.sex)}` : '';
-      const chips = [
-        child.context?.allergies ? `Allergies: ${escapeHtml(child.context.allergies)}` : '',
-        child.context?.languages ? `Langues: ${escapeHtml(child.context.languages)}` : '',
-      ].filter(Boolean).join(' • ');
-      const chipsHtml = chips ? `<div class="muted">${chips}</div>` : '';
       const primaryBadge = isPrimary ? '<span class="badge">Principal</span>' : '';
       const actions = [
         isPrimary ? '' : `<button type="button" class="btn btn-secondary" data-action="set-primary" data-id="${id}">Définir principal</button>`,
@@ -4092,8 +4086,7 @@ const TIMELINE_MILESTONES = [
               <div class="avatar" aria-hidden="true" style="width:42px;height:42px;border-radius:12px;background:var(--blue-strong);color:#fff;display:grid;place-items:center;font-weight:600;">${escapeHtml(initials)}</div>
               <div class="stack" style="gap:2px;">
                 <strong>${escapeHtml(child.firstName || '—')}</strong>
-                <span class="muted">${escapeHtml(ageLabel)}${sexLabel}</span>
-                ${chipsHtml}
+                <span class="muted">${escapeHtml(ageLabel)}</span>
               </div>
             </div>
             ${primaryBadge}
