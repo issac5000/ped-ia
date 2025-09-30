@@ -40,6 +40,33 @@ let isAnon = false;
 let anonProfile = null;
 let loginUIBound = false;
 
+function sanitizeFullName(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeGoogleProfile(rawProfile, explicitId) {
+  if (!rawProfile) return null;
+  const rawId = explicitId != null ? explicitId : rawProfile?.id;
+  const id = rawId != null ? idStr(rawId) : '';
+  if (!id) return null;
+  const fullName = sanitizeFullName(
+    rawProfile?.full_name ?? rawProfile?.fullName ?? rawProfile?.name ?? ''
+  );
+  if (!isAnon) {
+    console.debug('[GoogleAuth] Profil chargé:', id, fullName);
+  }
+  return { id, full_name: fullName };
+}
+
+function displayNameForProfile(profile) {
+  if (!profile) return isAnon ? anonProfile?.fullName || 'Anonyme' : 'Parent';
+  if (isAnon) {
+    return profile.full_name || anonProfile?.fullName || 'Anonyme';
+  }
+  const fullName = sanitizeFullName(profile.full_name);
+  return fullName || 'Parent';
+}
+
 // Normaliser tous les identifiants utilisateur en chaînes pour éviter les incohérences de type
 const idStr = id => String(id);
 
@@ -627,7 +654,21 @@ async function fetchMissedMessages(){
     if (msgs && msgs.length) {
       const senders = Array.from(new Set(msgs.map(m=>m.sender_id)));
       let names = new Map();
-      try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', senders); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
+      try {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id,full_name')
+          .in('id', senders);
+        const list = Array.isArray(profs) ? profs : [];
+        if (!isAnon) {
+          list.forEach((p) => {
+            normalizeGoogleProfile(p, p?.id);
+          });
+        }
+        names = new Map(
+          list.map((p) => [String(p.id), sanitizeFullName(p.full_name)])
+        );
+      } catch (e) {}
       for (const m of msgs) {
         const fromId = idStr(m.sender_id);
         const fromName = names.get(String(m.sender_id)) || 'Un parent';
@@ -837,10 +878,13 @@ async function init(){
       try {
         const { data: prof } = await supabase
           .from('profiles')
-          .select('full_name')
+          .select('id,full_name')
           .eq('id', user.id)
           .maybeSingle();
-        const name = (prof?.full_name || '').trim();
+        const name = sanitizeFullName(prof?.full_name);
+        if (prof) {
+          normalizeGoogleProfile({ ...prof, id: prof.id ?? user.id }, prof.id ?? user.id);
+        }
         myInitial = (name ? name[0] : (user.email?.[0] || '')).toUpperCase();
       } catch (e) {
         try { myInitial = (user.email?.[0] || '').toUpperCase(); } catch {}
@@ -893,7 +937,21 @@ async function init(){
             if (reps && reps.length) {
               const userIds = Array.from(new Set(reps.map(r=>r.user_id)));
               let names = new Map();
-              try { const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', userIds); names = new Map((profs||[]).map(p=>[String(p.id), p.full_name])); } catch (e) {}
+              try {
+                const { data: profs } = await supabase
+                  .from('profiles')
+                  .select('id,full_name')
+                  .in('id', userIds);
+                const list = Array.isArray(profs) ? profs : [];
+                if (!isAnon) {
+                  list.forEach((p) => {
+                    normalizeGoogleProfile(p, p?.id);
+                  });
+                }
+                names = new Map(
+                  list.map((p) => [String(p.id), sanitizeFullName(p.full_name)])
+                );
+              } catch (e) {}
               let titleMap = new Map();
               try { const { data: ts } = await supabase.from('forum_topics').select('id,title').in('id', Array.from(new Set(reps.map(r=>r.topic_id)))); titleMap = new Map((ts||[]).map(t=>[t.id, (t.title||'').replace(/^\[(.*?)\]\s*/, '')])); } catch (e) {}
               for (const r of reps) {
@@ -1000,21 +1058,33 @@ async function loadConversations(){
       console.debug('[profiles-by-ids response]', r);
       if (r.ok) {
         const j = await r.json();
-        profiles = (j.profiles||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
+        profiles = (j.profiles||[])
+          .map((p) => normalizeGoogleProfile(p, p?.id))
+          .filter(Boolean);
       } else {
-        const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', ids);
-        profiles = (profs||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id,full_name')
+          .in('id', ids);
+        profiles = (Array.isArray(profs) ? profs : [])
+          .map((p) => normalizeGoogleProfile(p, p?.id))
+          .filter(Boolean);
       }
     } catch (e) {
-      const { data: profs } = await supabase.from('profiles').select('id,full_name').in('id', ids);
-      profiles = (profs||[]).map(p=>({ id:idStr(p.id), full_name: p.full_name }));
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id,full_name')
+        .in('id', ids);
+      profiles = (Array.isArray(profs) ? profs : [])
+        .map((p) => normalizeGoogleProfile(p, p?.id))
+        .filter(Boolean);
     }
   }
-  parents = profiles;
+  parents = profiles.slice();
   // Certaines conversations peuvent impliquer des utilisateurs sans profil.
   // On veille à afficher malgré tout ces identifiants avec un profil par défaut
   ids.forEach(id=>{
-    if(!parents.some(p=>p.id===id)) parents.push({ id, full_name:'Parent' });
+    if(!parents.some(p=>p.id===id)) parents.push({ id, full_name:'' });
   });
   lastMessages = convMap;
   renderParentList();
@@ -1035,7 +1105,7 @@ function renderParentList(){
     li.dataset.id = p.id;
     const time = last? new Date(last.created_at).toLocaleString() : '';
     const unreadDot = hasUnreadFrom(p.id) ? '<span class="dot-unread" title="Nouveau message"></span>' : '';
-    const authorName = p.full_name || anonProfile?.fullName || 'Anonyme';
+    const authorName = displayNameForProfile(p);
     li.innerHTML = `
       <div class="meta">
         <div class="name">${escapeHTML(authorName)} ${unreadDot}</div>
@@ -1068,7 +1138,7 @@ async function ensureConversation(otherId){
     renderParentList();
     return;
   }
-  let profile = { id, full_name:'Parent' };
+  let profile = { id, full_name:'' };
   try {
     const { data: { session: s } } = await supabase.auth.getSession();
     const token = s?.access_token || '';
@@ -1084,14 +1154,25 @@ async function ensureConversation(otherId){
     if (r.ok) {
       const j = await r.json();
       const p = (j.profiles||[])[0];
-      if (p) profile = { id: idStr(p.id), full_name: p.full_name };
+      const normalized = normalizeGoogleProfile(p, p?.id ?? id);
+      if (normalized) profile = normalized;
     } else {
-      const { data } = await supabase.from('profiles').select('id,full_name').eq('id', id).maybeSingle();
-      if (data) profile = { id:idStr(data.id), full_name: data.full_name };
+      const { data } = await supabase
+        .from('profiles')
+        .select('id,full_name')
+        .eq('id', id)
+        .maybeSingle();
+      const normalized = normalizeGoogleProfile(data, data?.id ?? id);
+      if (normalized) profile = normalized;
     }
   } catch {
-    const { data } = await supabase.from('profiles').select('id,full_name').eq('id', id).maybeSingle();
-    if (data) profile = { id:idStr(data.id), full_name: data.full_name };
+    const { data } = await supabase
+      .from('profiles')
+      .select('id,full_name')
+      .eq('id', id)
+      .maybeSingle();
+    const normalized = normalizeGoogleProfile(data, data?.id ?? id);
+    if (normalized) profile = normalized;
   }
   parents.push(profile);
   lastMessages.set(id, null);
@@ -1205,7 +1286,8 @@ function renderMessages(){
     const mine = m.sender_id===user.id;
     const line = document.createElement('div');
     line.className = 'chat-line ' + (mine? 'user':'assistant');
-    const otherInitial = (activeParent?.full_name?.[0]||'').toUpperCase();
+    const otherName = displayNameForProfile(activeParent);
+    const otherInitial = (otherName?.trim?.()[0] || '').toUpperCase();
     const meInitial = (myInitial||'').toUpperCase();
     line.innerHTML = `\n      <div class="avatar">${mine? meInitial : otherInitial}</div>\n      <div class="message"><div class="bubble ${mine?'user':'assistant'}">${escapeHTML(m.content)}</div></div>`;
     wrap.appendChild(line);
@@ -1302,7 +1384,18 @@ function setupRealtimeNotifications(){
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`receiver_id=eq.${user.id}` }, async (payload) => {
       const row = payload.new || {}; const fromId = idStr(row.sender_id);
       let fromName = 'Un parent';
-      try { const { data } = await supabase.from('profiles').select('full_name').eq('id', fromId).maybeSingle(); if (data?.full_name) fromName=data.full_name; } catch (e) {}
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id,full_name')
+          .eq('id', fromId)
+          .maybeSingle();
+        if (!isAnon && data) {
+          normalizeGoogleProfile(data, data?.id ?? fromId);
+        }
+        const name = sanitizeFullName(data?.full_name);
+        if (name) fromName = name;
+      } catch (e) {}
       const wasNew = addNotif({ id:`msg:${row.id}`, kind:'msg', fromId, fromName, createdAt: row.created_at });
       if (wasNew) {
         showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(`msg:${row.id}`); setNotifLastNow('msg'); } });
@@ -1331,7 +1424,18 @@ function setupRealtimeNotifications(){
             isParticipant = (count||0) > 0;
           }
           if (!isParticipant) return;
-          let who='Un parent'; try { const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', r.user_id).maybeSingle(); if (prof?.full_name) who=prof.full_name; } catch (e) {}
+          let who='Un parent'; try {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('id,full_name')
+              .eq('id', r.user_id)
+              .maybeSingle();
+            if (!isAnon && prof) {
+              normalizeGoogleProfile(prof, prof?.id ?? r.user_id);
+            }
+            const name = sanitizeFullName(prof?.full_name);
+            if (name) who = name;
+          } catch (e) {}
           const title=(topic.title||'').replace(/^\[(.*?)\]\s*/, '');
           const wasNew = addNotif({ id:`reply:${r.id}`, kind:'reply', who, title, topicId:r.topic_id, createdAt:r.created_at });
           if (wasNew) {
