@@ -4163,6 +4163,14 @@ const TIMELINE_MILESTONES = [
     const weightInputValue = Number.isFinite(latestWeight) ? String(latestWeight) : '';
     const teethInputValue = Number.isFinite(latestTeeth) ? String(Math.max(0, Math.round(latestTeeth))) : '';
 
+    const allergiesValue = child.context?.allergies ? String(child.context.allergies) : '';
+    const historyValue = child.context?.history ? String(child.context.history) : '';
+    const careValue = child.context?.care ? String(child.context.care) : '';
+    const languagesValue = child.context?.languages ? String(child.context.languages) : '';
+    const allergiesPlaceholder = allergiesValue ? '' : 'ex: pollen, lait de vache';
+    const historyPlaceholder = historyValue ? '' : 'ex: asthme, prématurité';
+    const languagesPlaceholder = languagesValue ? '' : 'ex: français, anglais';
+
     const milestonesHtml = milestonesInputsHtml(child.milestones);
     const sleep = child.context?.sleep || {};
     const sleepThroughVal = typeof sleep.sleepsThrough === 'boolean'
@@ -4185,10 +4193,10 @@ const TIMELINE_MILESTONES = [
           <label>Poids (kg)<input type="number" step="0.1" min="0" name="weight_kg" value="${escapeHtml(weightInputValue)}" inputmode="decimal" /></label>
           <label>Nombre de dents<input type="number" step="1" min="0" name="teeth_count" value="${escapeHtml(teethInputValue)}" inputmode="numeric" /></label>
         </div>
-        <label>Allergies<input type="text" name="allergies" value="${escapeHtml(child.context?.allergies || '')}" /></label>
-        <label>Antécédents<input type="text" name="history" value="${escapeHtml(child.context?.history || '')}" /></label>
-        <label>Mode de garde<input type="text" name="care" value="${escapeHtml(child.context?.care || '')}" /></label>
-        <label>Langues parlées<input type="text" name="languages" value="${escapeHtml(child.context?.languages || '')}" /></label>
+        <label>Allergies<input type="text" name="allergies" value="${escapeHtml(allergiesValue)}"${allergiesPlaceholder ? ` placeholder="${escapeHtml(allergiesPlaceholder)}"` : ''} /></label>
+        <label>Antécédents<input type="text" name="history" value="${escapeHtml(historyValue)}"${historyPlaceholder ? ` placeholder="${escapeHtml(historyPlaceholder)}"` : ''} /></label>
+        <label>Mode de garde<input type="text" name="care" value="${escapeHtml(careValue)}" /></label>
+        <label>Langues parlées<input type="text" name="languages" value="${escapeHtml(languagesValue)}"${languagesPlaceholder ? ` placeholder="${escapeHtml(languagesPlaceholder)}"` : ''} /></label>
         <label>Type d’alimentation
           <select name="feedingType">
             <option value="" ${!child.context?.feedingType?'selected':''}>—</option>
