@@ -1058,7 +1058,9 @@ async function loadConversations(){
       console.debug('[profiles-by-ids response]', r);
       if (r.ok) {
         const j = await r.json();
-        profiles = (j.profiles||[])
+        const profilesData = j?.data?.profiles || [];
+        console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profilesData);
+        profiles = profilesData
           .map((p) => normalizeGoogleProfile(p, p?.id))
           .filter(Boolean);
       } else {
@@ -1153,7 +1155,9 @@ async function ensureConversation(otherId){
     console.debug('[profiles-by-ids response]', r);
     if (r.ok) {
       const j = await r.json();
-      const p = (j.profiles||[])[0];
+      const profiles = j?.data?.profiles || [];
+      console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profiles);
+      const p = (profiles||[])[0];
       const normalized = normalizeGoogleProfile(p, p?.id ?? id);
       if (normalized) profile = normalized;
     } else {
