@@ -3692,6 +3692,12 @@ const TIMELINE_MILESTONES = [
           if (submitBtn) submitBtn.disabled = false;
           return;
         }
+        if (txtChat) {
+          txtChat.value = '';
+          txtChat.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          fChat.reset();
+        }
         if (sChat) sChat.textContent = 'Réflexion en cours…';
         const history = loadChat(child);
         history.push({ role: 'user', content: q });
