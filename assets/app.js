@@ -4118,19 +4118,51 @@ const TIMELINE_MILESTONES = [
     const shouldFetchRemote = useRemote() && (!skipRemote || !child);
     if (shouldFetchRemote) {
       try {
-        const childAccess = dataProxy.children();
-        if (childAccess.isAnon) {
-          const detail = await childAccess.callAnon('get', { childId: idStr });
-          if (detail?.child) {
-            child = mapRowToChild(detail.child) || child;
-          }
-        } else {
-          const supaClient = await childAccess.getClient();
-          const { data: row } = await supaClient.from('children').select('*').eq('id', idStr).maybeSingle();
-          if (row) child = mapRowToChild(row) || child;
-        }
+        const remoteChild = await loadChildById(idStr);
+        if (remoteChild) child = remoteChild;
       } catch (err) {
         console.warn('Chargement du profil enfant impossible', err);
+      }
+    }
+    let latestMeasurementRow = null;
+    let latestTeethRow = null;
+    const canFetchLatestGrowth = useRemote() || isAnonProfile();
+    if (canFetchLatestGrowth) {
+      try {
+        const childAccess = dataProxy.children();
+        if (childAccess.isAnon) {
+          const latest = await childAccess.callAnon('latest-growth', { childId: idStr });
+          if (latest && typeof latest === 'object') {
+            if (latest.measurement && typeof latest.measurement === 'object') {
+              latestMeasurementRow = latest.measurement;
+            }
+            if (latest.teeth && typeof latest.teeth === 'object') {
+              latestTeethRow = latest.teeth;
+            }
+          }
+        } else if (useRemote()) {
+          const supaClient = await childAccess.getClient();
+          const [measurementRes, teethRes] = await Promise.all([
+            supaClient
+              .from('growth_measurements')
+              .select('month,height_cm,weight_kg,created_at')
+              .eq('child_id', idStr)
+              .order('created_at', { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle(),
+            supaClient
+              .from('growth_teeth')
+              .select('month,count,created_at')
+              .eq('child_id', idStr)
+              .order('created_at', { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle(),
+          ]);
+          if (measurementRes?.data) latestMeasurementRow = measurementRes.data;
+          if (teethRes?.data) latestTeethRow = teethRes.data;
+        }
+      } catch (err) {
+        console.warn('Dernières mesures indisponibles', err);
       }
     }
     if (!child) {
@@ -4140,20 +4172,70 @@ const TIMELINE_MILESTONES = [
     if (ridRef && ridRef !== renderSettings._rid) return;
 
     settingsState.childrenMap.set(idStr, child);
-    settingsState.snapshots.set(idStr, makeUpdateSnapshot(child));
 
-    const measures = normalizeMeasures(Array.isArray(child.growth?.measurements) ? child.growth.measurements : []);
-    const latestHeight = [...measures].reverse().find((m) => Number.isFinite(m.height))?.height;
-    const latestWeight = [...measures].reverse().find((m) => Number.isFinite(m.weight))?.weight;
-    const lastTeethEntry = Array.isArray(child.growth?.teeth)
-      ? [...child.growth.teeth].sort((a, b) => (Number(a?.month ?? 0) - Number(b?.month ?? 0))).slice(-1)[0]
-      : null;
-    const latestTeeth = lastTeethEntry != null
-      ? Number(lastTeethEntry.count ?? lastTeethEntry.value ?? lastTeethEntry.teeth)
-      : NaN;
-    const heightInputValue = Number.isFinite(latestHeight) ? String(latestHeight) : '';
-    const weightInputValue = Number.isFinite(latestWeight) ? String(latestWeight) : '';
-    const teethInputValue = Number.isFinite(latestTeeth) ? String(Math.max(0, Math.round(latestTeeth))) : '';
+    child.growth = child.growth && typeof child.growth === 'object' ? child.growth : {};
+    if (!Array.isArray(child.growth.measurements)) child.growth.measurements = [];
+    if (!Array.isArray(child.growth.sleep)) child.growth.sleep = [];
+    if (!Array.isArray(child.growth.teeth)) child.growth.teeth = [];
+
+    if (latestMeasurementRow) {
+      const monthRaw = Number(latestMeasurementRow.month);
+      const hasMonth = Number.isFinite(monthRaw);
+      const heightVal = Number(latestMeasurementRow.height_cm ?? latestMeasurementRow.height);
+      const weightVal = Number(latestMeasurementRow.weight_kg ?? latestMeasurementRow.weight);
+      const hasHeight = Number.isFinite(heightVal);
+      const hasWeight = Number.isFinite(weightVal);
+      if (hasHeight || hasWeight) {
+        const existingIndex = hasMonth
+          ? child.growth.measurements.findIndex((entry) => Number(entry?.month ?? entry?.m) === monthRaw)
+          : -1;
+        const baseEntry = existingIndex >= 0
+          ? { ...child.growth.measurements[existingIndex] }
+          : (hasMonth ? { month: monthRaw } : {});
+        if (hasHeight) baseEntry.height = heightVal;
+        if (hasWeight) baseEntry.weight = weightVal;
+        if (Number.isFinite(baseEntry.height) && Number.isFinite(baseEntry.weight) && baseEntry.height > 0) {
+          baseEntry.bmi = baseEntry.weight / Math.pow(baseEntry.height / 100, 2);
+        } else {
+          delete baseEntry.bmi;
+        }
+        if (latestMeasurementRow.created_at) baseEntry.measured_at = latestMeasurementRow.created_at;
+        if (existingIndex >= 0) child.growth.measurements.splice(existingIndex, 1, baseEntry);
+        else child.growth.measurements.push(baseEntry);
+        child.growth.measurements.sort((a, b) => Number(a?.month ?? a?.m ?? 0) - Number(b?.month ?? b?.m ?? 0));
+      }
+    }
+    if (latestTeethRow) {
+      const monthRaw = Number(latestTeethRow.month);
+      const hasMonth = Number.isFinite(monthRaw);
+      const rawCount = latestTeethRow.count ?? latestTeethRow.teeth ?? latestTeethRow.value;
+      const countVal = Number(rawCount);
+      if (Number.isFinite(countVal)) {
+        const normalizedCount = Math.max(0, Math.round(countVal));
+        const existingIndex = hasMonth
+          ? child.growth.teeth.findIndex((entry) => Number(entry?.month ?? entry?.m) === monthRaw)
+          : -1;
+        const baseEntry = existingIndex >= 0
+          ? { ...child.growth.teeth[existingIndex] }
+          : (hasMonth ? { month: monthRaw } : {});
+        baseEntry.count = normalizedCount;
+        if (latestTeethRow.created_at) baseEntry.recorded_at = latestTeethRow.created_at;
+        if (existingIndex >= 0) child.growth.teeth.splice(existingIndex, 1, baseEntry);
+        else child.growth.teeth.push(baseEntry);
+        child.growth.teeth.sort((a, b) => Number(a?.month ?? a?.m ?? 0) - Number(b?.month ?? b?.m ?? 0));
+      }
+    }
+
+    const measures = normalizeMeasures(child.growth.measurements);
+    const latestMeasurement = getLatestMeasurementEntry(measures);
+    const latestTeethEntry = getLatestTeethEntry(child.growth.teeth);
+    const heightInputValue = Number.isFinite(latestMeasurement?.height) ? String(latestMeasurement.height) : '';
+    const weightInputValue = Number.isFinite(latestMeasurement?.weight) ? String(latestMeasurement.weight) : '';
+    const teethInputValue = Number.isFinite(latestTeethEntry?.count)
+      ? String(Math.max(0, Math.round(latestTeethEntry.count)))
+      : '';
+
+    settingsState.snapshots.set(idStr, makeUpdateSnapshot(child));
 
     const allergiesValue = child.context?.allergies ? String(child.context.allergies) : '';
     const historyValue = child.context?.history ? String(child.context.history) : '';
@@ -6757,6 +6839,99 @@ const TIMELINE_MILESTONES = [
     return Array.from(byMonth.values()).sort((a,b)=>a.month-b.month);
   }
 
+  function parseGrowthTimestamp(value) {
+    if (value instanceof Date) {
+      const ms = value.getTime();
+      return Number.isNaN(ms) ? null : ms;
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === 'string') {
+      const ms = Date.parse(value);
+      return Number.isNaN(ms) ? null : ms;
+    }
+    return null;
+  }
+
+  function parseGrowthNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function getLatestMeasurementEntry(entries) {
+    const arr = Array.isArray(entries) ? entries : [];
+    let best = null;
+    let bestTs = null;
+    let bestMonth = null;
+    for (const entry of arr) {
+      if (!entry || typeof entry !== 'object') continue;
+      const height = parseGrowthNumber(entry.height ?? entry.height_cm);
+      const weight = parseGrowthNumber(entry.weight ?? entry.weight_kg);
+      if (height == null && weight == null) continue;
+      const ts = parseGrowthTimestamp(entry.measured_at ?? entry.created_at ?? entry.recorded_at ?? entry.updated_at ?? null);
+      const monthVal = parseGrowthNumber(entry.month ?? entry.m);
+      if (ts != null) {
+        if (bestTs == null || ts > bestTs || (ts === bestTs && monthVal != null && (bestMonth == null || monthVal > bestMonth))) {
+          best = {
+            height: height != null ? height : NaN,
+            weight: weight != null ? weight : NaN,
+            month: monthVal != null ? monthVal : null,
+            measured_at: entry.measured_at ?? entry.created_at ?? null,
+          };
+          bestTs = ts;
+          bestMonth = monthVal != null ? monthVal : bestMonth;
+        }
+      } else if (bestTs == null) {
+        if (!best || (monthVal != null && (best.month == null || monthVal > best.month))) {
+          best = {
+            height: height != null ? height : NaN,
+            weight: weight != null ? weight : NaN,
+            month: monthVal != null ? monthVal : null,
+            measured_at: entry.measured_at ?? entry.created_at ?? null,
+          };
+          bestMonth = monthVal != null ? monthVal : bestMonth;
+        }
+      }
+    }
+    return best;
+  }
+
+  function getLatestTeethEntry(entries) {
+    const arr = Array.isArray(entries) ? entries : [];
+    let best = null;
+    let bestTs = null;
+    let bestMonth = null;
+    for (const entry of arr) {
+      if (!entry || typeof entry !== 'object') continue;
+      const count = parseGrowthNumber(entry.count ?? entry.teeth ?? entry.value);
+      if (count == null) continue;
+      const ts = parseGrowthTimestamp(entry.recorded_at ?? entry.measured_at ?? entry.created_at ?? entry.updated_at ?? null);
+      const monthVal = parseGrowthNumber(entry.month ?? entry.m);
+      if (ts != null) {
+        if (bestTs == null || ts > bestTs || (ts === bestTs && monthVal != null && (bestMonth == null || monthVal > bestMonth))) {
+          best = {
+            count,
+            month: monthVal != null ? monthVal : null,
+            recorded_at: entry.recorded_at ?? entry.created_at ?? null,
+          };
+          bestTs = ts;
+          bestMonth = monthVal != null ? monthVal : bestMonth;
+        }
+      } else if (bestTs == null) {
+        if (!best || (monthVal != null && (best.month == null || monthVal > best.month))) {
+          best = {
+            count,
+            month: monthVal != null ? monthVal : null,
+            recorded_at: entry.recorded_at ?? entry.created_at ?? null,
+          };
+          bestMonth = monthVal != null ? monthVal : bestMonth;
+        }
+      }
+    }
+    return best;
+  }
+
   const communityLikes = new Map();
 
   // Communauté
@@ -8329,13 +8504,12 @@ const TIMELINE_MILESTONES = [
   function makeUpdateSnapshot(childLike) {
     if (!childLike) return {};
     const measures = normalizeMeasures(Array.isArray(childLike?.growth?.measurements) ? childLike.growth.measurements : []);
-    const latestHeight = [...measures].reverse().find((m) => Number.isFinite(m.height))?.height;
-    const latestWeight = [...measures].reverse().find((m) => Number.isFinite(m.weight))?.weight;
-    const lastTeethEntry = Array.isArray(childLike?.growth?.teeth)
-      ? [...childLike.growth.teeth].sort((a, b) => Number(a?.month ?? 0) - Number(b?.month ?? 0)).slice(-1)[0]
-      : null;
-    const latestTeeth = lastTeethEntry != null
-      ? Number(lastTeethEntry.count ?? lastTeethEntry.value ?? lastTeethEntry.teeth)
+    const latestMeasurement = getLatestMeasurementEntry(measures);
+    const latestHeight = Number.isFinite(latestMeasurement?.height) ? latestMeasurement.height : NaN;
+    const latestWeight = Number.isFinite(latestMeasurement?.weight) ? latestMeasurement.weight : NaN;
+    const latestTeethEntry = getLatestTeethEntry(Array.isArray(childLike?.growth?.teeth) ? childLike.growth.teeth : []);
+    const latestTeeth = Number.isFinite(latestTeethEntry?.count)
+      ? Number(latestTeethEntry.count)
       : NaN;
     return {
       firstName: childLike.firstName || '',
