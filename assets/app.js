@@ -211,8 +211,16 @@ const TIMELINE_MILESTONES = [
     }
   }
 
+  const getCurrentRoutePath = () => normalizeRoutePath(location.hash || '#/');
+  const routeNeedsAuth = (path) => protectedRoutes.has(path);
+  const shouldDisplayLogin = (path) => {
+    if (!path) return false;
+    if (path === '/login' || path === '/signup') return true;
+    return routeNeedsAuth(path);
+  };
+
   function showLoginView(options = {}) {
-    const { reason } = options || {};
+    const { reason, skipHash = false } = options || {};
     const switching = authViewState.visible !== 'login';
     if (switching) {
       if (reason === 'no-session') {
@@ -224,19 +232,31 @@ const TIMELINE_MILESTONES = [
         loginViewRoot.removeAttribute('aria-hidden');
       }
       if (appViewRoot) {
-        appViewRoot.classList.add('hidden');
-        appViewRoot.setAttribute('aria-hidden', 'true');
+        appViewRoot.classList.remove('hidden');
+        appViewRoot.removeAttribute('hidden');
+        appViewRoot.removeAttribute('aria-hidden');
       }
       authViewState.visible = 'login';
     } else if (reason === 'no-session') {
       console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
     }
-    if (location.hash !== '#/login') {
-      try { location.hash = '#/login'; }
-      catch {}
+    if (!skipHash) {
+      if (location.hash !== '#/login') {
+        try { location.hash = '#/login'; }
+        catch {}
+      } else {
+        try { setActiveRoute('#/login'); }
+        catch {}
+      }
+    }
+  }
+
+  function handleUnauthenticated(reason) {
+    const path = getCurrentRoutePath();
+    if (shouldDisplayLogin(path)) {
+      showLoginView({ reason });
     } else {
-      try { setActiveRoute('#/login'); }
-      catch {}
+      showAppView();
     }
   }
   // Les courbes OMS utilisaient auparavant Chart.js chargé via CDN.
@@ -1387,7 +1407,7 @@ const TIMELINE_MILESTONES = [
       const session = data?.session;
 
       if (!session && !hasAnonCode()) {
-        showLoginView({ reason: 'no-session' });
+        handleUnauthenticated('no-session');
       } else if (session) {
         showAppView();
       }
@@ -1441,7 +1461,7 @@ const TIMELINE_MILESTONES = [
     if (authSession?.user || isProfileLoggedIn()) {
       showAppView();
     } else if (!hasAnonCode()) {
-      showLoginView({ reason: 'no-session' });
+      handleUnauthenticated('no-session');
     }
     if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
       location.hash = '#/dashboard';
@@ -1460,7 +1480,7 @@ const TIMELINE_MILESTONES = [
       if (session?.user || isProfileLoggedIn()) {
         showAppView();
       } else if (!hasAnonCode()) {
-        showLoginView({ reason: 'signed-out' });
+        handleUnauthenticated('signed-out');
       }
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
@@ -1746,7 +1766,13 @@ const TIMELINE_MILESTONES = [
   }
 
   window.addEventListener('hashchange', () => {
-    setActiveRoute(location.hash || '#/ai');
+    setActiveRoute(location.hash || '#/');
+    const path = getCurrentRoutePath();
+    if (path === '/login') {
+      showLoginView({ reason: 'navigate', skipHash: true });
+    } else if (authViewState.visible === 'login') {
+      showAppView();
+    }
     closeMobileNav();
   });
 
