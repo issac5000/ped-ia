@@ -3,7 +3,7 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { HttpError } from "../_shared/anon-children.ts";
-import { resolveUserContext } from "../_shared/likes-helpers.ts";
+import { resolveUserContext } from "../_shared/auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("NEXT_PUBLIC_SUPABASE_URL") ?? "";
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_KEY") ?? "";
@@ -24,7 +24,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Client-Authorization",
   "Access-Control-Allow-Methods": "POST,OPTIONS",
 };
 
@@ -42,25 +42,31 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
-  if (req.method !== "POST") {
-    return jsonResponse({ error: "Method Not Allowed" }, 405);
-  }
   try {
-    const context = await resolveUserContext(req);
-    if (context?.error) {
-      const status = context.error.status ?? 400;
-      return new Response(JSON.stringify(context.error), {
-        status,
-        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      });
+    let bodyParseError: unknown = null;
+    const body = req.method === "POST"
+      ? await req.json().catch((err) => {
+          bodyParseError = err;
+          return {};
+        })
+      : {};
+    const context = await resolveUserContext(req, body);
+    if (req.method !== "POST") {
+      return jsonResponse({ error: "Method Not Allowed" }, 405);
+    }
+    if (bodyParseError) {
+      throw new HttpError(400, "Invalid JSON body", bodyParseError instanceof Error ? bodyParseError.message : bodyParseError);
+    }
+    if (context.kind === "anonymous") {
+      throw new HttpError(403, "Authentication required");
+    }
+    if (context.kind !== "jwt" && context.kind !== "code") {
+      throw new HttpError(403, "Unsupported context");
     }
     console.log('[resolveUserContext] messages-delete-conversation', {
+      kind: context.kind,
       userId: context.userId,
-      mode: context.mode,
       anon: context.anon ?? false,
-    });
-    const body = await req.json().catch(() => {
-      throw new HttpError(400, "Invalid JSON body");
     });
     if (!supabaseUrl || !serviceKey) {
       throw new HttpError(500, "Server misconfigured");

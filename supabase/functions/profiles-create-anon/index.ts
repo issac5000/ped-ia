@@ -3,7 +3,6 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { HttpError } from "../_shared/anon-children.ts";
-import { resolveUserContext } from "../_shared/likes-helpers.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("NEXT_PUBLIC_SUPABASE_URL") ?? "";
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_KEY") ?? "";
@@ -24,7 +23,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Client-Authorization",
   "Access-Control-Allow-Methods": "POST,OPTIONS",
 };
 
@@ -68,38 +67,23 @@ serve(async (req) => {
     return jsonResponse({ error: "Method Not Allowed" }, 405);
   }
   try {
-    let context: Record<string, unknown> | null = null;
+    let body: Record<string, unknown> = {};
+    let bodyParseError: unknown = null;
     try {
-      const candidate = await resolveUserContext(req);
-      if (candidate?.error) {
-        const msg = String(candidate.error.message ?? '');
-        if (/code or token required/i.test(msg)) {
-          context = null;
-        } else {
-          const status = candidate.error.status ?? 400;
-          return new Response(JSON.stringify(candidate.error), {
-            status,
-            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-          });
-        }
-      } else {
-        context = candidate;
-      }
+      body = await req.json();
     } catch (err) {
-      console.error('[profiles-create-anon] resolveUserContext failed', err);
-      context = null;
+      bodyParseError = err;
+      body = {};
     }
-
-    console.log('[resolveUserContext] profiles-create-anon', {
-      userId: context?.userId ?? null,
-      mode: context?.mode ?? 'public',
-      anon: context?.anon ?? false,
-    });
-    const body = await req.json().catch(() => {
-      throw new HttpError(400, "Invalid JSON body");
-    });
+    if (bodyParseError) {
+      throw new HttpError(400, "Invalid JSON body", bodyParseError instanceof Error ? bodyParseError.message : bodyParseError);
+    }
     if (!supabaseUrl || !serviceKey) {
       throw new HttpError(500, "Server misconfigured");
+    }
+    const actionRaw = typeof body?.action === "string" ? body.action.trim().toLowerCase() : "";
+    if (actionRaw && actionRaw !== "create") {
+      throw new HttpError(400, "Unsupported action");
     }
     const fullNameRaw = typeof body?.fullName === "string" ? body.fullName.trim() : "";
     const fullName = fullNameRaw ? fullNameRaw.slice(0, 120) : "";
@@ -142,11 +126,12 @@ serve(async (req) => {
 
     throw new HttpError(500, "Create failed", lastError);
   } catch (error) {
-    const status = error instanceof HttpError ? error.status || 400 : 500;
+    let status = error instanceof HttpError ? error.status || 400 : 500;
     const message = error instanceof HttpError ? error.message : "Server error";
     const details = error instanceof HttpError ? error.details : error instanceof Error ? error.message : undefined;
     console.error("[profiles-create-anon] error", { status, message, details, error });
-    const payload: Record<string, unknown> = { error: message };
+    if (status === 401) status = 400;
+    const payload: Record<string, unknown> = { success: false, error: message };
     if (details) payload.details = details;
     return jsonResponse(payload, status);
   }
