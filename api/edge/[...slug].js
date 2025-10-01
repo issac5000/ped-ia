@@ -1,4 +1,7 @@
 export default async function handler(req, res) {
+  console.log('DEBUG edge handler', req.url, req.query);
+
+  // Extraction du slug cible
   const querySlug = req?.query?.slug;
   let targetPath = '';
 
@@ -6,7 +9,7 @@ export default async function handler(req, res) {
     targetPath = querySlug.join('/');
   } else if (typeof querySlug === 'string' && querySlug.trim()) {
     targetPath = querySlug.trim();
-  } else {
+  } else if (req.url) {
     const fallback = req.url.replace(/^\/api\/edge\/?/, '');
     targetPath = fallback.split('?')[0].trim();
   }
