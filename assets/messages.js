@@ -177,7 +177,7 @@ async function createAnonymousProfile(){
     });
     let responsePayload = null;
     try { responsePayload = await response.json(); } catch (e) { responsePayload = null; }
-    const profile = responsePayload?.data?.profile || responsePayload?.profile || null;
+    const profile = responsePayload?.data?.profile || null;
     if (!response.ok || !profile) {
       const msg = responsePayload?.error || 'Création impossible pour le moment.';
       const err = new Error(msg);

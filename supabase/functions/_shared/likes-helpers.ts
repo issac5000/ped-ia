@@ -45,8 +45,11 @@ export async function resolveUserContext(req) {
   const supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
   const supabaseAdmin = getSupabaseAdminClient(supaUrl, serviceKey);
 
-  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization') || '';
-  const bearerToken = extractBearerToken(authHeader);
+  const clientAuthHeader =
+    req.headers.get('x-client-authorization') ||
+    req.headers.get('X-Client-Authorization') ||
+    '';
+  const bearerToken = extractBearerToken(clientAuthHeader);
 
   let payload = {};
   try {
@@ -55,12 +58,27 @@ export async function resolveUserContext(req) {
     payload = {};
   }
   const tokenFromBody = typeof payload?.token === 'string' ? payload.token.trim() : '';
-  const token = bearerToken || tokenFromBody;
+  const hasClientAuth = !!(clientAuthHeader && clientAuthHeader.trim());
 
-  console.log('[resolveUserContext] start', { hasBearer: !!bearerToken, hasBodyToken: !!tokenFromBody });
+  console.log('[resolveUserContext] start', {
+    hasClientAuth,
+    hasBearer: !!bearerToken,
+    hasBodyToken: !!tokenFromBody,
+  });
 
-  if (token) {
-    const { data, error } = await supabaseAdmin.auth.getUser(token);
+  let resolvedToken = '';
+  if (hasClientAuth) {
+    if (!bearerToken) {
+      console.log('[resolveUserContext] missing bearer token in client auth header');
+      return { error: { status: 401, message: 'Unauthorized' } };
+    }
+    resolvedToken = bearerToken;
+  } else if (tokenFromBody) {
+    resolvedToken = tokenFromBody;
+  }
+
+  if (resolvedToken) {
+    const { data, error } = await supabaseAdmin.auth.getUser(resolvedToken);
     if (error || !data?.user?.id) {
       console.log('[resolveUserContext] invalid token', { error });
       return { error: { status: 401, message: 'Unauthorized' } };
@@ -72,7 +90,7 @@ export async function resolveUserContext(req) {
       userId: String(data.user.id),
       mode: 'token',
       anon: false,
-      token,
+      token: resolvedToken,
     };
   }
 
