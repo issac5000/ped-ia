@@ -1,10 +1,11 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { HttpError } from "../_shared/anon-children.ts";
 import { processAnonParentUpdatesRequest } from "../_shared/anon-parent-updates.ts";
+import { resolveUserContext } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Client-Authorization",
   "Access-Control-Allow-Methods": "POST,OPTIONS",
 };
 
@@ -31,6 +32,27 @@ function formatResult(status: number, body: Record<string, unknown> | null) {
 }
 
 serve(async (req) => {
+  let parseError = false;
+  const rawBody =
+    req.method === "POST"
+      ? await req.json().catch(() => {
+          parseError = true;
+          return {};
+        })
+      : {};
+  const baseBody = rawBody && typeof rawBody === "object" ? (rawBody as Record<string, unknown>) : {};
+  const hasValidBody = !parseError && (req.method !== "POST" || typeof rawBody === "object");
+  const ctx = await resolveUserContext(req, baseBody);
+  const payload: Record<string, unknown> = { ...baseBody };
+  if (ctx.kind === "code" && typeof payload.code !== "string" && typeof payload.anonCode !== "string") {
+    payload.code = ctx.code;
+  }
+  console.log("[anon-parent-updates] request", {
+    method: req.method,
+    action: typeof payload.action === "string" ? payload.action : null,
+    ctxKind: ctx.kind,
+    hasCode: typeof payload.code === "string",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -38,18 +60,18 @@ serve(async (req) => {
     return jsonResponse({ error: "Method Not Allowed" }, 405);
   }
   try {
-    const payload = await req.json().catch(() => {
+    if (!hasValidBody) {
       throw new HttpError(400, "Invalid JSON body");
-    });
+    }
     const result = await processAnonParentUpdatesRequest(payload ?? {});
     return formatResult(result?.status ?? 200, (result?.body as Record<string, unknown>) ?? {});
   } catch (error) {
     const status = error instanceof HttpError ? error.status || 400 : 500;
     const message = error instanceof HttpError ? error.message : "Server error";
     const details = error instanceof HttpError ? error.details : error instanceof Error ? error.message : undefined;
-    console.error("[anon-parent-updates] error", { status, message, details, error });
-    const payload: Record<string, unknown> = { error: message };
-    if (details) payload.details = details;
-    return jsonResponse(payload, status);
+    console.error("[anon-parent-updates] error", { status, message, hasCode: ctx.kind === "code", error: String(details ?? message) });
+    const response: Record<string, unknown> = { error: message };
+    if (details) response.details = details;
+    return jsonResponse(response, status);
   }
 });

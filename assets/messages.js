@@ -1051,14 +1051,19 @@ async function loadConversations(){
       const url = '/api/edge/profiles-by-ids';
       const payload = { ids };
       console.debug('[profiles-by-ids request]', payload);
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['X-Client-Authorization'] = `Bearer ${token}`;
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers,
         body: JSON.stringify(payload)
       });
       console.debug('[profiles-by-ids response]', r);
-      if (r.ok) {
-        const j = await r.json();
+      const text = await r.text();
+      let j = null;
+      try { j = JSON.parse(text); }
+      catch { j = null; }
+      if (r.ok && j?.success) {
         const profilesData = j?.data?.profiles || [];
         console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profilesData);
         profiles = profilesData
@@ -1148,14 +1153,19 @@ async function ensureConversation(otherId){
     const url = '/api/edge/profiles-by-ids';
     const payload = { ids: [id] };
     console.debug('[profiles-by-ids request]', payload);
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['X-Client-Authorization'] = `Bearer ${token}`;
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers,
       body: JSON.stringify(payload)
     });
     console.debug('[profiles-by-ids response]', r);
-    if (r.ok) {
-      const j = await r.json();
+    const text = await r.text();
+    let j = null;
+    try { j = JSON.parse(text); }
+    catch { j = null; }
+    if (r.ok && j?.success) {
       const profiles = j?.data?.profiles || [];
       console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profiles);
       const p = (profiles||[])[0];
@@ -1194,18 +1204,21 @@ async function deleteConversation(otherId){
       const url = '/api/edge/messages-delete-conversation';
       const payload = { otherId: id };
       console.debug("Calling Supabase function:", url, payload);
+      const headers = { 'Content-Type': 'application/json' };
+      const bearer = session?.access_token || '';
+      if (bearer) headers['X-Client-Authorization'] = `Bearer ${bearer}`;
       const r = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`
-        },
+        headers,
         body: JSON.stringify(payload)
       });
-      if(!r.ok){
-        let info = '';
-        try { const j = await r.json(); info = j?.error ? `${j.error}${j.details?` - ${j.details}`:''}` : (await r.text()); } catch(e){}
-        throw new Error(`HTTP ${r.status}${info?`: ${info}`:''}`);
+      const text = await r.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); }
+      catch { parsed = null; }
+      if (!r.ok || !parsed?.success) {
+        const info = parsed?.error ? `${parsed.error}${parsed.details ? ` - ${parsed.details}` : ''}` : text;
+        throw new Error(`HTTP ${r.status}${info ? `: ${info}` : ''}`);
       }
     }
   } catch (e){

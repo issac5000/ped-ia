@@ -1,106 +1,88 @@
+// /api/edge/[...slug].js
+// Exige SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY dans l'env (Vercel).
+
+const ANON_FIRST_SLUGS = new Set([
+  'profiles-create-anon',
+  'anon-parent-updates',
+  'anon-children',
+  'anon-family',
+  'anon-messages',
+  'anon-community',
+  'likes-get',
+  'likes-add',
+  'likes-remove',
+]);
+
+const isBearerJwt = (value = '') => {
+  const m = /^Bearer\s+([A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+)$/.exec(value);
+  return !!m;
+};
+
 export default async function handler(req, res) {
-  const querySlug = req?.query?.slug;
-  let targetPath = '';
+  try {
+    const { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY } = process.env;
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+      res.status(500).json({ success: false, error: 'Missing Supabase env vars' });
+      return;
+    }
 
-  if (Array.isArray(querySlug)) {
-    targetPath = querySlug.join('/');
-  } else if (typeof querySlug === 'string' && querySlug.trim()) {
-    targetPath = querySlug.trim();
-  } else {
-    const fallback = req.url.replace(/^\/api\/edge\/?/, '');
-    targetPath = fallback.split('?')[0].trim();
-  }
+    const raw = Array.isArray(req.query.slug) ? req.query.slug : [req.query.slug].filter(Boolean);
+    const slug = raw.join('/').trim();
+    if (!slug) {
+      res.status(404).json({ success: false, error: 'Missing function slug' });
+      return;
+    }
 
-  if (!targetPath) {
-    res.status(400).setHeader('Access-Control-Allow-Origin', '*');
-    return res.json({ error: 'Missing target function slug' });
-  }
+    const first = slug.split('/')[0];
+    const useAnon = ANON_FIRST_SLUGS.has(first);
+    const invocationKey = useAnon ? SUPABASE_ANON_KEY : SUPABASE_SERVICE_ROLE_KEY;
 
-  const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
-  const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
+    // Headers sortants vers Supabase Functions
+    const incomingAuth = req.headers['authorization'];
+    const clientJwtHeader = req.headers['x-client-authorization'];
+    const outHeaders = new Headers();
 
-  const slug = targetPath;
-  const usesAnonKey =
-    slug === 'profiles-create-anon' || slug.startsWith('anon-') || slug.startsWith('likes-');
+    // 1) Invocation: toujours la clé Supabase (anon ou service)
+    outHeaders.set('Authorization', `Bearer ${invocationKey}`);
+    outHeaders.set('apikey', invocationKey);
 
-  const rawClientAuth = req?.headers?.authorization;
-  let clientAuthHeader = '';
-  if (Array.isArray(rawClientAuth)) {
-    clientAuthHeader = rawClientAuth.find(Boolean) || '';
-  } else if (typeof rawClientAuth === 'string') {
-    clientAuthHeader = rawClientAuth;
-  }
+    // 2) JWT utilisateur: uniquement dans X-Client-Authorization
+    if (clientJwtHeader && isBearerJwt(clientJwtHeader)) {
+      outHeaders.set('X-Client-Authorization', clientJwtHeader);
+    } else if (incomingAuth && isBearerJwt(incomingAuth)) {
+      // compat: si le client mettait encore le JWT dans Authorization, on le déplace
+      outHeaders.set('X-Client-Authorization', incomingAuth);
+    }
 
-  const chosenKeyRaw = usesAnonKey
-    ? process.env.SUPABASE_ANON_KEY
-    : process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const chosenKey = typeof chosenKeyRaw === 'string' ? chosenKeyRaw.trim() : '';
+    const ct = req.headers['content-type'] || 'application/json';
+    outHeaders.set('Content-Type', ct);
+    outHeaders.set('Cache-Control', 'no-store');
 
-  if (!chosenKey) {
-    console.error('[Edge Proxy] Missing Supabase key for mode', usesAnonKey ? 'ANON' : 'SERVICE');
-  }
-
-  const outgoingHeaders = {};
-  const contentTypeHeader = req?.headers?.['content-type'];
-  if (contentTypeHeader) {
-    outgoingHeaders['Content-Type'] = contentTypeHeader;
-  } else {
-    outgoingHeaders['Content-Type'] = 'application/json';
-  }
-
-  if (chosenKey) {
-    outgoingHeaders.apikey = chosenKey;
-    outgoingHeaders.Authorization = `Bearer ${chosenKey}`;
-  }
-  if (clientAuthHeader && clientAuthHeader.trim()) {
-    outgoingHeaders['X-Client-Authorization'] = clientAuthHeader.trim();
-  }
-
-  const bodyAllowed = !['GET', 'HEAD'].includes((req.method || '').toUpperCase());
-  let outgoingBody;
-  if (bodyAllowed) {
-    if (typeof req.body === 'string' || req.body instanceof Buffer) {
-      outgoingBody = req.body;
-    } else if (req.body != null) {
-      try {
-        outgoingBody = JSON.stringify(req.body);
-      } catch (_err) {
-        outgoingBody = JSON.stringify({});
+    // Corps (préserve tel quel)
+    const method = req.method || 'POST';
+    let body;
+    if (method !== 'GET' && method !== 'HEAD') {
+      if (typeof req.body === 'string') body = req.body;
+      else if (req.body && Object.keys(req.body).length) body = JSON.stringify(req.body);
+      else {
+        body = await new Promise((resolve) => {
+          let data = '';
+          req.on('data', (c) => (data += c));
+          req.on('end', () => resolve(data || undefined));
+        });
       }
     }
-    if (typeof outgoingBody === 'undefined') {
-      outgoingBody = JSON.stringify({});
-    }
-  }
 
-  const outgoingHeaderNames = ['apikey', 'Authorization'];
-  if (outgoingHeaders['X-Client-Authorization']) {
-    outgoingHeaderNames.push('X-Client-Authorization');
-  }
+    const url = `${SUPABASE_URL}/functions/v1/${slug}`;
+    const r = await fetch(url, { method, headers: outHeaders, body });
+    const text = await r.text();
 
-  console.log('[Edge Proxy] Forwarding Supabase request', {
-    slug,
-    mode: usesAnonKey ? 'ANON' : 'SERVICE',
-    hasClientAuth: Boolean(outgoingHeaders['X-Client-Authorization']),
-    outgoingHeaders: outgoingHeaderNames,
-  });
-
-  try {
-    const response = await fetch(targetUrl, {
-      method: req.method,
-      headers: outgoingHeaders,
-      body: outgoingBody,
-    });
-
-    const text = await response.text();
-    res.status(response.status);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    const contentType = response.headers.get('content-type');
-    if (contentType) res.setHeader('Content-Type', contentType);
+    // On forward status + body, sans loguer de secrets
+    res.status(r.status);
+    const rct = r.headers.get('content-type') || '';
+    if (rct.includes('application/json')) res.setHeader('Content-Type', 'application/json');
     res.send(text);
-  } catch (err) {
-    console.error('Edge proxy error:', err);
-    res.status(500).setHeader('Access-Control-Allow-Origin', '*');
-    res.json({ error: err?.message || 'Edge proxy failed' });
+  } catch (e) {
+    res.status(500).json({ success: false, error: String(e?.message || e) });
   }
 }

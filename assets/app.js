@@ -1035,52 +1035,33 @@ const TIMELINE_MILESTONES = [
 
   restoreAnonSession();
 
-  const EDGE_FUNCTION_BASE_URL = '/api/edge';
+  async function callEdgeFunction(slug, payload = {}, jwt) {
+    const headers = { 'Content-Type': 'application/json' };
+    let token = jwt;
+    if (typeof token === 'undefined') {
+      token = await resolveAccessToken();
+    }
+    if (token) {
+      headers['X-Client-Authorization'] = `Bearer ${token}`;
+    }
 
-  function resolveEdgeFunctionBase() {
-    if (typeof window !== 'undefined') {
-      const envUrl = window.__SUPABASE_ENV__?.url;
-      if (typeof envUrl === 'string' && envUrl.trim()) {
-        const trimmed = envUrl.trim().replace(/\/+$/, '');
-        if (/\/functions\/v1$/i.test(trimmed)) {
-          return trimmed;
-        }
-        if (trimmed === '/api/edge') {
-          return trimmed;
-        }
-        return `/api/edge`;
-      }
-    }
-    return EDGE_FUNCTION_BASE_URL;
-  }
+    const res = await fetch(`/api/edge/${slug}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload || {}),
+    });
 
-  async function callEdgeFunction(endpoint, { method = 'POST', body, includeAuth = true, headers = {} } = {}) {
-    const finalHeaders = { ...headers };
-    if (body !== undefined && finalHeaders['Content-Type'] == null) {
-      finalHeaders['Content-Type'] = 'application/json';
+    const text = await res.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
     }
-    if (includeAuth) {
-      const token = await resolveAccessToken();
-      if (token) {
-        finalHeaders['Authorization'] = `Bearer ${token}`;
-      }
+    if (!res.ok) {
+      throw new Error((json && json.error) || text || `HTTP ${res.status}`);
     }
-    const requestInit = {
-      method,
-      headers: finalHeaders,
-    };
-    if (body !== undefined) {
-      requestInit.body = JSON.stringify(body);
-    }
-    const response = await fetch(`${resolveEdgeFunctionBase()}/${endpoint}`, requestInit);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.success) {
-      const errorMessage = payload?.error || 'Service indisponible';
-      const err = new Error(errorMessage);
-      if (payload?.details != null) err.details = payload.details;
-      throw err;
-    }
-    return payload.data ?? null;
+    return json;
   }
 
   async function anonChildRequest(action, payload = {}) {
@@ -1100,8 +1081,14 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const data = await callEdgeFunction('anon-children', { body });
-    return data || {};
+    const resp = await callEdgeFunction('anon-children', body, null);
+    if (!resp?.success) {
+      const message = resp?.error || 'Service indisponible';
+      const error = new Error(message);
+      if (resp?.details != null) error.details = resp.details;
+      throw error;
+    }
+    return resp.data || {};
   }
 
   async function anonParentRequest(action, payload = {}) {
@@ -1115,8 +1102,14 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const data = await callEdgeFunction('anon-parent-updates', { body });
-    return data || {};
+    const resp = await callEdgeFunction('anon-parent-updates', body, null);
+    if (!resp?.success) {
+      const message = resp?.error || 'Service indisponible';
+      const error = new Error(message);
+      if (resp?.details != null) error.details = resp.details;
+      throw error;
+    }
+    return resp.data || {};
   }
 
   async function anonFamilyRequest(action, payload = {}) {
@@ -1130,8 +1123,14 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const data = await callEdgeFunction('anon-family', { body });
-    return data || {};
+    const resp = await callEdgeFunction('anon-family', body, null);
+    if (!resp?.success) {
+      const message = resp?.error || 'Service indisponible';
+      const error = new Error(message);
+      if (resp?.details != null) error.details = resp.details;
+      throw error;
+    }
+    return resp.data || {};
   }
 
   async function anonMessagesRequest(code_unique, { since = null } = {}) {
@@ -1141,9 +1140,13 @@ const TIMELINE_MILESTONES = [
     try {
       const body = { action: 'recent-activity', code };
       if (since) body.since = since;
-      const payload = await callEdgeFunction('anon-messages', { body });
-      const messages = Array.isArray(payload?.messages) ? payload.messages : [];
-      const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
+      const payload = await callEdgeFunction('anon-messages', body, null);
+      if (!payload?.success) {
+        throw new Error(payload?.error || 'Service indisponible');
+      }
+      const data = payload.data || {};
+      const messages = Array.isArray(data?.messages) ? data.messages : [];
+      const senders = data?.senders && typeof data.senders === 'object' ? data.senders : {};
       return { messages, senders };
     } catch (err) {
       console.error('anonMessagesRequest failed', err);
@@ -1162,8 +1165,14 @@ const TIMELINE_MILESTONES = [
     if (!body.code) {
       console.warn('Anon request without code:', body);
     }
-    const data = await callEdgeFunction('anon-community', { body });
-    return data || {};
+    const resp = await callEdgeFunction('anon-community', body, null);
+    if (!resp?.success) {
+      const message = resp?.error || 'Service indisponible';
+      const error = new Error(message);
+      if (resp?.details != null) error.details = resp.details;
+      throw error;
+    }
+    return resp.data || {};
   }
 
   anonChildRequest.__anonEndpoint = '/api/edge/anon-children';
@@ -1186,8 +1195,11 @@ const TIMELINE_MILESTONES = [
   async function fetchAnonProfileByCode(rawCode) {
     const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
     if (!code) throw new Error('Code unique manquant');
-    const data = await callEdgeFunction('anon-parent-updates', { body: { action: 'profile', code } });
-    const profile = data?.profile || null;
+    const resp = await callEdgeFunction('anon-parent-updates', { action: 'profile', code }, null);
+    if (!resp?.success) {
+      throw new Error(resp?.error || 'Service indisponible');
+    }
+    const profile = resp?.data?.profile || null;
     if (!profile || !profile.id) {
       throw new Error('Profil introuvable pour ce code.');
     }
@@ -2914,7 +2926,10 @@ const TIMELINE_MILESTONES = [
       const currentUser = store.get(K.user) || {};
       const fullNameRaw = typeof currentUser?.pseudo === 'string' ? currentUser.pseudo.trim() : '';
       const requestBody = fullNameRaw ? { fullName: fullNameRaw } : {};
-      const payload = await callEdgeFunction('profiles-create-anon', { body: requestBody });
+      const payload = await callEdgeFunction('profiles-create-anon', requestBody, null);
+      if (!payload?.success) {
+        throw new Error(payload?.error || 'Création impossible pour le moment.');
+      }
       const data = payload?.data?.profile || null;
       if (!data) {
         throw new Error('Création impossible pour le moment.');
@@ -7132,12 +7147,16 @@ const TIMELINE_MILESTONES = [
 
     async function buildLikeRequestPayload(extra = {}) {
       const payload = { ...extra };
+      let jwt = null;
       if (isAnonProfile()) {
         const code = getActiveAnonCode();
         if (!code) throw new Error('Code unique requis');
         payload.code = code;
+      } else {
+        const token = await resolveAccessToken();
+        if (token) jwt = token;
       }
-      return payload;
+      return { payload, jwt };
     }
 
     async function fetchReplyLikesByIds(replyIds = []) {
@@ -7151,8 +7170,12 @@ const TIMELINE_MILESTONES = [
       );
       if (!ids.length) return new Map();
       try {
-        const payload = await buildLikeRequestPayload({ replyIds: ids });
-        const data = await callEdgeFunction('likes-get', { body: payload });
+        const { payload, jwt } = await buildLikeRequestPayload({ replyIds: ids });
+        const response = await callEdgeFunction('likes-get', payload, jwt ?? undefined);
+        if (!response?.success) {
+          throw new Error(response?.error || 'Service indisponible');
+        }
+        const data = response.data || {};
         const map = new Map();
         if (data && typeof data === 'object') {
           Object.entries(data).forEach(([key, value]) => {
@@ -7226,9 +7249,9 @@ const TIMELINE_MILESTONES = [
       if (!replyId) return;
       const current = communityLikes.get(replyId) || { count: 0, liked: false };
       const action = current.liked ? 'remove' : 'add';
-      let payload;
+      let built;
       try {
-        payload = await buildLikeRequestPayload({ replyId });
+        built = await buildLikeRequestPayload({ replyId });
       } catch (err) {
         console.warn('toggleReplyLike build payload failed', err);
         alert('Connectez-vous pour aimer cette réponse.');
@@ -7238,7 +7261,11 @@ const TIMELINE_MILESTONES = [
       button.disabled = true;
       try {
         const endpoint = action === 'add' ? 'likes-add' : 'likes-remove';
-        const data = await callEdgeFunction(endpoint, { body: payload });
+        const response = await callEdgeFunction(endpoint, built.payload, built.jwt ?? undefined);
+        if (!response?.success) {
+          throw new Error(response?.error || 'Action impossible pour le moment.');
+        }
+        const data = response.data || {};
         const countRaw = Number(data?.count ?? 0);
         const normalized = {
           count: Number.isFinite(countRaw) ? countRaw : 0,
@@ -7444,11 +7471,12 @@ const TIMELINE_MILESTONES = [
         payload.code = normalizedCode;
       }
       try {
-        const data = await callEdgeFunction('profiles-by-ids', {
-          body: payload,
-          includeAuth: !isAnon,
-        });
-        const profiles = data?.profiles;
+        const token = isAnon ? null : await resolveAccessToken();
+        const response = await callEdgeFunction('profiles-by-ids', payload, token || undefined);
+        if (!response?.success) {
+          throw new Error(response?.error || 'Service indisponible');
+        }
+        const profiles = response?.data?.profiles;
         if (!Array.isArray(profiles) || !profiles.length) return;
         profiles.forEach((profile) => {
           const id = profile?.id != null ? String(profile.id) : '';
@@ -7990,7 +8018,12 @@ const TIMELINE_MILESTONES = [
                     .map(([id]) => id);
                   if (missingIds.length) {
                     try {
-                      const payload = await callEdgeFunction('profiles-by-ids', { body: { ids: missingIds } });
+                      const token = await resolveAccessToken();
+                      const response = await callEdgeFunction('profiles-by-ids', { ids: missingIds }, token || undefined);
+                      if (!response?.success) {
+                        throw new Error(response?.error || 'Service indisponible');
+                      }
+                      const payload = response?.data;
                       if (payload?.profiles) {
                         const fallbackMap = new Map(
                           payload.profiles
@@ -8035,9 +8068,10 @@ const TIMELINE_MILESTONES = [
                 console.warn('profiles_with_children fetch failed', err);
               }
               try {
-                const payload = await callEdgeFunction('profiles-by-ids', { body: { ids: idArray } });
-                if (payload?.profiles) {
-                  const entries = payload.profiles
+                const token = await resolveAccessToken();
+                const response = await callEdgeFunction('profiles-by-ids', { ids: idArray }, token || undefined);
+                if (response?.success && response?.data?.profiles) {
+                  const entries = response.data.profiles
                     .map((profile) => {
                       const id = profile?.id != null ? String(profile.id) : '';
                       if (!id) return null;
@@ -8639,11 +8673,10 @@ const TIMELINE_MILESTONES = [
     if (aiCommentaire) body.aiCommentaire = aiCommentaire;
     const token = await resolveAccessToken();
     if (!token) throw new Error('Missing access token for child update logging');
-    await callEdgeFunction('child-updates', {
-      body,
-      includeAuth: false,
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await callEdgeFunction('child-updates', body, token);
+    if (!response?.success) {
+      throw new Error(response?.error || 'Enregistrement impossible');
+    }
   }
 
   async function fetchChildUpdateSummaries(childId) {

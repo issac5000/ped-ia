@@ -3,7 +3,7 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { HttpError } from "../_shared/anon-children.ts";
-import { resolveUserContext } from "../_shared/likes-helpers.ts";
+import { resolveUserContext } from "../_shared/auth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("NEXT_PUBLIC_SUPABASE_URL") ?? "";
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_KEY") ?? "";
@@ -24,7 +24,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Client-Authorization",
   "Access-Control-Allow-Methods": "POST,OPTIONS",
 };
 
@@ -61,6 +61,23 @@ function shouldRetryDuplicate(error: { code?: string; message?: string } | null 
 }
 
 serve(async (req) => {
+  let parseError = false;
+  const rawBody =
+    req.method === "POST"
+      ? await req.json().catch(() => {
+          parseError = true;
+          return {};
+        })
+      : {};
+  const body = rawBody && typeof rawBody === "object" ? (rawBody as Record<string, unknown>) : {};
+  const hasValidBody = !parseError && (req.method !== "POST" || typeof rawBody === "object");
+  const ctx = await resolveUserContext(req, body);
+  console.log("[profiles-create-anon] request", {
+    method: req.method,
+    hasBody: Object.keys(body).length > 0,
+    ctxKind: ctx.kind,
+    hasCode: ctx.kind === "code",
+  });
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -68,36 +85,9 @@ serve(async (req) => {
     return jsonResponse({ error: "Method Not Allowed" }, 405);
   }
   try {
-    let context: Record<string, unknown> | null = null;
-    try {
-      const candidate = await resolveUserContext(req);
-      if (candidate?.error) {
-        const msg = String(candidate.error.message ?? '');
-        if (/code or token required/i.test(msg)) {
-          context = null;
-        } else {
-          const status = candidate.error.status ?? 400;
-          return new Response(JSON.stringify(candidate.error), {
-            status,
-            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-          });
-        }
-      } else {
-        context = candidate;
-      }
-    } catch (err) {
-      console.error('[profiles-create-anon] resolveUserContext failed', err);
-      context = null;
-    }
-
-    console.log('[resolveUserContext] profiles-create-anon', {
-      userId: context?.userId ?? null,
-      mode: context?.mode ?? 'public',
-      anon: context?.anon ?? false,
-    });
-    const body = await req.json().catch(() => {
+    if (!hasValidBody) {
       throw new HttpError(400, "Invalid JSON body");
-    });
+    }
     if (!supabaseUrl || !serviceKey) {
       throw new HttpError(500, "Server misconfigured");
     }
@@ -125,7 +115,7 @@ serve(async (req) => {
           full_name: response.data.full_name ?? fullName ?? "",
           user_id: response.data.user_id ?? null,
         };
-        return jsonResponse({ success: true, data: { profile } });
+        return jsonResponse({ success: true, data: { profile } }, 200);
       }
 
       if (shouldRetryDuplicate(response.error)) {
@@ -145,8 +135,8 @@ serve(async (req) => {
     const status = error instanceof HttpError ? error.status || 400 : 500;
     const message = error instanceof HttpError ? error.message : "Server error";
     const details = error instanceof HttpError ? error.details : error instanceof Error ? error.message : undefined;
-    console.error("[profiles-create-anon] error", { status, message, details, error });
-    const payload: Record<string, unknown> = { error: message };
+    console.error("[profiles-create-anon] error", { status, message, error: String(details ?? message) });
+    const payload: Record<string, unknown> = { success: false, error: message };
     if (details) payload.details = details;
     return jsonResponse(payload, status);
   }
