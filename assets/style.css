@@ -629,6 +629,11 @@ section[data-route="/signup"] .card{
   background: transparent !important;
 }
 
+section[data-route="/login"]{
+  color:var(--card-text);
+  --muted:var(--card-muted);
+}
+
 section[data-route="/login"] .page-header{
   margin-bottom: 32px;
 }
@@ -649,15 +654,7 @@ section[data-route="/login"] .login-panel{
   display:grid;
   gap:18px;
   align-content:start;
-  padding:0;
-  color:#ffffff;
-}
-
-section[data-route="/login"] .login-panel--google,
-section[data-route="/login"] .login-panel--anon{
-  background:transparent;
-  border:none;
-  box-shadow:none;
+  color:var(--card-text);
 }
 
 .login-panel__header{
@@ -675,7 +672,7 @@ section[data-route="/login"] .login-panel--anon{
 }
 
 .login-panel__text{
-  color:rgba(255,255,255,.86);
+  color:var(--card-muted);
   font-size:15px;
 }
 
@@ -685,20 +682,21 @@ section[data-route="/login"] .login-panel--anon{
   gap:6px;
   padding:4px 12px;
   border-radius:999px;
-  border:1px solid rgba(255,255,255,.26);
-  background:rgba(255,255,255,.18);
+  border:1px solid rgba(78,124,216,.28);
+  background:rgba(78,124,216,.16);
   font-size:12px;
   font-weight:700;
   text-transform:uppercase;
   letter-spacing:.08em;
-  color:#ffffff;
+  color:var(--card-text);
   width:max-content;
 }
 
 .login-pill--outline{
-  background:rgba(255,255,255,.08);
+  background:rgba(255,150,64,.12);
   border-style:dashed;
-  color:rgba(255,255,255,.85);
+  border-color:rgba(255,150,64,.4);
+  color:var(--card-text);
 }
 
 .login-panel__action{
@@ -713,13 +711,13 @@ section[data-route="/login"] .login-panel--anon{
 }
 
 section[data-route="/login"] .login-panel .btn-secondary{
-  background:rgba(255,255,255,.14) !important;
-  border:1px solid rgba(255,255,255,.24) !important;
-  color:#ffffff !important;
+  background:linear-gradient(92deg, rgba(255,150,64,.2), rgba(78,124,216,.2)) !important;
+  border:1px solid rgba(78,124,216,.28) !important;
+  color:var(--card-text) !important;
 }
 
 section[data-route="/login"] .login-panel .btn-secondary:hover{
-  background:rgba(255,255,255,.2) !important;
+  background:linear-gradient(92deg, rgba(255,150,64,.28), rgba(78,124,216,.28)) !important;
 }
 
 .login-panel__icon{
@@ -742,7 +740,7 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
   padding:0;
   display:grid;
   gap:8px;
-  color:rgba(255,255,255,.78);
+  color:var(--card-muted);
   font-size:14px;
 }
 
@@ -764,7 +762,7 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
 .login-panel__note{
   margin:0;
   font-size:13.5px;
-  color:var(--muted);
+  color:var(--card-muted);
 }
 
 .login-panel__divider{
@@ -774,7 +772,7 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
   text-transform:uppercase;
   letter-spacing:.08em;
   font-size:11px;
-  color:rgba(255,255,255,.7);
+  color:var(--card-muted);
 }
 
 .login-panel__divider::before,
@@ -782,7 +780,7 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
   content:"";
   flex:1;
   height:1px;
-  background:rgba(255,255,255,.22);
+  background:rgba(78,124,216,.24);
 }
 
 .login-panel__divider span{white-space:nowrap;}
@@ -790,7 +788,7 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
 .login-code-label{
   font-size:14px;
   font-weight:600;
-  color:rgba(255,255,255,.92);
+  color:var(--card-text);
 }
 
 .login-code-row{
@@ -808,11 +806,9 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
   gap:12px;
   padding:14px 18px;
   border-radius:18px;
-  border:1px solid rgba(255,255,255,.24);
-  background:
-    radial-gradient(circle at top left, rgba(255,150,64,.26), transparent 62%),
-    linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
-  box-shadow:0 16px 34px rgba(8,25,60,.24);
+  border:1px solid rgba(78,124,216,.22);
+  background:linear-gradient(180deg,#ffffff,#f7f9ff);
+  box-shadow:var(--shadow);
   position:relative;
   overflow:hidden;
   transition:border-color .2s ease, box-shadow .2s ease, background .2s ease, transform .18s ease;
@@ -824,7 +820,7 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
   font-weight:700;
   letter-spacing:.28em;
   text-transform:uppercase;
-  color:rgba(255,255,255,.68);
+  color:var(--card-muted);
 }
 
 #anon-code-input{
@@ -837,13 +833,13 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
   font-weight:700;
   letter-spacing:.24em;
   text-transform:uppercase;
-  color:#ffffff;
+  color:var(--card-text);
   font-family:"Space Mono","DM Mono","Inter","Segoe UI",sans-serif;
   caret-color:var(--violet-strong);
 }
 
 #anon-code-input::placeholder{
-  color:rgba(255,255,255,.5);
+  color:rgba(31,41,51,.45);
   letter-spacing:.22em;
 }
 
@@ -855,11 +851,9 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
 }
 
 .login-code-field:focus-within{
-  border-color:rgba(255,255,255,.64);
-  background:
-    radial-gradient(circle at top left, rgba(255,150,64,.32), transparent 60%),
-    linear-gradient(135deg, rgba(255,255,255,.18), rgba(255,255,255,.05));
-  box-shadow:0 20px 40px rgba(8,25,60,.28), 0 0 0 3px rgba(78,124,216,.35);
+  border-color:rgba(78,124,216,.56);
+  background:linear-gradient(180deg,#ffffff,#f1f5ff);
+  box-shadow:0 20px 40px rgba(30,50,100,.18), 0 0 0 3px rgba(78,124,216,.35);
   transform:translateY(-2px);
 }
 
@@ -887,26 +881,26 @@ section[data-route="/login"] .login-panel .btn-secondary:hover{
 }
 
 section[data-route="/login"] .login-panel input{
-  background:rgba(255,255,255,.94);
-  border:1px solid rgba(255,255,255,.55);
-  color:#0f2350;
+  background:#ffffff;
+  border:1px solid rgba(78,124,216,.24);
+  color:var(--card-text);
   font-weight:600;
 }
 
 section[data-route="/login"] .login-panel input::placeholder{
-  color:rgba(15,35,80,.58);
+  color:rgba(31,41,51,.48);
   letter-spacing:.06em;
 }
 
 section[data-route="/login"] .login-panel input:focus{
-  border-color:rgba(78,124,216,.7);
+  border-color:rgba(78,124,216,.6);
   box-shadow:0 0 0 2px rgba(78,124,216,.35);
 }
 
 .login-panel__hint{
   margin:0;
   font-size:13px;
-  color:var(--muted);
+  color:var(--card-muted);
 }
 
 section[data-route="/login"] .form-status{

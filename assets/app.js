@@ -237,10 +237,6 @@ const TIMELINE_MILESTONES = [
         loginViewRoot.removeAttribute('hidden');
         loginViewRoot.removeAttribute('aria-hidden');
       }
-      if (appViewRoot) {
-        appViewRoot.classList.add('hidden');
-        appViewRoot.setAttribute('aria-hidden', 'true');
-      }
       authViewState.visible = 'login';
     } else if (reason === 'no-session') {
       console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
