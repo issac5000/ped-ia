@@ -183,6 +183,14 @@ async function fetchAnonProfileByCode(rawCode) {
 }
 
 function presentLoginGate(){
+  try {
+    const target = '/#/login';
+    const alreadyOnLogin = window.location.pathname === '/' && window.location.hash === target;
+    if (!alreadyOnLogin) {
+      window.location.href = target;
+      return;
+    }
+  } catch {}
   const shell = $('#messages-shell');
   if (shell) shell.hidden = true;
   const gate = $('#login-gate');
