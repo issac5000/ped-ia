@@ -558,7 +558,7 @@ function countsByKind(){
   let msg=0, reply=0; for(const n of arr){ if(!n.seen){ if(n.kind==='msg') msg++; else if(n.kind==='reply') reply++; } }
   return { msg, reply };
 }
-function updateBadges(){ const { msg, reply } = countsByKind(); setNavBadgeFor('messages.html', msg); setNavBadgeFor('#/community', reply); }
+function updateBadges(){ const { msg, reply } = countsByKind(); setNavBadgeFor('#/messages', msg); setNavBadgeFor('#/community', reply); }
 function bumpMessagesBadge(){ updateBadges(); }
 
 // Persistance des notifications non lues (partagée avec la SPA via localStorage)

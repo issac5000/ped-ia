@@ -7,6 +7,7 @@ import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
+import { getArticlesList, getArticleMetadata, loadArticleContent, prefetchArticle } from './blog.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -171,6 +172,25 @@ const TIMELINE_MILESTONES = [
     const key = normalizeRoutePath(section.dataset.route || '/');
     if (!routeSections.has(key)) routeSections.set(key, section);
   });
+  const messagesFrame = document.getElementById('messages-frame');
+  const blogListRoot = document.getElementById('blog-list');
+  const articleShell = document.getElementById('article-shell');
+  const articleLoadingEl = document.getElementById('article-loading');
+  const articleErrorEl = document.getElementById('article-error');
+  const articleContentEl = document.getElementById('article-content');
+  const dynamicRouteMatchers = [
+    {
+      pattern: /^\/articles\/([^/]+)$/,
+      sectionKey: '/articles',
+      navAlias: '#/blog',
+      onMatch: (slug, queryParams) => {
+        renderArticleBySlug(slug, queryParams);
+      },
+    },
+  ];
+  let blogListRendered = false;
+  let activeArticleSlug = '';
+  let articleLoadToken = 0;
   let activeRouteEl = document.querySelector('section.route.active') || null;
   const navLinks = new Map();
   const navLinkTargets = new Map();
@@ -202,6 +222,11 @@ const TIMELINE_MILESTONES = [
     location.hash = value;
   };
   const navigateToFullPage = (url) => {
+    if (!url) return;
+    if (typeof url === 'string' && url.startsWith('#')) {
+      setHashIfAllowed(url);
+      return;
+    }
     markNavigatingAwayFromApp();
     window.location.href = url;
   };
@@ -1709,11 +1734,156 @@ const TIMELINE_MILESTONES = [
     }
     }
 
+    function updateMessagesEmbed(queryParams) {
+      if (!messagesFrame) return;
+      const base = messagesFrame.dataset.baseSrc || messagesFrame.getAttribute('data-base-src') || 'messages.html';
+      const userParam = queryParams?.get('user');
+      const value = typeof userParam === 'string' ? userParam.trim() : '';
+      let target = base;
+      if (value) {
+        target = `${base}?user=${encodeURIComponent(value)}`;
+      }
+      if (messagesFrame.dataset.currentSrc !== target) {
+        messagesFrame.dataset.currentSrc = target;
+        try {
+          messagesFrame.src = target;
+        } catch (err) {
+          messagesFrame.setAttribute('src', target);
+        }
+      }
+    }
+
+    function ensureBlogList() {
+      if (!blogListRoot || blogListRendered) return;
+      const articles = getArticlesList();
+      const fragment = document.createDocumentFragment();
+      for (const article of articles) {
+        const li = document.createElement('li');
+        li.className = 'card blog-card';
+        const link = document.createElement('a');
+        link.className = 'blog-card-link';
+        link.href = `#/articles/${article.slug}`;
+        link.addEventListener('mouseenter', () => prefetchArticle(article.slug));
+        link.addEventListener('focus', () => prefetchArticle(article.slug));
+        const img = document.createElement('img');
+        img.className = 'blog-card-img';
+        img.src = article.cover;
+        img.alt = article.coverAlt || article.title;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        const content = document.createElement('div');
+        content.className = 'blog-card-content';
+        const title = document.createElement('h3');
+        title.textContent = article.title;
+        const excerpt = document.createElement('p');
+        excerpt.textContent = article.excerpt;
+        content.appendChild(title);
+        content.appendChild(excerpt);
+        link.appendChild(img);
+        link.appendChild(content);
+        li.appendChild(link);
+        fragment.appendChild(li);
+      }
+      blogListRoot.innerHTML = '';
+      blogListRoot.appendChild(fragment);
+      blogListRendered = true;
+    }
+
+    async function renderArticleBySlug(rawSlug) {
+      if (!articleShell || !articleContentEl) return;
+      const decoded = typeof rawSlug === 'string' ? decodeURIComponent(rawSlug) : '';
+      const slug = decoded.trim().toLowerCase();
+      if (!slug) {
+        activeArticleSlug = '';
+        if (articleLoadingEl) articleLoadingEl.hidden = true;
+        if (articleErrorEl) {
+          articleErrorEl.hidden = false;
+          articleErrorEl.innerHTML = 'Article introuvable. <a href="#/blog">Retour à la liste des articles</a>.';
+        }
+        articleContentEl.innerHTML = '';
+        try { articleShell.removeAttribute('data-article-slug'); } catch {}
+        return;
+      }
+      if (slug === activeArticleSlug && articleContentEl.innerHTML.trim().length > 0) {
+        if (articleLoadingEl) articleLoadingEl.hidden = true;
+        if (articleErrorEl) {
+          articleErrorEl.hidden = true;
+          articleErrorEl.textContent = '';
+        }
+        return;
+      }
+      const meta = getArticleMetadata(slug);
+      if (!meta) {
+        activeArticleSlug = '';
+        if (articleLoadingEl) articleLoadingEl.hidden = true;
+        if (articleErrorEl) {
+          articleErrorEl.hidden = false;
+          articleErrorEl.innerHTML = 'Article introuvable. <a href="#/blog">Retour à la liste des articles</a>.';
+        }
+        articleContentEl.innerHTML = '';
+        try { articleShell.removeAttribute('data-article-slug'); } catch {}
+        return;
+      }
+      activeArticleSlug = slug;
+      const token = ++articleLoadToken;
+      if (articleLoadingEl) {
+        articleLoadingEl.hidden = false;
+        articleLoadingEl.textContent = 'Chargement de l’article…';
+      }
+      if (articleErrorEl) {
+        articleErrorEl.hidden = true;
+        articleErrorEl.textContent = '';
+      }
+      articleContentEl.innerHTML = '';
+      try {
+        const result = await loadArticleContent(meta.slug);
+        if (token !== articleLoadToken) return;
+        if (!result || !result.content) {
+          const message = result?.error || 'Impossible de charger cet article pour le moment.';
+          if (articleLoadingEl) articleLoadingEl.hidden = true;
+          if (articleErrorEl) {
+            articleErrorEl.hidden = false;
+            articleErrorEl.textContent = message;
+          }
+          return;
+        }
+        articleContentEl.innerHTML = result.content;
+        articleShell.setAttribute('data-article-slug', slug);
+        if (articleLoadingEl) articleLoadingEl.hidden = true;
+        if (articleErrorEl) {
+          articleErrorEl.hidden = true;
+          articleErrorEl.textContent = '';
+        }
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(setupScrollAnimations);
+        }
+      } catch (err) {
+        if (token !== articleLoadToken) return;
+        if (articleLoadingEl) articleLoadingEl.hidden = true;
+        if (articleErrorEl) {
+          articleErrorEl.hidden = false;
+          articleErrorEl.textContent = err?.message || 'Impossible de charger cet article pour le moment.';
+        }
+      }
+    }
+
     // Gestion du routage
   function setActiveRoute(hash) {
     const requestedPath = normalizeRoutePath(hash);
-    const path = routeSections.has(requestedPath) ? requestedPath : '/';
+    let path = routeSections.has(requestedPath) ? requestedPath : null;
     const queryParams = parseHashQuery(typeof hash === 'string' ? hash : '');
+    let dynamicMatch = null;
+    if (!path) {
+      for (const matcher of dynamicRouteMatchers) {
+        const match = matcher.pattern.exec(requestedPath);
+        if (match) {
+          path = matcher.sectionKey;
+          dynamicMatch = { matcher, match };
+          break;
+        }
+      }
+    }
+    if (!path) path = '/';
     const focusParam = (() => {
       const raw = queryParams?.get('focus');
       return raw ? String(raw).trim().toLowerCase() : '';
@@ -1733,6 +1903,10 @@ const TIMELINE_MILESTONES = [
     for (const [href, link] of navLinks) {
       const targetPath = navLinkTargets.get(href);
       link.classList.toggle('active', !!targetPath && targetPath === path);
+    }
+    if (dynamicMatch?.matcher?.navAlias) {
+      const aliasLink = navLinks.get(dynamicMatch.matcher.navAlias);
+      if (aliasLink) aliasLink.classList.add('active');
     }
     try {
       const pl = document.getElementById('page-logo');
@@ -1766,6 +1940,17 @@ const TIMELINE_MILESTONES = [
     }
     if (path === '/community') { renderCommunity(); }
     if (path === '/settings') { renderSettings(); }
+    if (path === '/messages') { updateMessagesEmbed(queryParams); }
+    if (path === '/blog') { ensureBlogList(); }
+    if (path === '/articles') {
+      if (dynamicMatch) {
+        const slug = dynamicMatch.match?.[1] || '';
+        renderArticleBySlug(slug);
+      } else {
+        setHashIfAllowed('#/blog');
+        return;
+      }
+    }
     if (path === '/ai') {
       setupAIPage();
       if (focusParam) {
@@ -2008,7 +2193,7 @@ const TIMELINE_MILESTONES = [
   function unseenNotifs(){ return loadNotifs().filter(x=>!x.seen); }
   function updateBadgeFromStore(){
     const { msg, reply } = countsByKind();
-    setNavBadgeFor('messages.html', msg);
+    setNavBadgeFor('#/messages', msg);
     setNavBadgeFor('#/community', reply);
   }
 
@@ -2036,7 +2221,7 @@ const TIMELINE_MILESTONES = [
           showNotification({
             title:'Nouveau message',
             text:`Vous avez un nouveau message de ${fromName}`,
-            actionHref:`messages.html?user=${fromId}`,
+            actionHref:`#/messages?user=${fromId}`,
             actionLabel:'Ouvrir',
             onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); }
           });
@@ -2110,7 +2295,7 @@ const TIMELINE_MILESTONES = [
   function replayUnseenNotifs(){
     unseenNotifs().forEach(n => {
       if (n.kind==='msg') {
-        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(n.id); setNotifLastNow('msg'); } });
+        showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`#/messages?user=${n.fromId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(n.id); setNotifLastNow('msg'); } });
       } else if (n.kind==='reply') {
         const t = n.title ? ` « ${n.title} »` : '';
         showNotification({ title:'Nouvelle réponse', text:`${n.who||'Un parent'} a répondu à votre publication${t}`, actionHref:'#/community', actionLabel:'Voir', onAcknowledge: () => { markNotifSeen(n.id); setNotifLastNow('reply'); } });
@@ -2156,7 +2341,7 @@ const TIMELINE_MILESTONES = [
           const notifId = `msg:${m.id}`;
           const wasNew = addNotif({ id:notifId, kind:'msg', fromId:senderId, fromName, createdAt:m.created_at });
           if (wasNew) {
-            showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`messages.html?user=${senderId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
+            showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${fromName}`, actionHref:`#/messages?user=${senderId}`, actionLabel:'Ouvrir', onAcknowledge: () => { markNotifSeen(notifId); setNotifLastNow('msg'); } });
           }
         }
       }
@@ -2243,7 +2428,7 @@ const TIMELINE_MILESTONES = [
             showNotification({
               title: 'Nouveau message',
               text: `Vous avez un nouveau message de ${fromName}`,
-              actionHref: `messages.html?user=${fromId}`,
+              actionHref: `#/messages?user=${fromId}`,
               actionLabel: 'Ouvrir',
               onAcknowledge: () => markNotifSeen(notifId)
             });
@@ -2304,9 +2489,9 @@ const TIMELINE_MILESTONES = [
 
   // Remet les badges à zéro lorsque l’utilisateur visite les pages
   window.addEventListener('DOMContentLoaded', () => {
-    const link = document.querySelector('#main-nav a[href="messages.html"]');
+    const link = document.querySelector('#main-nav a[href="#/messages"]');
     // Messages : on masque seulement le badge au clic, la vraie lecture se fait en ouvrant la conversation
-    link?.addEventListener('click', () => { try { setNavBadgeFor('messages.html', 0); } catch {} });
+    link?.addEventListener('click', () => { try { setNavBadgeFor('#/messages', 0); } catch {} });
     const linkComm = document.querySelector('#main-nav a[href="#/community"]');
     linkComm?.addEventListener('click', () => { markAllByTypeSeen('reply'); });
   });
@@ -7883,7 +8068,7 @@ const TIMELINE_MILESTONES = [
         const initials = initialsFrom(rawAuthorName);
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
-        const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
+        const topicMessageBtn = t.user_id ? `<a href="#/messages?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
         const topicIsAi = isAiAuthor(displayAuthor);
         const topicOwnerId = resolveAuthorId(t);
         const topicIsSelf = activeId && topicOwnerId ? String(topicOwnerId) === String(activeId) : false;
@@ -7911,7 +8096,7 @@ const TIMELINE_MILESTONES = [
           const replyAuthorMetaHtml = renderAuthorMetaInfo(normalizedReply || replyMeta);
           const replyInitials = initialsFrom(rawReplyAuthor);
           const { label: replyTimeLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
-          const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
+          const replyMessageBtn = r.user_id ? `<a href="#/messages?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
           const isReplyAi = isAiAuthor(replyAuthor);
           const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
           const replyOwnerId = resolveAuthorId(r);

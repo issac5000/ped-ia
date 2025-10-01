@@ -49,9 +49,9 @@
           <a href="#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
           <a href="#/dashboard" class="nav-link"><span class="nav-ico">📊</span><span>Carnet de suivi</span></a>
           <a href="#/community" class="nav-link"><span class="nav-ico">💬</span><span>Communauté</span></a>
-          <a href="messages.html" class="nav-link"><span class="nav-ico">📨</span><span>Messages</span></a>
+          <a href="#/messages" class="nav-link"><span class="nav-ico">📨</span><span>Messages</span></a>
           <a href="#/ai" class="nav-link"><span class="nav-ico">🤖</span><span>Fonctionnalité IA</span></a>
-          <a href="blog.html" class="nav-link"><span class="nav-ico">📝</span><span>Articles de blog</span></a>
+          <a href="#/blog" class="nav-link"><span class="nav-ico">📝</span><span>Articles de blog</span></a>
           <a href="#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
           <a href="#/about" class="nav-link"><span class="nav-ico">ℹ️</span><span>À propos</span></a>
         </nav>
@@ -291,7 +291,7 @@
           <p class="section-subtitle">Un peu de documentation</p>
           <ul class="blog-list stack">
             <li class="card blog-card">
-              <a href="les-1000-premiers-jours.html" class="blog-card-link">
+              <a href="#/articles/les-1000-premiers-jours" class="blog-card-link">
                 <img src="jours1000.png" alt="Les 1000 premiers jours" loading="lazy" decoding="async" class="blog-card-img" />
                 <div class="blog-card-content">
                   <h3>Les 1000 premiers jours</h3>
@@ -300,7 +300,7 @@
               </a>
             </li>
             <li class="card blog-card">
-              <a href="la-theorie-de-l-esprit.html" class="blog-card-link">
+              <a href="#/articles/la-theorie-de-l-esprit" class="blog-card-link">
                 <img src="esprit.png" alt="La théorie de l'esprit" loading="lazy" decoding="async" class="blog-card-img" />
                 <div class="blog-card-content">
                   <h3>La théorie de l’esprit</h3>
@@ -309,7 +309,7 @@
               </a>
             </li>
             <li class="card blog-card">
-              <a href="la-theorie-de-l-attachement.html" class="blog-card-link">
+              <a href="#/articles/la-theorie-de-l-attachement" class="blog-card-link">
                 <img src="attachement.png" alt="La théorie de l'attachement" loading="lazy" decoding="async" class="blog-card-img" />
                 <div class="blog-card-content">
                   <h3>La théorie de l’attachement</h3>
@@ -538,6 +538,7 @@
         <div class="page-header">
           <h2>Communauté</h2>
           <p class="page-subtitle">Échangez conseils et expériences avec d’autres parents.</p>
+        </div>
         <div class="page-actions">
             <div id="forum-cats" class="hstack">
               <button class="btn btn-secondary cat" data-cat="all">Tous</button>
@@ -572,7 +573,41 @@
         </dialog>
       </section>
 
-      
+      <section data-route="/messages" class="route">
+        <div class="page-header">
+          <h2>Messages privés</h2>
+          <p class="page-subtitle">Discutez en toute confidentialité avec les membres de la communauté.</p>
+        </div>
+        <div class="card stack">
+          <iframe
+            id="messages-frame"
+            class="messages-frame"
+            title="Messagerie Synap'Kids"
+            src="messages.html"
+            data-base-src="messages.html"
+            loading="lazy"
+          ></iframe>
+          <p class="muted">La messagerie s’ouvre dans une fenêtre dédiée pour conserver toutes les fonctionnalités existantes.</p>
+        </div>
+      </section>
+
+      <section data-route="/blog" class="route">
+        <div class="page-header">
+          <h2>Articles de blog</h2>
+          <p class="page-subtitle">Découvrez nos réflexions et conseils autour des 1000 premiers jours.</p>
+        </div>
+        <ul id="blog-list" class="blog-list stack" aria-live="polite"></ul>
+      </section>
+
+      <section data-route="articles" class="route" aria-live="polite">
+        <div id="article-shell" class="stack article-shell">
+          <div id="article-loading" class="muted" hidden>Chargement de l’article…</div>
+          <div id="article-error" class="card stack" hidden></div>
+          <div id="article-content" class="stack"></div>
+        </div>
+      </section>
+
+
 
       <!-- À propos -->
       <section data-route="/about" class="route">
@@ -978,17 +1013,17 @@
               <li><a href="#/dashboard">Carnet de suivi</a></li>
               <li><a href="#/ai">Fonctionnalité IA</a></li>
               <li><a href="#/community">Communauté</a></li>
-              <li><a href="messages.html">Messages</a></li>
-              <li><a href="blog.html">Articles de blog</a></li>
+            <li><a href="#/messages">Messages</a></li>
+            <li><a href="#/blog">Articles de blog</a></li>
               <li><a href="#/settings">Paramètres</a></li>
             </ul>
           </nav>
           <nav class="footer-col" aria-label="Contenus">
             <h4>Contenus</h4>
             <ul class="footer-links">
-              <li><a href="les-1000-premiers-jours.html">Les 1000 premiers jours</a></li>
-              <li><a href="la-theorie-de-l-esprit.html">La théorie de l’esprit</a></li>
-              <li><a href="la-theorie-de-l-attachement.html">La théorie de l’attachement</a></li>
+            <li><a href="#/articles/les-1000-premiers-jours">Les 1000 premiers jours</a></li>
+            <li><a href="#/articles/la-theorie-de-l-esprit">La théorie de l’esprit</a></li>
+            <li><a href="#/articles/la-theorie-de-l-attachement">La théorie de l’attachement</a></li>
             </ul>
           </nav>
           <div class="footer-col" aria-label="Légal">

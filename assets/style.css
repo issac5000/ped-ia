@@ -3309,6 +3309,27 @@ section[data-route="/community"] .btn-danger:hover{
   .blog-card{max-width:320px;}
 }
 
+.messages-frame{
+  width:100%;
+  min-height:600px;
+  border:0;
+  border-radius:20px;
+  background:var(--surface,#fff);
+}
+@media (max-width:600px){
+  .messages-frame{min-height:520px;}
+}
+
+.article-shell{
+  gap:24px;
+}
+.article-shell > .muted{
+  text-align:center;
+}
+.article-shell .card{
+  gap:16px;
+}
+
 /* Article styles */
 .article-cover{display:block; width:100%; max-width:600px; height:auto; margin:0 auto 32px; border-radius:16px;}
 .article-content{gap:32px; margin-bottom:32px;}
