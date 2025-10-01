@@ -24,17 +24,15 @@ export default async function handler(req, res) {
   const mode = isAnon ? 'ANON' : 'SERVICE';
   const headers = {
     'Content-Type': 'application/json',
-    apikey: key,
     Authorization: `Bearer ${key}`,
   };
 
   console.log('Proxy Debug', {
     targetPath,
     mode,
-    keyPreview: (key || '').slice(0, 20),
+    keyPreview: (key || '').slice(0, 12),
     method: req.method,
     headers: {
-      apikey: headers.apikey ? '...present' : 'MISSING',
       Authorization: headers.Authorization ? '...present' : 'MISSING',
     },
   });
