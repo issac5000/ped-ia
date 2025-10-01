@@ -188,6 +188,57 @@ const TIMELINE_MILESTONES = [
     if (navBtn) navBtn.setAttribute('aria-expanded', 'false');
     navBackdrop?.classList.remove('open');
   };
+  const appViewRoot = document.getElementById('app-view');
+  const loginViewRoot = document.getElementById('login-view');
+  const authViewState = {
+    visible: (loginViewRoot && !loginViewRoot.classList.contains('hidden') && !loginViewRoot.hasAttribute('hidden'))
+      ? 'login'
+      : 'app',
+  };
+
+  function showAppView() {
+    if (authViewState.visible !== 'app') {
+      if (appViewRoot) {
+        appViewRoot.classList.remove('hidden');
+        appViewRoot.removeAttribute('aria-hidden');
+      }
+      if (loginViewRoot) {
+        loginViewRoot.classList.add('hidden');
+        loginViewRoot.setAttribute('hidden', '');
+        loginViewRoot.setAttribute('aria-hidden', 'true');
+      }
+      authViewState.visible = 'app';
+    }
+  }
+
+  function showLoginView(options = {}) {
+    const { reason } = options || {};
+    const switching = authViewState.visible !== 'login';
+    if (switching) {
+      if (reason === 'no-session') {
+        console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
+      }
+      if (loginViewRoot) {
+        loginViewRoot.classList.remove('hidden');
+        loginViewRoot.removeAttribute('hidden');
+        loginViewRoot.removeAttribute('aria-hidden');
+      }
+      if (appViewRoot) {
+        appViewRoot.classList.add('hidden');
+        appViewRoot.setAttribute('aria-hidden', 'true');
+      }
+      authViewState.visible = 'login';
+    } else if (reason === 'no-session') {
+      console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
+    }
+    if (location.hash !== '#/login') {
+      try { location.hash = '#/login'; }
+      catch {}
+    } else {
+      try { setActiveRoute('#/login'); }
+      catch {}
+    }
+  }
   // Les courbes OMS utilisaient auparavant Chart.js chargé via CDN.
   // Pour éviter les erreurs de chargement (réseau ou CSP),
   // on n'utilise plus de dépendance externe ici.
@@ -1336,8 +1387,9 @@ const TIMELINE_MILESTONES = [
       const session = data?.session;
 
       if (!session && !hasAnonCode()) {
-        console.warn('[Anon Debug] No session or anonCode found, redirecting to /login');
-        window.location.href = '/login';
+        showLoginView({ reason: 'no-session' });
+      } else if (session) {
+        showAppView();
       }
     }).catch((err) => {
       console.warn('Initial session check failed', err);
@@ -1368,6 +1420,7 @@ const TIMELINE_MILESTONES = [
       await ensureProfile(user);
       await syncUserFromSupabase();
       updateHeaderAuth();
+      showAppView();
       // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
       // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
       // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
@@ -1385,6 +1438,11 @@ const TIMELINE_MILESTONES = [
       await ensureProfile(authSession.user);
       await syncUserFromSupabase();
     }
+    if (authSession?.user || isProfileLoggedIn()) {
+      showAppView();
+    } else if (!hasAnonCode()) {
+      showLoginView({ reason: 'no-session' });
+    }
     if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
       location.hash = '#/dashboard';
     }
@@ -1399,6 +1457,11 @@ const TIMELINE_MILESTONES = [
         }
       }
       updateHeaderAuth();
+      if (session?.user || isProfileLoggedIn()) {
+        showAppView();
+      } else if (!hasAnonCode()) {
+        showLoginView({ reason: 'signed-out' });
+      }
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       } else {
@@ -2863,6 +2926,7 @@ const TIMELINE_MILESTONES = [
           user_id: null,
           isAnonymous: true,
         });
+        showAppView();
         const currentHash = location?.hash || '';
         if (currentHash === '' || currentHash === '#' || currentHash === '#/login' || currentHash === '#/signup') {
           location.hash = '#/dashboard';
@@ -3022,6 +3086,7 @@ const TIMELINE_MILESTONES = [
       const profile = await fetchAnonProfileByCode(code);
       setActiveProfile({ ...profile, isAnonymous: true });
       authSession = null;
+      showAppView();
       const current = store.get(K.user) || {};
       const pseudo = profile.full_name || current.pseudo || '';
       if (pseudo !== current.pseudo) {
@@ -3113,6 +3178,7 @@ const TIMELINE_MILESTONES = [
     notifChannels = [];
     alert('Déconnecté.');
     updateHeaderAuth();
+    showLoginView({ reason: 'signed-out' });
     location.hash = '#/login';
   });
 
