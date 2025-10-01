@@ -16,7 +16,8 @@ export default async function handler(req, res) {
     return res.json({ error: 'Missing target function slug' });
   }
 
-  const targetUrl = `https://myrwcjurblksypvekuzb.supabase.co/functions/v1/${targetPath}`;
+  const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
+  const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
   const isAnon = targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
   const key = isAnon
     ? process.env.SUPABASE_ANON_KEY || ''
@@ -40,6 +41,14 @@ export default async function handler(req, res) {
   );
 
   console.log('Proxying Supabase Edge request', { slug: targetPath, mode, headers: Object.keys(headers) });
+  console.log('Edge fetch debug', {
+    targetUrl,
+    headers: {
+      apikey: headers.apikey ? `${headers.apikey.slice(0, 10)}...` : 'missing',
+      Authorization: headers.Authorization ? headers.Authorization.split(' ')[0] : 'missing',
+      'Content-Type': headers['Content-Type'],
+    },
+  });
 
   console.log('Proxy Debug', {
     slug: targetPath,
