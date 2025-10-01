@@ -209,6 +209,11 @@ const TIMELINE_MILESTONES = [
     set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
     del(k) { localStorage.removeItem(k); },
   };
+  const normalizeAnonCode = (value) => {
+    if (typeof value === 'string') return value.trim().toUpperCase();
+    if (value == null) return '';
+    return String(value).trim().toUpperCase();
+  };
   const growthStatusState = {
     cache: new Map(),
     pending: new Map(),
@@ -228,6 +233,50 @@ const TIMELINE_MILESTONES = [
     messages: 'pedia_messages',
     notifs: 'pedia_notifs'
   };
+  function getStoredAnonCode() {
+    if (activeProfile?.isAnonymous && activeProfile?.code_unique) {
+      const normalized = normalizeAnonCode(activeProfile.code_unique);
+      if (normalized) return normalized;
+    }
+    let savedSession = null;
+    try { savedSession = store.get(K.session) || null; } catch { savedSession = null; }
+    if (savedSession?.type === 'anon' && savedSession?.code) {
+      const normalized = normalizeAnonCode(savedSession.code);
+      if (normalized) return normalized;
+    }
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        const raw = sessionStorage.getItem(K.session);
+        if (raw) {
+          let parsed = null;
+          try { parsed = JSON.parse(raw); } catch { parsed = null; }
+          if (parsed?.type === 'anon' && parsed?.code) {
+            const normalized = normalizeAnonCode(parsed.code);
+            if (normalized) return normalized;
+          }
+        }
+      }
+    } catch {}
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('anon_code');
+        if (raw) {
+          const normalized = normalizeAnonCode(raw);
+          if (normalized) return normalized;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        const raw = sessionStorage.getItem('anon_code');
+        if (raw) {
+          const normalized = normalizeAnonCode(raw);
+          if (normalized) return normalized;
+        }
+      }
+    } catch {}
+    return '';
+  }
   const DEBUG_AUTH = (typeof localStorage !== 'undefined' && localStorage.getItem('debug_auth') === '1');
 
   // Chargement des informations Supabase et du client JS
@@ -1083,9 +1132,23 @@ const TIMELINE_MILESTONES = [
     return payload.data ?? null;
   }
 
+  async function callAnonEdgeFunction(slug, options = {}) {
+    const { body: originalBody, ...rest } = options || {};
+    const normalizedBody = originalBody && typeof originalBody === 'object' ? { ...originalBody } : {};
+    let code = normalizeAnonCode(normalizedBody.code);
+    if (!code) {
+      code = getStoredAnonCode();
+    }
+    if (code) {
+      normalizedBody.code = code;
+    }
+    console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', slug);
+    return callEdgeFunction(slug, { ...rest, body: normalizedBody });
+  }
+
   async function anonChildRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    const code = getStoredAnonCode();
     if (!code) throw new Error('Code unique manquant');
     let normalizedPayload = payload;
     try {
@@ -1094,54 +1157,37 @@ const TIMELINE_MILESTONES = [
       throw err;
     }
     const body = { action, code, ...normalizedPayload };
-    if (typeof body.code === 'string') {
-      body.code = body.code.trim().toUpperCase();
-    }
-    if (!body.code) {
-      console.warn('Anon request without code:', body);
-    }
-    const data = await callEdgeFunction('anon-children', { body });
+    const data = await callAnonEdgeFunction('anon-children', { body });
     return data || {};
   }
 
   async function anonParentRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    const code = getStoredAnonCode();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
-    if (typeof body.code === 'string') {
-      body.code = body.code.trim().toUpperCase();
-    }
-    if (!body.code) {
-      console.warn('Anon request without code:', body);
-    }
-    const data = await callEdgeFunction('anon-parent-updates', { body });
+    const data = await callAnonEdgeFunction('anon-parent-updates', { body });
     return data || {};
   }
 
   async function anonFamilyRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    const code = getStoredAnonCode();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
-    if (typeof body.code === 'string') {
-      body.code = body.code.trim().toUpperCase();
-    }
-    if (!body.code) {
-      console.warn('Anon request without code:', body);
-    }
-    const data = await callEdgeFunction('anon-family', { body });
+    const data = await callAnonEdgeFunction('anon-family', { body });
     return data || {};
   }
 
   async function anonMessagesRequest(code_unique, { since = null } = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = typeof code_unique === 'string' ? code_unique.trim().toUpperCase() : '';
+    const explicitCode = normalizeAnonCode(code_unique);
+    const code = explicitCode || getStoredAnonCode();
     if (!code) return { messages: [], senders: {} };
     try {
       const body = { action: 'recent-activity', code };
       if (since) body.since = since;
-      const payload = await callEdgeFunction('anon-messages', { body });
+      const payload = await callAnonEdgeFunction('anon-messages', { body });
       const messages = Array.isArray(payload?.messages) ? payload.messages : [];
       const senders = payload?.senders && typeof payload.senders === 'object' ? payload.senders : {};
       return { messages, senders };
@@ -1153,16 +1199,10 @@ const TIMELINE_MILESTONES = [
 
   async function anonCommunityRequest(action, payload = {}) {
     if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = (activeProfile.code_unique || '').toString().trim().toUpperCase();
+    const code = getStoredAnonCode();
     if (!code) throw new Error('Code unique manquant');
     const body = { action, code, ...payload };
-    if (typeof body.code === 'string') {
-      body.code = body.code.trim().toUpperCase();
-    }
-    if (!body.code) {
-      console.warn('Anon request without code:', body);
-    }
-    const data = await callEdgeFunction('anon-community', { body });
+    const data = await callAnonEdgeFunction('anon-community', { body });
     return data || {};
   }
 
@@ -1186,7 +1226,7 @@ const TIMELINE_MILESTONES = [
   async function fetchAnonProfileByCode(rawCode) {
     const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
     if (!code) throw new Error('Code unique manquant');
-    const data = await callEdgeFunction('anon-parent-updates', { body: { action: 'profile', code } });
+    const data = await callAnonEdgeFunction('anon-parent-updates', { body: { action: 'profile', code } });
     const profile = data?.profile || null;
     if (!profile || !profile.id) {
       throw new Error('Profil introuvable pour ce code.');
