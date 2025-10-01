@@ -9,6 +9,8 @@ export default async function handler(req, res) {
       method: req.method,
       headers: {
         "Content-Type": "application/json",
+        "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
         "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
       },
       body: req.method !== "GET" ? JSON.stringify(req.body || {}) : undefined,
