@@ -1048,7 +1048,7 @@ const TIMELINE_MILESTONES = [
         if (trimmed === '/api/edge') {
           return trimmed;
         }
-        return `"/api/edge"`;
+        return `/api/edge`;
       }
     }
     return EDGE_FUNCTION_BASE_URL;
