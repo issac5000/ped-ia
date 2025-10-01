@@ -75,6 +75,20 @@ const TIMELINE_MILESTONES = [
     try { return new URLSearchParams(query); }
     catch { return null; }
   };
+  const protectedRoutes = ['#/messages', '#/community', '#/suivi'];
+  const getCurrentHash = () => {
+    try {
+      const raw = typeof window?.location?.hash === 'string' ? window.location.hash : '';
+      return raw && raw.length > 0 ? raw : '#/';
+    } catch {
+      return '#/';
+    }
+  };
+  const isProtectedRouteHash = (hashValue) => {
+    const base = typeof hashValue === 'string' && hashValue.length > 0 ? hashValue : '#/';
+    const clean = base.split('?')[0] || '#/';
+    return protectedRoutes.includes(clean);
+  };
   async function withRetry(fn, { retries = 3, timeout = 3000 } = {}) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       let timerId = null;
@@ -280,7 +294,7 @@ const TIMELINE_MILESTONES = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
-  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
+  const guardedRoutePaths = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
   // Clés utilisées pour le stockage local du modèle de données
   const K = {
     user: 'pedia_user',
@@ -1385,10 +1399,18 @@ const TIMELINE_MILESTONES = [
 
     supabase.auth.getSession().then(({ data }) => {
       const session = data?.session;
+      const currentHash = getCurrentHash();
+      const requireAuth = isProtectedRouteHash(currentHash);
 
       if (!session && !hasAnonCode()) {
-        showLoginView({ reason: 'no-session' });
+        if (requireAuth) {
+          showLoginView({ reason: 'no-session' });
+        } else {
+          showAppView();
+        }
       } else if (session) {
+        showAppView();
+      } else if (!requireAuth) {
         showAppView();
       }
     }).catch((err) => {
@@ -1438,10 +1460,18 @@ const TIMELINE_MILESTONES = [
       await ensureProfile(authSession.user);
       await syncUserFromSupabase();
     }
+    const currentHash = getCurrentHash();
+    const requireAuth = isProtectedRouteHash(currentHash);
     if (authSession?.user || isProfileLoggedIn()) {
       showAppView();
     } else if (!hasAnonCode()) {
-      showLoginView({ reason: 'no-session' });
+      if (requireAuth) {
+        showLoginView({ reason: 'no-session' });
+      } else {
+        showAppView();
+      }
+    } else if (!requireAuth) {
+      showAppView();
     }
     if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
       location.hash = '#/dashboard';
@@ -1457,10 +1487,18 @@ const TIMELINE_MILESTONES = [
         }
       }
       updateHeaderAuth();
+      const currentHash = getCurrentHash();
+      const requireAuth = isProtectedRouteHash(currentHash);
       if (session?.user || isProfileLoggedIn()) {
         showAppView();
       } else if (!hasAnonCode()) {
-        showLoginView({ reason: 'signed-out' });
+        if (requireAuth) {
+          showLoginView({ reason: 'signed-out' });
+        } else {
+          showAppView();
+        }
+      } else if (!requireAuth) {
+        showAppView();
       }
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
@@ -1682,7 +1720,7 @@ const TIMELINE_MILESTONES = [
       window.scrollTo(0, 0);
     }
     const authed = isProfileLoggedIn();
-    if (protectedRoutes.has(path) && !authed) {
+    if (guardedRoutePaths.has(path) && !authed) {
       location.hash = '#/login';
       return;
     }
