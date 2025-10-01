@@ -204,13 +204,56 @@ const TIMELINE_MILESTONES = [
   };
   const appViewRoot = document.getElementById('app-view');
   const loginViewRoot = document.getElementById('login-view');
+  const siteHeader = $('header.site-header');
+  const siteFooter = $('footer.site-footer');
+  const loginBrandBlock = loginViewRoot?.querySelector('.login-brand') ?? null;
   const authViewState = {
     visible: (loginViewRoot && !loginViewRoot.classList.contains('hidden') && !loginViewRoot.hasAttribute('hidden'))
       ? 'login'
       : 'app',
   };
 
+  const LOGIN_DISPLAY_SENTINEL = '__unset__';
+  const stashDisplayForLogin = (element) => {
+    if (!element) return;
+    if (!('loginPrevDisplay' in element.dataset)) {
+      const current = element.style.display;
+      element.dataset.loginPrevDisplay = current === '' ? LOGIN_DISPLAY_SENTINEL : current;
+    }
+    element.style.display = 'none';
+  };
+  const restoreDisplayAfterLogin = (element) => {
+    if (!element) return;
+    if ('loginPrevDisplay' in element.dataset) {
+      const prev = element.dataset.loginPrevDisplay;
+      if (prev === LOGIN_DISPLAY_SENTINEL) {
+        element.style.removeProperty('display');
+      } else {
+        element.style.display = prev;
+      }
+      delete element.dataset.loginPrevDisplay;
+    } else {
+      element.style.removeProperty('display');
+    }
+  };
+  const updateLoginLayout = (isLoginVisible) => {
+    if (isLoginVisible) {
+      stashDisplayForLogin(siteHeader);
+      stashDisplayForLogin(siteFooter);
+      if (loginBrandBlock) {
+        loginBrandBlock.hidden = false;
+      }
+    } else {
+      restoreDisplayAfterLogin(siteHeader);
+      restoreDisplayAfterLogin(siteFooter);
+      if (loginBrandBlock) {
+        loginBrandBlock.hidden = true;
+      }
+    }
+  };
+
   function showAppView() {
+    updateLoginLayout(false);
     if (authViewState.visible !== 'app') {
       if (appViewRoot) {
         appViewRoot.classList.remove('hidden');
@@ -245,6 +288,7 @@ const TIMELINE_MILESTONES = [
     } else if (reason === 'no-session') {
       console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
     }
+    updateLoginLayout(true);
     if (location.hash !== '#/login') {
       try { location.hash = '#/login'; }
       catch {}
