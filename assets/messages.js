@@ -241,16 +241,15 @@ async function fetchAnonProfileByCode(rawCode) {
 }
 
 function presentLoginGate(){
-  try {
-    if (redirectToLoginPage({ replace: true })) return;
-  } catch {}
+  const gate = $('#login-gate');
+  if (!gate) {
+    try { redirectToLoginPage({ replace: true }); } catch {}
+    return;
+  }
   const shell = $('#messages-shell');
   if (shell) shell.hidden = true;
-  const gate = $('#login-gate');
-  if (gate) {
-    gate.hidden = false;
-    gate.classList.add('active');
-  }
+  gate.hidden = false;
+  gate.classList.add('active');
   stopAnonNotifPolling();
   if (messagesChannel) {
     try { supabase?.removeChannel(messagesChannel); } catch (e) {}
