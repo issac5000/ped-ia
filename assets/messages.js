@@ -10,6 +10,64 @@ try {
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
+const LOGIN_HASH = '#/login';
+
+function isAppShellPath(pathname) {
+  if (!pathname) return false;
+  return pathname === '/' || pathname.endsWith('/') || pathname.endsWith('/index.html');
+}
+
+function computeLoginRedirectTarget() {
+  try {
+    const { pathname } = window.location;
+    if (isAppShellPath(pathname)) return LOGIN_HASH;
+    let basePath = pathname || '/';
+    if (basePath.endsWith('.html')) {
+      basePath = basePath.replace(/[^/]*$/, '');
+    } else if (!basePath.endsWith('/')) {
+      basePath = `${basePath}/`;
+    }
+    if (!basePath.startsWith('/')) basePath = `/${basePath}`;
+    return `${basePath}${LOGIN_HASH}`;
+  } catch (err) {
+    console.warn('computeLoginRedirectTarget failed', err);
+    return LOGIN_HASH;
+  }
+}
+
+function redirectToLoginPage({ replace = false } = {}) {
+  try {
+    const target = computeLoginRedirectTarget();
+    if (target === LOGIN_HASH) {
+      if (replace) {
+        window.location.replace(LOGIN_HASH);
+      } else if (window.location.hash !== LOGIN_HASH) {
+        window.location.hash = LOGIN_HASH;
+      }
+      return true;
+    }
+    if (replace) {
+      window.location.replace(target);
+    } else {
+      window.location.href = target;
+    }
+    return true;
+  } catch (err) {
+    console.warn('redirectToLoginPage failed', err);
+    try {
+      if (replace) {
+        window.location.replace(LOGIN_HASH);
+      } else {
+        window.location.hash = LOGIN_HASH;
+      }
+      return true;
+    } catch (fallbackErr) {
+      console.warn('redirectToLoginPage fallback failed', fallbackErr);
+    }
+  }
+  return false;
+}
+
 const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
@@ -184,22 +242,7 @@ async function fetchAnonProfileByCode(rawCode) {
 
 function presentLoginGate(){
   try {
-    const targetHash = '#/login';
-    const path = window.location.pathname || '';
-    const hash = window.location.hash || '';
-    const isAppShell = path === '/' || path.endsWith('/') || path.endsWith('/index.html');
-    if (isAppShell) {
-      if (hash !== targetHash) {
-        window.location.hash = targetHash;
-        return;
-      }
-    } else {
-      const dest = new URL('.', window.location.href);
-      dest.hash = targetHash;
-      dest.search = '';
-      window.location.href = dest.toString();
-      return;
-    }
+    if (redirectToLoginPage({ replace: true })) return;
   } catch {}
   const shell = $('#messages-shell');
   if (shell) shell.hidden = true;
@@ -378,28 +421,9 @@ function setupLoginUI(){
 function setupHeader(){
   if (headerSetupDone) return;
   headerSetupDone = true;
-  const redirectToLogin = () => {
-    const targetHash = '#/login';
-    const currentHash = window.location.hash || '';
-    if (currentHash === targetHash) return;
-    const path = window.location.pathname || '';
-    const isAppShell = path === '/' || path.endsWith('/') || path.endsWith('/index.html');
-    if (isAppShell) {
-      window.location.hash = targetHash;
-      return;
-    }
-    try {
-      const dest = new URL('.', window.location.href);
-      dest.hash = targetHash;
-      dest.search = '';
-      window.location.href = dest.toString();
-    } catch (e) {
-      window.location.hash = targetHash;
-    }
-  };
   $('#btn-login')?.addEventListener('click', e=>{
     e.preventDefault();
-    redirectToLogin();
+    redirectToLoginPage();
   });
   $('#btn-logout')?.addEventListener('click', async e=>{
     const btn = e.currentTarget; if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true;
