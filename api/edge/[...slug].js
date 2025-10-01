@@ -27,14 +27,23 @@ export default async function handler(req, res) {
     Authorization: `Bearer ${key}`,
   };
 
+  const keyPreview = (key || '').slice(0, 20);
+  const safeHeaders = Object.fromEntries(
+    Object.entries(headers).map(([header, value]) => {
+      if (typeof value !== 'string') return [header, value];
+      if (/^bearer /i.test(value)) {
+        return [header, `Bearer ${(value.slice(7, 27) || '')}...`];
+      }
+      return [header, `${value.slice(0, 20)}...`];
+    })
+  );
+
   console.log('Proxy Debug', {
-    targetPath,
+    slug: targetPath,
     mode,
-    keyPreview: (key || '').slice(0, 12),
+    keyPreview: keyPreview ? `${keyPreview}...` : '[empty]',
     method: req.method,
-    headers: {
-      Authorization: headers.Authorization ? '...present' : 'MISSING',
-    },
+    headers: safeHeaders,
   });
 
   try {
