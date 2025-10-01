@@ -1149,6 +1149,7 @@ const TIMELINE_MILESTONES = [
     if (code) {
       normalizedBody.code = code;
     }
+    console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', slug);
     return callEdgeFunction(slug, { ...rest, body: normalizedBody });
   }
 
@@ -1335,6 +1336,7 @@ const TIMELINE_MILESTONES = [
       const session = data?.session;
 
       if (!session && !hasAnonCode()) {
+        console.warn('[Anon Debug] No session or anonCode found, redirecting to /login');
         window.location.href = '/login';
       }
     }).catch((err) => {

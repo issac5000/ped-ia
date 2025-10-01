@@ -545,6 +545,7 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
     const payload = { action: 'recent-activity', code };
     if (since) payload.since = since;
     const url = '/api/edge/anon-messages';
+    console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-messages');
     console.debug("Calling Supabase function:", url, payload);
     const res = await fetch(url, {
       method: 'POST',
@@ -635,6 +636,7 @@ async function anonMessagesActionRequest(action, payload = {}) {
   if (!code) throw new Error('Code unique manquant');
   const url = '/api/edge/anon-messages';
   const payloadToSend = { action, code, ...payload };
+  console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-messages');
   console.debug("Calling Supabase function:", url, payloadToSend);
   const res = await fetch(url, {
     method: 'POST',
@@ -661,6 +663,7 @@ async function anonCommunityRequest(action, payload = {}) {
   if (!code) throw new Error('Code unique manquant');
   const url = '/api/edge/anon-community';
   const payloadToSend = { action, code, ...payload };
+  console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-community');
   console.debug("Calling Supabase function:", url, payloadToSend);
   const response = await fetch(url, {
     method: 'POST',
