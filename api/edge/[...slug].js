@@ -19,17 +19,17 @@ export default async function handler(req, res) {
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
   const isAnon = targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
-  const key = isAnon
+  const chosenKey = isAnon
     ? process.env.SUPABASE_ANON_KEY || ''
     : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const mode = isAnon ? 'ANON' : 'SERVICE';
   const headers = {
     'Content-Type': 'application/json',
-    apikey: key,
-    Authorization: `Bearer ${key}`,
+    apikey: chosenKey,
+    Authorization: `Bearer ${chosenKey}`,
   };
 
-  const keyPreview = (key || '').slice(0, 20);
+  const keyPreview = (chosenKey || '').slice(0, 20);
   const safeHeaders = Object.fromEntries(
     Object.entries(headers).map(([header, value]) => {
       if (typeof value !== 'string') return [header, value];
