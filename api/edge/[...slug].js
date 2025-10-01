@@ -17,28 +17,32 @@ export default async function handler(req, res) {
   }
 
   const targetUrl = `https://myrwcjurblksypvekuzb.supabase.co/functions/v1/${targetPath}`;
-  const shouldUseAnon = targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
-  const key = shouldUseAnon
+  const isAnon = targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
+  const key = isAnon
     ? process.env.SUPABASE_ANON_KEY || ''
     : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const mode = shouldUseAnon ? 'ANON' : 'SERVICE';
-  const keyPreview = key ? `${key.slice(0, 10)}…` : '[empty]';
+  const mode = isAnon ? 'ANON' : 'SERVICE';
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+  };
 
-  console.log('Proxying Supabase Edge request', {
+  console.log('Proxy Debug', {
     targetPath,
     mode,
-    keyPreview,
+    keyPreview: (key || '').slice(0, 20),
     method: req.method,
+    headers: {
+      apikey: headers.apikey ? '...present' : 'MISSING',
+      Authorization: headers.Authorization ? '...present' : 'MISSING',
+    },
   });
 
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-      },
+      headers,
       body: req.method !== 'GET' ? JSON.stringify(req.body || {}) : undefined,
     });
 
