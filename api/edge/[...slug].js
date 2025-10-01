@@ -20,9 +20,6 @@ export default async function handler(req, res) {
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
   const isAnonEndpoint =
     targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
-  const chosenKey = isAnonEndpoint
-    ? process.env.SUPABASE_ANON_KEY || ''
-    : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
   const incomingAuthHeaderRaw = req?.headers?.authorization;
   let incomingAuthHeader = '';
@@ -32,12 +29,17 @@ export default async function handler(req, res) {
     incomingAuthHeader = incomingAuthHeaderRaw;
   }
 
+  const incomingApiKeyRaw = req?.headers?.apikey;
+  let incomingApiKey = '';
+  if (Array.isArray(incomingApiKeyRaw)) {
+    incomingApiKey = incomingApiKeyRaw.find(Boolean) || '';
+  } else if (typeof incomingApiKeyRaw === 'string') {
+    incomingApiKey = incomingApiKeyRaw;
+  }
+
   const hasIncomingAuth = Boolean(incomingAuthHeader && incomingAuthHeader.trim());
-  const mode = hasIncomingAuth
-    ? 'FORWARDED_AUTH'
-    : isAnonEndpoint
-    ? 'ANON_KEY'
-    : 'SERVICE_ROLE_KEY';
+  let injectedKey = null;
+  let mode = 'FORWARDED_AUTH';
 
   const contentTypeHeader = req?.headers?.['content-type'];
   const headers = {};
@@ -47,29 +49,31 @@ export default async function handler(req, res) {
     headers['Content-Type'] = 'application/json';
   }
 
-  if (chosenKey) {
-    headers.apikey = chosenKey;
-  }
-
   if (hasIncomingAuth) {
     headers.Authorization = incomingAuthHeader.trim();
-  } else if (chosenKey) {
-    headers.Authorization = `Bearer ${chosenKey}`;
+    if (incomingApiKey && incomingApiKey.trim()) {
+      headers.apikey = incomingApiKey.trim();
+    }
+  } else {
+    const rawKey = isAnonEndpoint
+      ? process.env.SUPABASE_ANON_KEY
+      : process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const chosenKey = typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (chosenKey) {
+      headers.apikey = chosenKey;
+      headers.Authorization = `Bearer ${chosenKey}`;
+      injectedKey = isAnonEndpoint ? 'ANON' : 'SERVICE';
+      mode = injectedKey === 'ANON' ? 'ANON_KEY' : 'SERVICE_ROLE_KEY';
+    } else {
+      mode = isAnonEndpoint ? 'ANON_KEY' : 'SERVICE_ROLE_KEY';
+    }
   }
 
   console.log('[Edge Proxy] Forwarding Supabase request', {
     slug: targetPath,
     mode,
-    method: req.method,
-    headers: {
-      apikey: headers.apikey ? `${headers.apikey.slice(0, 6)}***` : 'missing',
-      Authorization: headers.Authorization
-        ? headers.Authorization.toLowerCase().startsWith('bearer ')
-          ? 'Bearer ***'
-          : 'present'
-        : 'missing',
-      'Content-Type': headers['Content-Type'],
-    },
+    hasClientAuth: hasIncomingAuth,
+    injectedKey,
   });
 
   try {
