@@ -18,15 +18,11 @@ export default async function handler(req, res) {
 
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
-  const isAnon = targetPath.startsWith('anon-');
-  const chosenKey = isAnon
+  const isAnonEndpoint =
+    targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
+  const chosenKey = isAnonEndpoint
     ? process.env.SUPABASE_ANON_KEY || ''
     : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const mode = isAnon ? 'ANON' : 'SERVICE';
-  const headers = {
-    'Content-Type': 'application/json',
-    apikey: chosenKey,
-  };
 
   const incomingAuthHeaderRaw = req?.headers?.authorization;
   let incomingAuthHeader = '';
@@ -36,39 +32,44 @@ export default async function handler(req, res) {
     incomingAuthHeader = incomingAuthHeaderRaw;
   }
 
-  if (incomingAuthHeader && incomingAuthHeader.trim()) {
-    headers.Authorization = incomingAuthHeader;
+  const hasIncomingAuth = Boolean(incomingAuthHeader && incomingAuthHeader.trim());
+  const mode = hasIncomingAuth
+    ? 'FORWARDED_AUTH'
+    : isAnonEndpoint
+    ? 'ANON_KEY'
+    : 'SERVICE_ROLE_KEY';
+
+  const contentTypeHeader = req?.headers?.['content-type'];
+  const headers = {};
+  if (contentTypeHeader) {
+    headers['Content-Type'] = contentTypeHeader;
+  } else {
+    headers['Content-Type'] = 'application/json';
   }
 
-  const keyPreview = (chosenKey || '').slice(0, 20);
-  const safeHeaders = Object.fromEntries(
-    Object.entries(headers).map(([header, value]) => {
-      if (typeof value !== 'string') return [header, value];
-      if (/^bearer /i.test(value)) {
-        return [header, `Bearer ${(value.slice(7, 27) || '')}...`];
-      }
-      return [header, `${value.slice(0, 20)}...`];
-    })
-  );
+  if (chosenKey) {
+    headers.apikey = chosenKey;
+  }
 
-  console.log('Proxying Supabase Edge request', { slug: targetPath, mode, headers: Object.keys(headers) });
-  console.log('Edge fetch debug', {
-    targetUrl,
-    headers: {
-      apikey: headers.apikey ? `${headers.apikey.slice(0, 10)}...` : 'missing',
-      Authorization: headers.Authorization ? headers.Authorization.split(' ')[0] : 'missing',
-      'Content-Type': headers['Content-Type'],
-    },
-  });
+  if (hasIncomingAuth) {
+    headers.Authorization = incomingAuthHeader.trim();
+  } else if (chosenKey) {
+    headers.Authorization = `Bearer ${chosenKey}`;
+  }
 
-  console.log('Proxy Mode:', mode, 'Slug:', targetPath, 'Key:', keyPreview ? `${keyPreview}...` : '[empty]');
-
-  console.log('Proxy Debug', {
+  console.log('[Edge Proxy] Forwarding Supabase request', {
     slug: targetPath,
     mode,
-    keyPreview: keyPreview ? `${keyPreview}...` : '[empty]',
     method: req.method,
-    headers: safeHeaders,
+    headers: {
+      apikey: headers.apikey ? `${headers.apikey.slice(0, 6)}***` : 'missing',
+      Authorization: headers.Authorization
+        ? headers.Authorization.toLowerCase().startsWith('bearer ')
+          ? 'Bearer ***'
+          : 'present'
+        : 'missing',
+      'Content-Type': headers['Content-Type'],
+    },
   });
 
   try {
