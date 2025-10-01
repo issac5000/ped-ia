@@ -24,6 +24,7 @@ export default async function handler(req, res) {
   const mode = isAnon ? 'ANON' : 'SERVICE';
   const headers = {
     'Content-Type': 'application/json',
+    apikey: key,
     Authorization: `Bearer ${key}`,
   };
 
@@ -37,6 +38,8 @@ export default async function handler(req, res) {
       return [header, `${value.slice(0, 20)}...`];
     })
   );
+
+  console.log('Proxying Supabase Edge request', { slug: targetPath, mode, headers: Object.keys(headers) });
 
   console.log('Proxy Debug', {
     slug: targetPath,
