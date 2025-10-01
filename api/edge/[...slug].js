@@ -25,8 +25,10 @@ export default async function handler(req, res) {
   const headers = {
     'Content-Type': 'application/json',
     apikey: key,
-    Authorization: `Bearer ${key}`,
   };
+  if (!isAnon) {
+    headers.Authorization = `Bearer ${key}`;
+  }
 
   const keyPreview = (key || '').slice(0, 20);
   const safeHeaders = Object.fromEntries(
