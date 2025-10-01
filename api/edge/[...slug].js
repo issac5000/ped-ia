@@ -18,18 +18,12 @@ export default async function handler(req, res) {
 
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
-  let chosenKey = '';
   let mode = 'SERVICE';
+  let chosenKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-  if (targetPath.startsWith('anon-')) {
-    chosenKey = process.env.SUPABASE_ANON_KEY || '';
+  if (targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon') {
     mode = 'ANON';
-  } else if (targetPath === 'profiles-create-anon') {
-    chosenKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    mode = 'SERVICE';
-  } else {
-    chosenKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    mode = 'SERVICE';
+    chosenKey = process.env.SUPABASE_ANON_KEY || '';
   }
   const headers = {
     'Content-Type': 'application/json',
@@ -37,7 +31,7 @@ export default async function handler(req, res) {
     Authorization: `Bearer ${chosenKey}`,
   };
 
-  const keyPreview = (chosenKey || '').slice(0, 15);
+  const keyPreview = (chosenKey || '').slice(0, 10);
   const safeHeaders = Object.fromEntries(
     Object.entries(headers).map(([header, value]) => {
       if (typeof value !== 'string') return [header, value];
@@ -61,7 +55,7 @@ export default async function handler(req, res) {
   console.log('Proxy Debug', {
     slug: targetPath,
     mode,
-    keyPreview: keyPreview ? `${keyPreview}...` : '[empty]',
+    keyPreview: keyPreview || '[empty]',
     method: req.method,
     headers: safeHeaders,
   });
