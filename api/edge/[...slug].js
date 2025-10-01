@@ -18,69 +18,78 @@ export default async function handler(req, res) {
 
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
-  const isAnonEndpoint =
-    targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
 
-  const incomingAuthHeaderRaw = req?.headers?.authorization;
-  let incomingAuthHeader = '';
-  if (Array.isArray(incomingAuthHeaderRaw)) {
-    incomingAuthHeader = incomingAuthHeaderRaw.find(Boolean) || '';
-  } else if (typeof incomingAuthHeaderRaw === 'string') {
-    incomingAuthHeader = incomingAuthHeaderRaw;
+  const slug = targetPath;
+  const usesAnonKey =
+    slug === 'profiles-create-anon' || slug.startsWith('anon-') || slug.startsWith('likes-');
+
+  const rawClientAuth = req?.headers?.authorization;
+  let clientAuthHeader = '';
+  if (Array.isArray(rawClientAuth)) {
+    clientAuthHeader = rawClientAuth.find(Boolean) || '';
+  } else if (typeof rawClientAuth === 'string') {
+    clientAuthHeader = rawClientAuth;
   }
 
-  const incomingApiKeyRaw = req?.headers?.apikey;
-  let incomingApiKey = '';
-  if (Array.isArray(incomingApiKeyRaw)) {
-    incomingApiKey = incomingApiKeyRaw.find(Boolean) || '';
-  } else if (typeof incomingApiKeyRaw === 'string') {
-    incomingApiKey = incomingApiKeyRaw;
+  const chosenKeyRaw = usesAnonKey
+    ? process.env.SUPABASE_ANON_KEY
+    : process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const chosenKey = typeof chosenKeyRaw === 'string' ? chosenKeyRaw.trim() : '';
+
+  if (!chosenKey) {
+    console.error('[Edge Proxy] Missing Supabase key for mode', usesAnonKey ? 'ANON' : 'SERVICE');
   }
 
-  const hasIncomingAuth = Boolean(incomingAuthHeader && incomingAuthHeader.trim());
-  let injectedKey = null;
-  let mode = 'FORWARDED_AUTH';
-
+  const outgoingHeaders = {};
   const contentTypeHeader = req?.headers?.['content-type'];
-  const headers = {};
   if (contentTypeHeader) {
-    headers['Content-Type'] = contentTypeHeader;
+    outgoingHeaders['Content-Type'] = contentTypeHeader;
   } else {
-    headers['Content-Type'] = 'application/json';
+    outgoingHeaders['Content-Type'] = 'application/json';
   }
 
-  if (hasIncomingAuth) {
-    headers.Authorization = incomingAuthHeader.trim();
-    if (incomingApiKey && incomingApiKey.trim()) {
-      headers.apikey = incomingApiKey.trim();
+  if (chosenKey) {
+    outgoingHeaders.apikey = chosenKey;
+    outgoingHeaders.Authorization = `Bearer ${chosenKey}`;
+  }
+  if (clientAuthHeader && clientAuthHeader.trim()) {
+    outgoingHeaders['X-Client-Authorization'] = clientAuthHeader.trim();
+  }
+
+  const bodyAllowed = !['GET', 'HEAD'].includes((req.method || '').toUpperCase());
+  let outgoingBody;
+  if (bodyAllowed) {
+    if (typeof req.body === 'string' || req.body instanceof Buffer) {
+      outgoingBody = req.body;
+    } else if (req.body != null) {
+      try {
+        outgoingBody = JSON.stringify(req.body);
+      } catch (_err) {
+        outgoingBody = JSON.stringify({});
+      }
     }
-  } else {
-    const rawKey = isAnonEndpoint
-      ? process.env.SUPABASE_ANON_KEY
-      : process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const chosenKey = typeof rawKey === 'string' ? rawKey.trim() : '';
-    if (chosenKey) {
-      headers.apikey = chosenKey;
-      headers.Authorization = `Bearer ${chosenKey}`;
-      injectedKey = isAnonEndpoint ? 'ANON' : 'SERVICE';
-      mode = injectedKey === 'ANON' ? 'ANON_KEY' : 'SERVICE_ROLE_KEY';
-    } else {
-      mode = isAnonEndpoint ? 'ANON_KEY' : 'SERVICE_ROLE_KEY';
+    if (typeof outgoingBody === 'undefined') {
+      outgoingBody = JSON.stringify({});
     }
+  }
+
+  const outgoingHeaderNames = ['apikey', 'Authorization'];
+  if (outgoingHeaders['X-Client-Authorization']) {
+    outgoingHeaderNames.push('X-Client-Authorization');
   }
 
   console.log('[Edge Proxy] Forwarding Supabase request', {
-    slug: targetPath,
-    mode,
-    hasClientAuth: hasIncomingAuth,
-    injectedKey,
+    slug,
+    mode: usesAnonKey ? 'ANON' : 'SERVICE',
+    hasClientAuth: Boolean(outgoingHeaders['X-Client-Authorization']),
+    outgoingHeaders: outgoingHeaderNames,
   });
 
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers,
-      body: req.method !== 'GET' ? JSON.stringify(req.body || {}) : undefined,
+      headers: outgoingHeaders,
+      body: outgoingBody,
     });
 
     const text = await response.text();
