@@ -106,7 +106,7 @@ async function ensureSupabase(){
 async function fetchAnonProfileByCode(rawCode) {
   const code = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
   if (!code) throw new Error('Code unique manquant.');
-  const response = await fetch('/api/anon/parent-updates', {
+  const response = await fetch('/api/edge/anon-parent-updates', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'profile', code })
@@ -177,13 +177,14 @@ async function createAnonymousProfile(){
     });
     let responsePayload = null;
     try { responsePayload = await response.json(); } catch (e) { responsePayload = null; }
-    if (!response.ok || !responsePayload?.profile) {
+    const profile = responsePayload?.data?.profile || responsePayload?.profile || null;
+    if (!response.ok || !profile) {
       const msg = responsePayload?.error || 'Création impossible pour le moment.';
       const err = new Error(msg);
       if (responsePayload?.details) err.details = responsePayload.details;
       throw err;
     }
-    const data = responsePayload.profile;
+    const data = profile;
     if (status) {
       status.classList.remove('error');
       status.innerHTML = `Ton code unique&nbsp;: <strong>${data.code_unique}</strong>.<br>Garde-le précieusement et saisis-le juste en dessous dans «&nbsp;Se connecter avec un code&nbsp;».`;
