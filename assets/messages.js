@@ -40,6 +40,60 @@ let isAnon = false;
 let anonProfile = null;
 let loginUIBound = false;
 
+const normalizeAnonCode = (value) => {
+  if (typeof value === 'string') return value.trim().toUpperCase();
+  if (value == null) return '';
+  return String(value).trim().toUpperCase();
+};
+
+function getStoredAnonCode() {
+  if (anonProfile?.code) {
+    const normalized = normalizeAnonCode(anonProfile.code);
+    if (normalized) {
+      anonProfile.code = normalized;
+      return normalized;
+    }
+  }
+  let saved = null;
+  try { saved = store.get(K.session) || null; } catch { saved = null; }
+  if (saved?.type === 'anon' && saved?.code) {
+    const normalized = normalizeAnonCode(saved.code);
+    if (normalized) return normalized;
+  }
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const raw = sessionStorage.getItem(K.session);
+      if (raw) {
+        let parsed = null;
+        try { parsed = JSON.parse(raw); } catch { parsed = null; }
+        if (parsed?.type === 'anon' && parsed?.code) {
+          const normalized = normalizeAnonCode(parsed.code);
+          if (normalized) return normalized;
+        }
+      }
+    }
+  } catch {}
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const fallback = localStorage.getItem('anon_code');
+      if (fallback) {
+        const normalized = normalizeAnonCode(fallback);
+        if (normalized) return normalized;
+      }
+    }
+  } catch {}
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const fallback = sessionStorage.getItem('anon_code');
+      if (fallback) {
+        const normalized = normalizeAnonCode(fallback);
+        if (normalized) return normalized;
+      }
+    }
+  } catch {}
+  return '';
+}
+
 function sanitizeFullName(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -482,13 +536,16 @@ function updateBadgeFromStore(){ updateBadges(); }
 function replayUnseen(){ unseen().forEach(n => { if (n.kind==='msg') { showNotification({ title:'Nouveau message', text:`Vous avez un nouveau message de ${n.fromName||'Un parent'}`, actionHref:`messages.html?user=${n.fromId}`, actionLabel:'Ouvrir' }); } }); }
 
 async function anonMessagesRequest(code_unique, { since = null } = {}) {
-  if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
-  const code = typeof code_unique === 'string' ? code_unique.trim().toUpperCase() : '';
+  if (!isAnon) throw new Error('Profil anonyme requis');
+  const explicit = normalizeAnonCode(code_unique);
+  const stored = getStoredAnonCode();
+  const code = explicit || stored;
   if (!code) return { messages: [], senders: {} };
   try {
     const payload = { action: 'recent-activity', code };
     if (since) payload.since = since;
     const url = '/api/edge/anon-messages';
+    console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-messages');
     console.debug("Calling Supabase function:", url, payload);
     const res = await fetch(url, {
       method: 'POST',
@@ -522,8 +579,8 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
 const ANON_NOTIF_INTERVAL_MS = 15000;
 
 async function fetchAnonMissedNotifications(){
-  if (!isAnon || !anonProfile?.code) return;
-  const code = (anonProfile.code || '').toString().trim().toUpperCase();
+  if (!isAnon) return;
+  const code = getStoredAnonCode();
   if (!code) return;
   const sinceDefault = new Date(Date.now() - 7*24*3600*1000).toISOString();
   const sinceRep = getNotifLastSince('reply') || sinceDefault;
@@ -574,9 +631,12 @@ async function anonNotifTick(){ try { await fetchAnonMissedNotifications(); } ca
 function startAnonNotifPolling(){ stopAnonNotifPolling(); anonNotifTick(); anonNotifTimer = setInterval(anonNotifTick, ANON_NOTIF_INTERVAL_MS); }
 
 async function anonMessagesActionRequest(action, payload = {}) {
-  if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
+  if (!isAnon) throw new Error('Profil anonyme requis');
+  const code = getStoredAnonCode();
+  if (!code) throw new Error('Code unique manquant');
   const url = '/api/edge/anon-messages';
-  const payloadToSend = { action, code: anonProfile.code, ...payload };
+  const payloadToSend = { action, code, ...payload };
+  console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-messages');
   console.debug("Calling Supabase function:", url, payloadToSend);
   const res = await fetch(url, {
     method: 'POST',
@@ -598,9 +658,12 @@ async function anonMessagesActionRequest(action, payload = {}) {
 }
 
 async function anonCommunityRequest(action, payload = {}) {
-  if (!isAnon || !anonProfile?.code) throw new Error('Profil anonyme requis');
+  if (!isAnon) throw new Error('Profil anonyme requis');
+  const code = getStoredAnonCode();
+  if (!code) throw new Error('Code unique manquant');
   const url = '/api/edge/anon-community';
-  const payloadToSend = { action, code: anonProfile.code, ...payload };
+  const payloadToSend = { action, code, ...payload };
+  console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-community');
   console.debug("Calling Supabase function:", url, payloadToSend);
   const response = await fetch(url, {
     method: 'POST',
