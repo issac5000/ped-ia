@@ -1,6 +1,13 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/api/edge/(.*)", "dest": "/api/edge/[...slug].js" }
+    {
+      "src": "/api/edge/(.*)",
+      "dest": "/api/edge/[...slug].js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }
