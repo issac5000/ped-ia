@@ -2915,7 +2915,7 @@ const TIMELINE_MILESTONES = [
       const fullNameRaw = typeof currentUser?.pseudo === 'string' ? currentUser.pseudo.trim() : '';
       const requestBody = fullNameRaw ? { fullName: fullNameRaw } : {};
       const payload = await callEdgeFunction('profiles-create-anon', { body: requestBody });
-      const data = payload?.profile;
+      const data = payload?.profile || payload?.data?.profile || null;
       if (!data) {
         throw new Error('Création impossible pour le moment.');
       }

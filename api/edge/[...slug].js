@@ -26,8 +26,19 @@ export default async function handler(req, res) {
   const headers = {
     'Content-Type': 'application/json',
     apikey: chosenKey,
-    Authorization: `Bearer ${chosenKey}`,
   };
+
+  const incomingAuthHeaderRaw = req?.headers?.authorization;
+  let incomingAuthHeader = '';
+  if (Array.isArray(incomingAuthHeaderRaw)) {
+    incomingAuthHeader = incomingAuthHeaderRaw.find(Boolean) || '';
+  } else if (typeof incomingAuthHeaderRaw === 'string') {
+    incomingAuthHeader = incomingAuthHeaderRaw;
+  }
+
+  if (incomingAuthHeader && incomingAuthHeader.trim()) {
+    headers.Authorization = incomingAuthHeader;
+  }
 
   const keyPreview = (chosenKey || '').slice(0, 20);
   const safeHeaders = Object.fromEntries(
