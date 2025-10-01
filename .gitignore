@@ -5,3 +5,4 @@
 .DS_Store
 supabase/functions/debug-claims/
 supabase/config.toml
+.env.vercel.local
