@@ -174,11 +174,53 @@ const TIMELINE_MILESTONES = [
   let activeRouteEl = document.querySelector('section.route.active') || null;
   const navLinks = new Map();
   const navLinkTargets = new Map();
+  const hashLikeHref = (href) => {
+    if (!href) return false;
+    if (href.startsWith('#')) return true;
+    if (href.startsWith('/#/')) return true;
+    try {
+      const originHref = new URL(href, window.location.origin).href;
+      return originHref.startsWith(`${window.location.origin}/#/`);
+    } catch {
+      return false;
+    }
+  };
+  let navigatingAwayTimer = null;
+  let navigatingAwayFromApp = false;
+  const markNavigatingAwayFromApp = () => {
+    navigatingAwayFromApp = true;
+    if (navigatingAwayTimer) clearTimeout(navigatingAwayTimer);
+    navigatingAwayTimer = setTimeout(() => {
+      navigatingAwayFromApp = false;
+      navigatingAwayTimer = null;
+    }, 1500);
+  };
+  const isNavigatingAwayFromApp = () => navigatingAwayFromApp;
+  const setHashIfAllowed = (value) => {
+    if (isNavigatingAwayFromApp()) return;
+    if (location.hash === value) return;
+    location.hash = value;
+  };
+  const navigateToFullPage = (url) => {
+    markNavigatingAwayFromApp();
+    window.location.href = url;
+  };
+  const registerFullPageLink = (link) => {
+    const href = link.getAttribute('href') || '';
+    if (!href || hashLikeHref(href)) return;
+    if (link.dataset.fullPageNavBound === '1') return;
+    link.dataset.fullPageNavBound = '1';
+    link.addEventListener('click', () => {
+      markNavigatingAwayFromApp();
+    });
+  };
   document.querySelectorAll('#main-nav .nav-link').forEach(link => {
     const href = link.getAttribute('href') || '';
     navLinks.set(href, link);
     if (href.startsWith('#')) navLinkTargets.set(href, normalizeRoutePath(href));
+    registerFullPageLink(link);
   });
+  document.querySelectorAll('a[href]').forEach(registerFullPageLink);
   const navBadges = new Map();
   const navBtn = document.getElementById('nav-toggle');
   const mainNav = document.getElementById('main-nav');
@@ -242,7 +284,7 @@ const TIMELINE_MILESTONES = [
     }
     if (!skipHash) {
       if (location.hash !== '#/login') {
-        try { location.hash = '#/login'; }
+        try { setHashIfAllowed('#/login'); }
         catch {}
       } else {
         try { setActiveRoute('#/login'); }
@@ -1445,7 +1487,7 @@ const TIMELINE_MILESTONES = [
       // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
       // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
       if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
-        location.hash = '#/dashboard';
+        setHashIfAllowed('#/dashboard');
       } else {
         setActiveRoute(location.hash);
       }
@@ -1464,7 +1506,7 @@ const TIMELINE_MILESTONES = [
       handleUnauthenticated('no-session');
     }
     if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
-      location.hash = '#/dashboard';
+      setHashIfAllowed('#/dashboard');
     }
     supabase.auth.onAuthStateChange(async (_event, session) => {
       authSession = session || null;
@@ -1483,7 +1525,7 @@ const TIMELINE_MILESTONES = [
         handleUnauthenticated('signed-out');
       }
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
-        location.hash = '#/dashboard';
+        setHashIfAllowed('#/dashboard');
       } else {
         setActiveRoute(location.hash);
       }
@@ -1505,7 +1547,7 @@ const TIMELINE_MILESTONES = [
     if (location.hash) {
       setActiveRoute(location.hash);
     } else {
-      location.hash = isProfileLoggedIn() ? '#/dashboard' : '#/';
+      setHashIfAllowed(isProfileLoggedIn() ? '#/dashboard' : '#/');
     }
     // Abonne les notifications pour une session déjà active et rejoue les toasts une fois
     if (authSession?.user) {
@@ -1703,11 +1745,11 @@ const TIMELINE_MILESTONES = [
     }
     const authed = isProfileLoggedIn();
     if (protectedRoutes.has(path) && !authed) {
-      location.hash = '#/login';
+      setHashIfAllowed('#/login');
       return;
     }
     if ((path === '/login' || path === '/signup') && authed) {
-      location.hash = '#/dashboard';
+      setHashIfAllowed('#/dashboard');
       return;
     }
     if (path === '/onboarding') { renderOnboarding(); }
@@ -1766,6 +1808,9 @@ const TIMELINE_MILESTONES = [
   }
 
   window.addEventListener('hashchange', () => {
+    if (isNavigatingAwayFromApp() && (!location.hash || location.hash === '#')) {
+      return;
+    }
     setActiveRoute(location.hash || '#/');
     const path = getCurrentRoutePath();
     if (path === '/login') {
@@ -1887,9 +1932,9 @@ const TIMELINE_MILESTONES = [
               onAction();
             } else if (actionHref) {
               if (actionHref.startsWith('http')) {
-                window.location.href = actionHref;
+                navigateToFullPage(actionHref);
               } else {
-                window.location.href = actionHref;
+                navigateToFullPage(actionHref);
               }
             }
           } catch {}
@@ -2955,7 +3000,7 @@ const TIMELINE_MILESTONES = [
         showAppView();
         const currentHash = location?.hash || '';
         if (currentHash === '' || currentHash === '#' || currentHash === '#/login' || currentHash === '#/signup') {
-          location.hash = '#/dashboard';
+          setHashIfAllowed('#/dashboard');
         }
         return true;
       }
@@ -3120,7 +3165,7 @@ const TIMELINE_MILESTONES = [
       }
       if (status) { status.classList.remove('error'); status.textContent = ''; }
       if (input) input.value = '';
-      location.hash = '#/dashboard';
+      setHashIfAllowed('#/dashboard');
     } catch (e) {
       console.error('loginWithCode failed', e);
       if (status) {
@@ -3146,16 +3191,16 @@ const TIMELINE_MILESTONES = [
     const path = window.location.pathname || '';
     const isAppShell = path === '/' || path.endsWith('/') || path.endsWith('/index.html');
     if (isAppShell) {
-      window.location.hash = targetHash;
+      setHashIfAllowed(targetHash);
       return;
     }
     try {
       const dest = new URL('.', window.location.href);
       dest.hash = targetHash;
       dest.search = '';
-      window.location.href = dest.toString();
+      navigateToFullPage(dest.toString());
     } catch (e) {
-      window.location.hash = targetHash;
+      setHashIfAllowed(targetHash);
     }
   }
 
@@ -3201,7 +3246,7 @@ const TIMELINE_MILESTONES = [
     alert('Déconnecté.');
     updateHeaderAuth();
     showLoginView({ reason: 'signed-out' });
-    location.hash = '#/login';
+    setHashIfAllowed('#/login');
   });
 
   // Bascule du menu mobile
@@ -3220,7 +3265,7 @@ const TIMELINE_MILESTONES = [
   $('#form-signup')?.addEventListener('submit', (e) => {
     e.preventDefault();
     alert('Veuillez utiliser "Se connecter avec Google".');
-    location.hash = '#/login';
+    setHashIfAllowed('#/login');
   });
 
   $('#form-login')?.addEventListener('submit', async (e) => {
@@ -4166,7 +4211,7 @@ const TIMELINE_MILESTONES = [
           alert('Profil enfant créé.');
           if (btn) { btn.disabled = false; btn.textContent = 'Créer le profil'; }
           form.dataset.busy = '0';
-          location.hash = '#/dashboard';
+          setHashIfAllowed('#/dashboard');
         } catch (err) {
           console.error('Erreur lors de la création du profil enfant', err);
           if (btn) { btn.disabled = false; btn.textContent = 'Réessayer'; }
@@ -8312,7 +8357,7 @@ const TIMELINE_MILESTONES = [
         localStorage.removeItem(K.session);
         bootstrap();
         alert('Compte supprimé (localement).');
-        location.hash = '#/';
+        setHashIfAllowed('#/');
       };
     }
     const inputImport = $('#input-import');
@@ -9835,7 +9880,7 @@ const TIMELINE_MILESTONES = [
 
   // Initialisation
   bootstrap();
-  if (!location.hash) location.hash = '#/';
+  if (!location.hash) setHashIfAllowed('#/');
   setActiveRoute(location.hash);
   // Vérifier l’adaptation de l’en-tête au chargement
   evaluateHeaderFit();
