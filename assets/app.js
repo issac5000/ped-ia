@@ -214,6 +214,13 @@ const TIMELINE_MILESTONES = [
     if (value == null) return '';
     return String(value).trim().toUpperCase();
   };
+  function hasAnonCode() {
+    try {
+      return !!localStorage.getItem('anonCode');
+    } catch (e) {
+      return false;
+    }
+  }
   const growthStatusState = {
     cache: new Map(),
     pending: new Map(),
@@ -1324,6 +1331,17 @@ const TIMELINE_MILESTONES = [
   try {
     supabase = await getSupabaseClient();
     if (!supabase) throw new Error('Supabase client unavailable');
+
+    supabase.auth.getSession().then(({ data }) => {
+      const session = data?.session;
+
+      if (!session && !hasAnonCode()) {
+        console.warn('[Anon Debug] No session or anonCode found, redirecting to /login');
+        window.location.href = '/login';
+      }
+    }).catch((err) => {
+      console.warn('Initial session check failed', err);
+    });
 
     // Cas robuste : si Google renvoie ?code dans l’URL, on échange immédiatement contre une session
     try {
