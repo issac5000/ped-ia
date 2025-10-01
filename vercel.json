@@ -6,6 +6,10 @@
       "dest": "/api/edge/[...slug].js"
     },
     {
+      "src": "/(.*\\.(?:js|css|png|jpg|jpeg|gif|svg|ico|json|webp|woff2?|ttf))",
+      "dest": "/$1"
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
