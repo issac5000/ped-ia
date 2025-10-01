@@ -1,8 +1,6 @@
 {
   "version": 2,
-  "functions": {
-    "api/edge/[...slug].js": {
-      "runtime": "nodejs18"
-    }
-  }
+  "routes": [
+    { "src": "/api/edge/(.*)", "dest": "/api/edge/[...slug].js" }
+  ]
 }

@@ -1,16 +1,16 @@
-export default async function handler(req, res) {
-  const { slug } = req.query;
-  const targetPath = Array.isArray(slug) ? slug.join("/") : slug;
+import { parse } from "url";
 
-  if (!targetPath) {
-    res.status(400).json({ error: "Missing target function slug" });
-    return;
+export default async function handler(req, res) {
+  const { pathname } = parse(req.url, true);
+  const slug = pathname.replace(/^\/api\/edge\//, ""); // enlève le prefix
+
+  if (!slug) {
+    return res.status(400).json({ error: "Missing target function slug" });
   }
 
-  const url = `https://myrwcjurblksypvekuzb.supabase.co/functions/v1/${targetPath}`;
+  const url = `https://myrwcjurblksypvekuzb.supabase.co/functions/v1/${slug}`;
 
   try {
-    console.log(`Edge proxy forwarding to: ${targetPath}`);
     const response = await fetch(url, {
       method: req.method,
       headers: {
@@ -23,7 +23,6 @@ export default async function handler(req, res) {
     const text = await response.text();
     res.status(response.status).send(text);
   } catch (err) {
-    console.error("Proxy error:", err);
-    res.status(500).json({ error: "Edge proxy failed", details: err?.message || String(err) });
+    res.status(500).json({ error: "Edge proxy failed", details: err.message });
   }
 }
