@@ -184,10 +184,20 @@ async function fetchAnonProfileByCode(rawCode) {
 
 function presentLoginGate(){
   try {
-    const target = '/#/login';
-    const alreadyOnLogin = window.location.pathname === '/' && window.location.hash === target;
-    if (!alreadyOnLogin) {
-      window.location.href = target;
+    const targetHash = '#/login';
+    const path = window.location.pathname || '';
+    const hash = window.location.hash || '';
+    const isAppShell = path === '/' || path.endsWith('/') || path.endsWith('/index.html');
+    if (isAppShell) {
+      if (hash !== targetHash) {
+        window.location.hash = targetHash;
+        return;
+      }
+    } else {
+      const dest = new URL('.', window.location.href);
+      dest.hash = targetHash;
+      dest.search = '';
+      window.location.href = dest.toString();
       return;
     }
   } catch {}
@@ -370,26 +380,22 @@ function setupHeader(){
   headerSetupDone = true;
   const redirectToLogin = () => {
     const targetHash = '#/login';
-    if (location.hash === targetHash) return;
-    if (location.hash.startsWith('#/')) {
-      location.hash = targetHash;
+    const currentHash = window.location.hash || '';
+    if (currentHash === targetHash) return;
+    const path = window.location.pathname || '';
+    const isAppShell = path === '/' || path.endsWith('/') || path.endsWith('/index.html');
+    if (isAppShell) {
+      window.location.hash = targetHash;
       return;
     }
-    const path = location.pathname || '';
-    if (path === '/' || path.endsWith('/') || path.endsWith('/index.html')) {
-      location.hash = targetHash;
-      return;
+    try {
+      const dest = new URL('.', window.location.href);
+      dest.hash = targetHash;
+      dest.search = '';
+      window.location.href = dest.toString();
+    } catch (e) {
+      window.location.hash = targetHash;
     }
-    let basePath = path;
-    if (path.endsWith('.html')) {
-      basePath = path.replace(/[^/]*$/, '');
-    } else if (!path.endsWith('/')) {
-      basePath = `${path}/`;
-    }
-    if (!basePath.startsWith('/')) {
-      basePath = `/${basePath}`;
-    }
-    location.href = `${basePath}${targetHash}`;
   };
   $('#btn-login')?.addEventListener('click', e=>{
     e.preventDefault();

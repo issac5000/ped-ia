@@ -3141,26 +3141,22 @@ const TIMELINE_MILESTONES = [
 
   function redirectToLogin() {
     const targetHash = '#/login';
-    if (location.hash === targetHash) return;
-    if (location.hash.startsWith('#/')) {
-      location.hash = targetHash;
+    const currentHash = window.location.hash || '';
+    if (currentHash === targetHash) return;
+    const path = window.location.pathname || '';
+    const isAppShell = path === '/' || path.endsWith('/') || path.endsWith('/index.html');
+    if (isAppShell) {
+      window.location.hash = targetHash;
       return;
     }
-    const path = location.pathname || '';
-    if (path === '/' || path.endsWith('/') || path.endsWith('/index.html')) {
-      location.hash = targetHash;
-      return;
+    try {
+      const dest = new URL('.', window.location.href);
+      dest.hash = targetHash;
+      dest.search = '';
+      window.location.href = dest.toString();
+    } catch (e) {
+      window.location.hash = targetHash;
     }
-    let basePath = path;
-    if (path.endsWith('.html')) {
-      basePath = path.replace(/[^/]*$/, '');
-    } else if (!path.endsWith('/')) {
-      basePath = `${path}/`;
-    }
-    if (!basePath.startsWith('/')) {
-      basePath = `/${basePath}`;
-    }
-    location.href = `${basePath}${targetHash}`;
   }
 
   $('#btn-login').addEventListener('click', (e) => {
