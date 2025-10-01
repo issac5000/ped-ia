@@ -18,7 +18,7 @@ export default async function handler(req, res) {
 
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
-  const isAnon = targetPath.startsWith('anon-') || targetPath === 'profiles-create-anon';
+  const isAnon = targetPath.startsWith('anon-');
   const chosenKey = isAnon
     ? process.env.SUPABASE_ANON_KEY || ''
     : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -49,6 +49,8 @@ export default async function handler(req, res) {
       'Content-Type': headers['Content-Type'],
     },
   });
+
+  console.log('Proxy Mode:', mode, 'Slug:', targetPath, 'Key:', keyPreview ? `${keyPreview}...` : '[empty]');
 
   console.log('Proxy Debug', {
     slug: targetPath,
