@@ -1585,8 +1585,12 @@ input[type="checkbox"]{width:auto}
 .badge{display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.1); border:1px solid var(--border); padding:6px 10px; border-radius:12px; font-size:12px; line-height:1}
 .badge.done{background:rgba(45,192,122,.12); border-color:var(--ok); color:var(--ok)}
 .badge.done::before{content:""; display:inline-block; width:6px; height:12px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg)}
-.badges-container{display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin:22px auto 12px; padding:22px 26px; border-radius:28px; background:linear-gradient(160deg, rgba(28,32,52,.82), rgba(14,16,28,.75)); border:1px solid rgba(138,182,255,.22); box-shadow:0 28px 60px -30px rgba(10,14,28,.85); backdrop-filter:blur(12px)}
-.badges-container .badge{position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:8px; flex:0 1 calc(33.333% - 16px); min-width:90px; max-width:120px; padding:0; text-align:center; color:var(--muted); cursor:default; transition:transform .2s ease, color .2s ease; background:none; border:none; box-shadow:none}
+.badges-container{position:relative; display:flex; flex-wrap:wrap; gap:18px; justify-content:center; margin:26px auto 14px; padding:28px 32px; max-width:720px; border-radius:32px; background:rgba(14,18,32,.68); border:1px solid rgba(142,182,255,.28); box-shadow:0 34px 68px -36px rgba(8,12,25,.85); backdrop-filter:blur(14px); isolation:isolate; overflow:hidden}
+.badges-container::before,
+.badges-container::after{content:""; position:absolute; inset:auto; width:320px; height:320px; border-radius:50%; filter:blur(68px); opacity:.65; pointer-events:none; z-index:0}
+.badges-container::before{top:-140px; right:-120px; background:radial-gradient(circle, rgba(255,138,92,.45) 0%, rgba(255,138,92,0) 68%)}
+.badges-container::after{bottom:-160px; left:-140px; background:radial-gradient(circle, rgba(120,156,255,.38) 0%, rgba(120,156,255,0) 70%)}
+.badges-container .badge{position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:8px; flex:0 1 calc(33.333% - 16px); min-width:90px; max-width:120px; padding:0; text-align:center; color:var(--muted); cursor:default; transition:transform .2s ease, color .2s ease; background:none; border:none; box-shadow:none; z-index:1}
 .badges-container .badge:focus-visible,
 .badges-container .badge:focus{outline:2px solid var(--turquoise); outline-offset:6px}
 .badges-container .badge:hover{transform:translateY(-3px)}
@@ -1649,10 +1653,10 @@ input[type="checkbox"]{width:auto}
 .badges-container .badge:focus::before,
 .badges-container .badge:focus-visible::before{opacity:1; transform:translate(-50%, -12px)}
 @media (min-width:720px){
-  .badges-container .badge{flex:0 1 calc(25% - 16px)}
+  .badges-container .badge{flex:0 1 calc(25% - 18px)}
 }
 @media (min-width:992px){
-  .badges-container .badge{flex:0 1 calc(16.666% - 16px)}
+  .badges-container .badge{flex:0 1 calc(16.666% - 18px)}
 }
 
 /* Forum */
