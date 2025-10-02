@@ -1585,26 +1585,47 @@ input[type="checkbox"]{width:auto}
 .badge{display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.1); border:1px solid var(--border); padding:6px 10px; border-radius:12px; font-size:12px; line-height:1}
 .badge.done{background:rgba(45,192,122,.12); border-color:var(--ok); color:var(--ok)}
 .badge.done::before{content:""; display:inline-block; width:6px; height:12px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg)}
-.badges-container{display:flex; flex-wrap:wrap; align-items:stretch; gap:12px; margin:16px 0 12px}
-.badges-container .badge{position:relative; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px; min-width:88px; min-height:88px; padding:12px 10px; border:none; border-radius:18px; text-align:center; font-size:14px; line-height:1.2; background:var(--card-bg, #f3f4fa); color:var(--text, #111845); box-shadow:0 10px 24px -14px rgba(17,24,69,.45); transition:transform .2s ease, box-shadow .2s ease, opacity .2s ease}
+.badges-container{display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin:22px auto 12px; padding:22px 26px; border-radius:28px; background:linear-gradient(160deg, rgba(28,32,52,.82), rgba(14,16,28,.75)); border:1px solid rgba(138,182,255,.22); box-shadow:0 28px 60px -30px rgba(10,14,28,.85); backdrop-filter:blur(12px)}
+.badges-container .badge{position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:8px; flex:0 1 calc(33.333% - 16px); min-width:90px; max-width:120px; padding:0; text-align:center; color:var(--muted); cursor:default; transition:transform .2s ease, color .2s ease; background:none; border:none; box-shadow:none}
 .badges-container .badge:focus-visible,
-.badges-container .badge:focus{outline:2px solid var(--turquoise); outline-offset:4px}
-.badges-container .badge:hover{transform:translateY(-2px); box-shadow:0 18px 28px -18px rgba(17,24,69,.55)}
-.badges-container .badge-icon{font-size:28px; line-height:1}
-.badges-container .badge-label{font-weight:600; font-size:13px}
-.badges-container .badge-unlocked{background:linear-gradient(135deg, #6757d8 0%, #47cdd0 100%); color:#fff}
-.badges-container .badge-unlocked .badge-icon{filter:drop-shadow(0 2px 4px rgba(17,24,69,.3))}
-.badges-container .badge-locked{background:#aaa; color:#1f1f1f; opacity:.6}
-.badges-container .badge-locked .badge-icon{filter:grayscale(100%)}
-.badges-container .badge-lock{position:absolute; top:8px; right:10px; font-size:16px}
-.badges-container .badge::after{content:attr(data-tooltip); position:absolute; bottom:calc(100% + 12px); left:50%; transform:translate(-50%, -4px); background:rgba(17,24,69,.95); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; line-height:1.3; box-shadow:0 12px 24px -18px rgba(17,24,69,.6); width:max-content; max-width:220px; opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease; z-index:5}
-.badges-container .badge::before{content:""; position:absolute; bottom:100%; left:50%; transform:translate(-50%, -6px); border:6px solid transparent; border-top-color:rgba(17,24,69,.95); opacity:0; transition:opacity .18s ease, transform .18s ease; z-index:4}
+.badges-container .badge:focus{outline:2px solid var(--turquoise); outline-offset:6px}
+.badges-container .badge:hover{transform:translateY(-3px)}
+.badges-container .badge-icon{position:relative; width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#232530; color:#5a5f73; box-shadow:0 10px 20px -16px rgba(17,24,69,.6); transition:background .2s ease, box-shadow .2s ease, color .2s ease, transform .2s ease}
+.badges-container .badge-icon::before{content:""; position:absolute; inset:-8px; border-radius:inherit; background:linear-gradient(135deg, rgba(142,182,255,.85), rgba(255,194,214,.75)); opacity:0; transition:opacity .25s ease, transform .25s ease}
+.badges-container .badge-icon::after{content:""; position:absolute; inset:2px; border-radius:inherit; background:radial-gradient(circle at 50% 35%, rgba(255,255,255,.45), transparent 65%); opacity:.35; transition:opacity .25s ease}
+.badges-container .badge-icon .icon{width:24px; height:24px; stroke:currentColor; fill:none}
+.badges-container .badge-unlocked .badge-icon .icon{color:#050505; stroke:#050505; filter:drop-shadow(0 0 4px rgba(0,0,0,.35))}
+.badges-container .badge-unlocked .badge-icon .icon path,
+.badges-container .badge-unlocked .badge-icon .icon circle,
+.badges-container .badge-unlocked .badge-icon .icon line,
+.badges-container .badge-unlocked .badge-icon .icon polyline,
+.badges-container .badge-unlocked .badge-icon .icon polygon{stroke:#050505 !important; stroke-width:2.1; fill:none}
+.badges-container .badge-unlocked .badge-icon .icon [fill="currentColor"]{fill:#050505}
+.badges-container .badge-locked .badge-icon .icon{color:#8aa4ff}
+.badges-container .badge-label{font-weight:600; font-size:13px; letter-spacing:.01em; line-height:1.3; color:inherit}
+.badges-container .badge-unlocked{color:#fff7e6}
+.badges-container .badge-unlocked .badge-label{color:#ffe9b3; text-shadow:0 3px 12px rgba(250,200,120,.45)}
+.badges-container .badge-unlocked .badge-icon{background:linear-gradient(135deg,#fceabb 0%,#f8b500 48%,#f39c12 100%); color:#3f2a0a; box-shadow:0 0 16px rgba(248,181,0,.45), 0 14px 28px -18px rgba(247,170,0,.55)}
+.badges-container .badge-unlocked .badge-icon::before{opacity:1; transform:scale(1.06); background:linear-gradient(135deg, rgba(255,236,179,.9), rgba(250,199,92,.85), rgba(255,236,179,.9))}
+.badges-container .badge-unlocked:hover .badge-icon{transform:translateY(-1px); box-shadow:0 28px 48px -26px rgba(78,124,216,.85)}
+.badges-container .badge-locked .badge-icon{background:#1b1e27; color:#4c5163}
+.badges-container .badge-locked .badge-label{color:#6b7086}
+.badges-container .badge-lock{position:absolute; top:6px; right:18px; width:20px; height:20px; border-radius:50%; background:rgba(17,24,69,.78); display:flex; align-items:center; justify-content:center}
+.badges-container .badge-lock .icon{width:14px; height:14px; stroke:currentColor; fill:none}
+.badges-container .badge::after{content:attr(data-tooltip); position:absolute; bottom:calc(100% + 12px); left:50%; transform:translate(-50%,-6px); background:rgba(17,24,69,.94); color:#f7fbff; padding:8px 10px; border-radius:10px; font-size:12px; line-height:1.3; box-shadow:0 18px 30px -18px rgba(17,24,69,.65); width:max-content; max-width:220px; opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease; z-index:6}
+.badges-container .badge::before{content:""; position:absolute; bottom:100%; left:50%; transform:translate(-50%, -6px); border:6px solid transparent; border-top-color:rgba(17,24,69,.94); opacity:0; transition:opacity .18s ease, transform .18s ease; z-index:5}
 .badges-container .badge:hover::after,
 .badges-container .badge:focus::after,
-.badges-container .badge:focus-visible::after{opacity:1; transform:translate(-50%, -10px)}
+.badges-container .badge:focus-visible::after{opacity:1; transform:translate(-50%, -12px)}
 .badges-container .badge:hover::before,
 .badges-container .badge:focus::before,
 .badges-container .badge:focus-visible::before{opacity:1; transform:translate(-50%, -12px)}
+@media (min-width:720px){
+  .badges-container .badge{flex:0 1 calc(25% - 16px)}
+}
+@media (min-width:992px){
+  .badges-container .badge{flex:0 1 calc(16.666% - 16px)}
+}
 
 /* Forum */
 section[data-route="/community"] #forum-list{display:grid; gap:24px}
