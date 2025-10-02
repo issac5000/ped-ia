@@ -629,6 +629,18 @@ section[data-route="/signup"] .card{
   background: transparent !important;
 }
 
+section[data-route="/login"] .login-brand{
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px 24px;
+}
+
+section[data-route="/login"] .login-brand__logo{
+  max-width: 240px;
+  width: clamp(160px, 32vw, 260px);
+  height: auto;
+}
+
 section[data-route="/login"] .page-header{
   margin-bottom: 32px;
 }

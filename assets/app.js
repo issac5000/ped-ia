@@ -75,6 +75,20 @@ const TIMELINE_MILESTONES = [
     try { return new URLSearchParams(query); }
     catch { return null; }
   };
+  const protectedRoutes = ['#/messages', '#/community', '#/suivi'];
+  const getCurrentHash = () => {
+    try {
+      const raw = typeof window?.location?.hash === 'string' ? window.location.hash : '';
+      return raw && raw.length > 0 ? raw : '#/';
+    } catch {
+      return '#/';
+    }
+  };
+  const isProtectedRouteHash = (hashValue) => {
+    const base = typeof hashValue === 'string' && hashValue.length > 0 ? hashValue : '#/';
+    const clean = base.split('?')[0] || '#/';
+    return protectedRoutes.includes(clean);
+  };
   async function withRetry(fn, { retries = 3, timeout = 3000 } = {}) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       let timerId = null;
@@ -188,6 +202,101 @@ const TIMELINE_MILESTONES = [
     if (navBtn) navBtn.setAttribute('aria-expanded', 'false');
     navBackdrop?.classList.remove('open');
   };
+  const appViewRoot = document.getElementById('app-view');
+  const loginViewRoot = document.getElementById('login-view');
+  const siteHeader = $('header.site-header');
+  const siteFooter = $('footer.site-footer');
+  const loginBrandBlock = loginViewRoot?.querySelector('.login-brand') ?? null;
+  const authViewState = {
+    visible: (loginViewRoot && !loginViewRoot.classList.contains('hidden') && !loginViewRoot.hasAttribute('hidden'))
+      ? 'login'
+      : 'app',
+  };
+
+  const LOGIN_DISPLAY_SENTINEL = '__unset__';
+  const stashDisplayForLogin = (element) => {
+    if (!element) return;
+    if (!('loginPrevDisplay' in element.dataset)) {
+      const current = element.style.display;
+      element.dataset.loginPrevDisplay = current === '' ? LOGIN_DISPLAY_SENTINEL : current;
+    }
+    element.style.display = 'none';
+  };
+  const restoreDisplayAfterLogin = (element) => {
+    if (!element) return;
+    if ('loginPrevDisplay' in element.dataset) {
+      const prev = element.dataset.loginPrevDisplay;
+      if (prev === LOGIN_DISPLAY_SENTINEL) {
+        element.style.removeProperty('display');
+      } else {
+        element.style.display = prev;
+      }
+      delete element.dataset.loginPrevDisplay;
+    } else {
+      element.style.removeProperty('display');
+    }
+  };
+  const updateLoginLayout = (isLoginVisible) => {
+    if (isLoginVisible) {
+      stashDisplayForLogin(siteHeader);
+      stashDisplayForLogin(siteFooter);
+      if (loginBrandBlock) {
+        loginBrandBlock.hidden = false;
+      }
+    } else {
+      restoreDisplayAfterLogin(siteHeader);
+      restoreDisplayAfterLogin(siteFooter);
+      if (loginBrandBlock) {
+        loginBrandBlock.hidden = true;
+      }
+    }
+  };
+
+  function showAppView() {
+    updateLoginLayout(false);
+    if (authViewState.visible !== 'app') {
+      if (appViewRoot) {
+        appViewRoot.classList.remove('hidden');
+        appViewRoot.removeAttribute('aria-hidden');
+      }
+      if (loginViewRoot) {
+        loginViewRoot.classList.add('hidden');
+        loginViewRoot.setAttribute('hidden', '');
+        loginViewRoot.setAttribute('aria-hidden', 'true');
+      }
+      authViewState.visible = 'app';
+    }
+  }
+
+  function showLoginView(options = {}) {
+    const { reason } = options || {};
+    const switching = authViewState.visible !== 'login';
+    if (switching) {
+      if (reason === 'no-session') {
+        console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
+      }
+      if (loginViewRoot) {
+        loginViewRoot.classList.remove('hidden');
+        loginViewRoot.removeAttribute('hidden');
+        loginViewRoot.removeAttribute('aria-hidden');
+      }
+      if (appViewRoot) {
+        appViewRoot.classList.add('hidden');
+        appViewRoot.setAttribute('aria-hidden', 'true');
+      }
+      authViewState.visible = 'login';
+    } else if (reason === 'no-session') {
+      console.warn('[Auth] No session detected → showing login screen instead of redirect loop.');
+    }
+    updateLoginLayout(true);
+    if (location.hash !== '#/login') {
+      try { location.hash = '#/login'; }
+      catch {}
+    } else {
+      try { setActiveRoute('#/login'); }
+      catch {}
+    }
+  }
   // Les courbes OMS utilisaient auparavant Chart.js chargé via CDN.
   // Pour éviter les erreurs de chargement (réseau ou CSP),
   // on n'utilise plus de dépendance externe ici.
@@ -214,6 +323,13 @@ const TIMELINE_MILESTONES = [
     if (value == null) return '';
     return String(value).trim().toUpperCase();
   };
+  function hasAnonCode() {
+    try {
+      return !!localStorage.getItem('anonCode');
+    } catch (e) {
+      return false;
+    }
+  }
   const growthStatusState = {
     cache: new Map(),
     pending: new Map(),
@@ -222,7 +338,7 @@ const TIMELINE_MILESTONES = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
-  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
+  const guardedRoutePaths = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
   // Clés utilisées pour le stockage local du modèle de données
   const K = {
     user: 'pedia_user',
@@ -1325,6 +1441,26 @@ const TIMELINE_MILESTONES = [
     supabase = await getSupabaseClient();
     if (!supabase) throw new Error('Supabase client unavailable');
 
+    supabase.auth.getSession().then(({ data }) => {
+      const session = data?.session;
+      const currentHash = getCurrentHash();
+      const requireAuth = isProtectedRouteHash(currentHash);
+
+      if (!session && !hasAnonCode()) {
+        if (requireAuth) {
+          showLoginView({ reason: 'no-session' });
+        } else {
+          showAppView();
+        }
+      } else if (session) {
+        showAppView();
+      } else if (!requireAuth) {
+        showAppView();
+      }
+    }).catch((err) => {
+      console.warn('Initial session check failed', err);
+    });
+
     // Cas robuste : si Google renvoie ?code dans l’URL, on échange immédiatement contre une session
     try {
       const urlNow = new URL(window.location.href);
@@ -1350,6 +1486,7 @@ const TIMELINE_MILESTONES = [
       await ensureProfile(user);
       await syncUserFromSupabase();
       updateHeaderAuth();
+      showAppView();
       // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
       // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
       // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
@@ -1367,6 +1504,19 @@ const TIMELINE_MILESTONES = [
       await ensureProfile(authSession.user);
       await syncUserFromSupabase();
     }
+    const currentHash = getCurrentHash();
+    const requireAuth = isProtectedRouteHash(currentHash);
+    if (authSession?.user || isProfileLoggedIn()) {
+      showAppView();
+    } else if (!hasAnonCode()) {
+      if (requireAuth) {
+        showLoginView({ reason: 'no-session' });
+      } else {
+        showAppView();
+      }
+    } else if (!requireAuth) {
+      showAppView();
+    }
     if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
       location.hash = '#/dashboard';
     }
@@ -1381,6 +1531,19 @@ const TIMELINE_MILESTONES = [
         }
       }
       updateHeaderAuth();
+      const currentHash = getCurrentHash();
+      const requireAuth = isProtectedRouteHash(currentHash);
+      if (session?.user || isProfileLoggedIn()) {
+        showAppView();
+      } else if (!hasAnonCode()) {
+        if (requireAuth) {
+          showLoginView({ reason: 'signed-out' });
+        } else {
+          showAppView();
+        }
+      } else if (!requireAuth) {
+        showAppView();
+      }
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       } else {
@@ -1601,7 +1764,7 @@ const TIMELINE_MILESTONES = [
       window.scrollTo(0, 0);
     }
     const authed = isProfileLoggedIn();
-    if (protectedRoutes.has(path) && !authed) {
+    if (guardedRoutePaths.has(path) && !authed) {
       location.hash = '#/login';
       return;
     }
@@ -2845,6 +3008,7 @@ const TIMELINE_MILESTONES = [
           user_id: null,
           isAnonymous: true,
         });
+        showAppView();
         const currentHash = location?.hash || '';
         if (currentHash === '' || currentHash === '#' || currentHash === '#/login' || currentHash === '#/signup') {
           location.hash = '#/dashboard';
@@ -3004,6 +3168,7 @@ const TIMELINE_MILESTONES = [
       const profile = await fetchAnonProfileByCode(code);
       setActiveProfile({ ...profile, isAnonymous: true });
       authSession = null;
+      showAppView();
       const current = store.get(K.user) || {};
       const pseudo = profile.full_name || current.pseudo || '';
       if (pseudo !== current.pseudo) {
@@ -3095,6 +3260,7 @@ const TIMELINE_MILESTONES = [
     notifChannels = [];
     alert('Déconnecté.');
     updateHeaderAuth();
+    showLoginView({ reason: 'signed-out' });
     location.hash = '#/login';
   });
 
