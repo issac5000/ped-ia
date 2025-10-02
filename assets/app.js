@@ -5198,33 +5198,75 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const lastSleepHours = [...sleepEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
       const ageDays = ageInDays(dobValue);
       const timelineSection = build1000DaysTimeline(safeChild, ageDays);
+      const formatStatValue = (value, suffix = '') => {
+        if (value == null) return '—';
+        const num = Number(value);
+        if (Number.isFinite(num)) {
+          const rounded = Math.round(num * 10) / 10;
+          const str = Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
+          return `${str}${suffix}`;
+        }
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          return trimmed ? `${trimmed}${suffix}` : '—';
+        }
+        return '—';
+      };
+      const formatChip = (label, rawValue) => {
+        const safeLabel = escapeHtml(label);
+        const raw = rawValue == null ? '' : String(rawValue).trim();
+        const isEmpty = !raw || raw === '—';
+        if (isEmpty) {
+          return `${safeLabel} : <span class="chip-value chip-value-empty">—</span>`;
+        }
+        return `${safeLabel} : <strong class="chip-value">${escapeHtml(raw)}</strong>`;
+      };
       if (rid !== renderDashboard._rid) return;
       setDashboardHtml(`
-      <div class="grid-2">
-        <div class="card stack">
-          <div class="hstack">
-            ${safeChild.photo ? `<img src="${safeChild.photo}" alt="${safeChild.firstName}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid var(--border);"/>` :
-            `<div style="width:64px;height:64px;border-radius:12px;border:1px solid var(--border);display:grid;place-items:center;background:#111845;font-weight:600;font-size:24px;color:#fff;">${(safeChild.firstName||'?').slice(0,1).toUpperCase()}</div>`}
-            <div>
-              <h2 style="margin:0">${safeChild.firstName || 'Votre enfant'}</h2>
-              <div class="muted">${safeChild.sex || '—'} • ${ageTxt}</div>
+      <div class="grid-2 child-dashboard-grid">
+        <div class="card child-hero-card">
+          <div class="family-hero-header child-hero-header">
+            ${safeChild.photo
+              ? `<div class="family-avatar child-avatar-photo"><img src="${safeChild.photo}" alt="${escapeHtml(safeChild.firstName || '')}" loading="lazy" decoding="async"/></div>`
+              : `<div class="family-avatar child-avatar-initial">${escapeHtml((safeChild.firstName||'?').slice(0,1).toUpperCase())}</div>`}
+            <div class="family-hero-heading child-hero-heading">
+              <h2 class="child-name">${escapeHtml(safeChild.firstName || 'Votre enfant')}<span class="child-age">${escapeHtml(ageTxt)}</span></h2>
+              <p class="muted child-meta">Sexe : <strong>${escapeHtml(safeChild.sex || '—')}</strong></p>
             </div>
           </div>
-          <div class="hstack">
-            <span class="chip">Allergies: ${context.allergies || '—'}</span>
-            <span class="chip">Mode de garde: ${context.care || '—'}</span>
-            <span class="chip">Langues: ${context.languages || '—'}</span>
-            <span class="chip">Alimentation: ${labelFeedingType(context.feedingType)}</span>
-            <span class="chip">Appétit: ${labelEatingStyle(context.eatingStyle)}</span>
-            <span class="chip">Sommeil: ${summarizeSleep(sleepContext)}</span>
+          <div class="family-hero-stats child-hero-stats" aria-label="Dernières mesures connues">
+            <div class="family-hero-stat child-stat">
+              <span class="family-hero-stat-label">Taille</span>
+              <strong class="family-hero-stat-value">${escapeHtml(formatStatValue(latestH, ' cm'))}</strong>
+            </div>
+            <div class="family-hero-stat child-stat">
+              <span class="family-hero-stat-label">Poids</span>
+              <strong class="family-hero-stat-value">${escapeHtml(formatStatValue(latestW, ' kg'))}</strong>
+            </div>
+            <div class="family-hero-stat child-stat">
+              <span class="family-hero-stat-label">Dents</span>
+              <strong class="family-hero-stat-value">${escapeHtml(formatStatValue(lastTeeth, ''))}</strong>
+            </div>
+            <div class="family-hero-stat child-stat">
+              <span class="family-hero-stat-label">Sommeil</span>
+              <strong class="family-hero-stat-value">${escapeHtml(formatStatValue(lastSleepHours, ' h'))}</strong>
+            </div>
+          </div>
+          <div class="family-hero-chips child-context-pills">
+            <span class="chip chip-soft">${formatChip('Allergies', context.allergies || '—')}</span>
+            <span class="chip chip-soft">${formatChip('Mode de garde', context.care || '—')}</span>
+            <span class="chip chip-soft">${formatChip('Langues', context.languages || '—')}</span>
+            <span class="chip chip-soft">${formatChip('Alimentation', labelFeedingType(context.feedingType))}</span>
+            <span class="chip chip-soft">${formatChip('Appétit', labelEatingStyle(context.eatingStyle))}</span>
+            <span class="chip chip-soft">${formatChip('Sommeil', summarizeSleep(sleepContext))}</span>
           </div>
           <div class="badges-container" id="dashboard-badges" role="list">
             ${renderDashboardBadges(milestones)}
           </div>
-          <div class="hstack">
+          <div class="child-hero-actions">
             <button class="btn btn-primary" type="button" id="btn-toggle-milestones">Afficher les jalons</button>
           </div>
-          <div class="hstack" id="milestones-list" hidden>
+          <div class="hstack child-milestones-list" id="milestones-list" hidden>
             ${milestones.map((v,i)=> v?`<span class="badge done">${DEV_QUESTIONS[i]?.label||''}</span>`: '').join('') || '<span class="muted">Pas encore de badges — cochez des étapes dans le profil.</span>'}
           </div>
         </div>
