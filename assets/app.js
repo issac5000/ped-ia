@@ -5196,7 +5196,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const lastTeeth = [...teethEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
       const ageDays = ageInDays(dobValue);
       const timelineSection = build1000DaysTimeline(safeChild, ageDays);
-      const growthStatusHelper = await renderGrowthStatus(safeChild.id).catch((err) => {
+      let growthStatusHelper = null;
+      const growthStatusPromise = renderGrowthStatus(safeChild.id).catch((err) => {
         console.warn('renderGrowthStatus failed', err);
         return null;
       });
@@ -5223,18 +5224,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         }
         return `${safeLabel} : <strong class="chip-value">${escapeHtml(raw)}</strong>`;
       };
-      const latestGrowthEntry = growthStatusHelper?.entries?.[0] || null;
-      const growthAlert = latestGrowthEntry
-        ? (statusIsAlert(latestGrowthEntry.statusGlobal)
-          || statusIsAlert(latestGrowthEntry.statusHeight)
-          || statusIsAlert(latestGrowthEntry.statusWeight))
-        : false;
-      const growthStatusMessage = latestGrowthEntry
-        ? (growthAlert
-            ? 'À surveiller'
-            : 'Conforme aux normes OMS')
-        : 'Croissance indisponible pour le moment';
-      const growthStatusClass = growthAlert ? 'is-alert' : 'is-ok';
+      let growthStatusMessage = 'Chargement…';
+      let growthStatusClass = 'is-ok';
       if (rid !== renderDashboard._rid) return;
       setDashboardHtml(`
       <div class="grid-2 child-dashboard-grid">
@@ -5340,6 +5331,32 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       `);
 
       setupTimelineScroller(dom);
+
+      growthStatusHelper = await growthStatusPromise;
+      if (rid !== renderDashboard._rid) return;
+      const applyGrowthStatus = (helper) => {
+        const growthValueEl = dom.querySelector('.child-growth-value');
+        const growthStatEl = dom.querySelector('.child-growth-stat');
+        if (!growthValueEl || !growthStatEl) return;
+        let message = 'Croissance indisponible pour le moment';
+        let cssClass = 'is-ok';
+        if (helper) {
+          const entry = helper.entries?.[0] || null;
+          if (entry) {
+            const alert = statusIsAlert(entry.statusGlobal)
+              || statusIsAlert(entry.statusHeight)
+              || statusIsAlert(entry.statusWeight);
+            message = alert ? 'À surveiller' : 'Conforme aux normes OMS';
+            cssClass = alert ? 'is-alert' : 'is-ok';
+          }
+        }
+        growthValueEl.textContent = message;
+        growthValueEl.classList.remove('is-alert', 'is-ok');
+        growthValueEl.classList.add(cssClass);
+        growthStatEl.classList.remove('is-alert', 'is-ok');
+        growthStatEl.classList.add(cssClass);
+      };
+      applyGrowthStatus(growthStatusHelper);
 
     // Section « Profil santé » retirée à la demande
 
