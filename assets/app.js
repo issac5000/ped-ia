@@ -34,12 +34,12 @@ const TIMELINE_MILESTONES = [
 ];
 
 const DASHBOARD_BADGES = [
-  { key: '0_12_sit_unaided', label: 'Stabilité', milestoneLabel: 'Se tient assis sans aide', icon: 'baby' },
-  { key: '0_12_pull_to_stand', label: 'Appuis', milestoneLabel: 'Se met debout en s’appuyant', icon: 'stairs' },
-  { key: '12_24_walk_alone', label: 'Explorateur', milestoneLabel: 'Marche seul', icon: 'footprints' },
-  { key: '12_24_follow_one_step', label: 'Compréhension', milestoneLabel: 'Suit une consigne simple', icon: 'brain' },
-  { key: '24_36_phrase_3_4', label: 'Petit bavard', milestoneLabel: 'Forme des phrases de 3-4 mots', icon: 'message-square' },
-  { key: '24_36_start_toilet_training', label: 'Autonomie', milestoneLabel: 'Commence l’apprentissage de la propreté', icon: 'toilet' }
+  { key: '0_12_sit_unaided', label: 'Stabilité', milestoneLabel: 'Se tient assis sans aide', icon: '🧘' },
+  { key: '0_12_pull_to_stand', label: 'Appuis', milestoneLabel: 'Se met debout en s’appuyant', icon: '🪜' },
+  { key: '12_24_walk_alone', label: 'Explorateur', milestoneLabel: 'Marche seul', icon: '🧭' },
+  { key: '12_24_follow_one_step', label: 'Compréhension', milestoneLabel: 'Suit une consigne simple', icon: '🧠' },
+  { key: '24_36_phrase_3_4', label: 'Petit bavard', milestoneLabel: 'Forme des phrases de 3-4 mots', icon: '💬' },
+  { key: '24_36_start_toilet_training', label: 'Autonomie', milestoneLabel: 'Commence l’apprentissage de la propreté', icon: '🚽' }
 ];
 
 const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) => [question.key, index]));
@@ -8313,14 +8313,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const tooltipLabel = `${badge.label} • ${badge.milestoneLabel}`;
       const stateClass = isUnlocked ? 'badge-unlocked' : 'badge-locked';
       const accessibilityLabel = `Badge ${badge.label} – ${isUnlocked ? 'débloqué' : 'verrouillé'} (${badge.milestoneLabel})`;
-      const iconHref = `#icon-${badge.icon}`;
       const lockIcon = '<div class="badge-lock" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use xlink:href="#icon-lock" href="#icon-lock"></use></svg></div>';
       return `
         <div class="badge ${stateClass}" role="listitem" tabindex="0" data-tooltip="${escapeHtml(tooltipLabel)}" aria-label="${escapeHtml(accessibilityLabel)}">
           <div class="badge-icon" aria-hidden="true">
-            <svg class="icon" viewBox="0 0 24 24">
-              <use xlink:href="${escapeHtml(iconHref)}" href="${escapeHtml(iconHref)}"></use>
-            </svg>
+            <span class="badge-emoji">${escapeHtml(badge.icon)}</span>
           </div>
           <div class="badge-label">${escapeHtml(badge.label)}</div>
           ${isUnlocked ? '' : lockIcon}
