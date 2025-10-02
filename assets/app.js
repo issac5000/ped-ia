@@ -32,6 +32,17 @@ const TIMELINE_MILESTONES = [
   { key: '24_36_phrase_3_4', label: 'Phrases de 3-4 mots', day: 750, range: '26 et 32 mois' },
   { key: '24_36_start_toilet_training', label: 'Apprentissage propreté', day: 840, range: '28 et 36 mois' }
 ];
+
+const DASHBOARD_BADGES = [
+  { key: '0_12_sit_unaided', name: 'Stabilité acquise', milestoneLabel: 'Se tient assis sans aide', icon: '🧘' },
+  { key: '0_12_pull_to_stand', name: 'Premiers appuis', milestoneLabel: 'Se met debout en s’appuyant', icon: '🪜' },
+  { key: '12_24_walk_alone', name: 'Explorateur', milestoneLabel: 'Marche seul', icon: '🧭' },
+  { key: '12_24_follow_one_step', name: 'Compréhension', milestoneLabel: 'Suit une consigne simple', icon: '🧠' },
+  { key: '24_36_phrase_3_4', name: 'Petit bavard', milestoneLabel: 'Forme des phrases de 3-4 mots', icon: '💬' },
+  { key: '24_36_start_toilet_training', name: 'Autonomie', milestoneLabel: 'Commence l’apprentissage de la propreté', icon: '🚽' }
+];
+
+const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) => [question.key, index]));
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 (async () => {
   document.body.classList.remove('no-js');
@@ -5207,6 +5218,9 @@ const TIMELINE_MILESTONES = [
             <span class="chip">Appétit: ${labelEatingStyle(context.eatingStyle)}</span>
             <span class="chip">Sommeil: ${summarizeSleep(sleepContext)}</span>
           </div>
+          <div class="badges-container" id="dashboard-badges" role="list">
+            ${renderDashboardBadges(milestones)}
+          </div>
           <div class="hstack">
             <button class="btn btn-primary" type="button" id="btn-toggle-milestones">Afficher les jalons</button>
           </div>
@@ -8290,6 +8304,24 @@ const TIMELINE_MILESTONES = [
     if (value == null) return '';
     const str = typeof value === 'string' ? value : String(value);
     return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+  }
+  function renderDashboardBadges(milestones){
+    const safeMilestones = Array.isArray(milestones) ? milestones : [];
+    return DASHBOARD_BADGES.map((badge) => {
+      const questionIndex = DEV_QUESTION_INDEX_BY_KEY.get(badge.key);
+      const isUnlocked = typeof questionIndex === 'number' && !!safeMilestones[questionIndex];
+      const tooltipLabel = `${badge.name} • ${badge.milestoneLabel}`;
+      const stateClass = isUnlocked ? 'badge-unlocked' : 'badge-locked';
+      const accessibilityLabel = `Badge ${badge.name} – ${isUnlocked ? 'débloqué' : 'verrouillé'} (${badge.milestoneLabel})`;
+      return `
+        <div class="badge ${stateClass}" role="listitem" tabindex="0" data-tooltip="${escapeHtml(tooltipLabel)}">
+          <span class="badge-icon" aria-hidden="true">${badge.icon}</span>
+          <span class="badge-label">${escapeHtml(badge.name)}</span>
+          ${isUnlocked ? '' : '<span class="badge-lock" aria-hidden="true">🔒</span>'}
+          <span class="sr-only">${escapeHtml(accessibilityLabel)}</span>
+        </div>
+      `;
+    }).join('');
   }
 
   function build1000DaysTimeline(child, ageDays) {
