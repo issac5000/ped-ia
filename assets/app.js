@@ -5186,7 +5186,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const sleepContext = context.sleep && typeof context.sleep === 'object' ? context.sleep : {};
       const growth = safeChild.growth && typeof safeChild.growth === 'object' ? safeChild.growth : {};
       const measurements = Array.isArray(growth.measurements) ? growth.measurements : [];
-      const sleepEntries = Array.isArray(growth.sleep) ? growth.sleep : [];
       const teethEntries = Array.isArray(growth.teeth) ? growth.teeth : [];
       const milestones = Array.isArray(safeChild.milestones) ? safeChild.milestones : [];
       if (rid !== renderDashboard._rid) return;
@@ -5195,9 +5194,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const latestH = [...msAll].reverse().find(m=>Number.isFinite(m.height))?.height;
       const latestW = [...msAll].reverse().find(m=>Number.isFinite(m.weight))?.weight;
       const lastTeeth = [...teethEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.count;
-      const lastSleepHours = [...sleepEntries].sort((a,b)=> (a.month??0)-(b.month??0)).slice(-1)[0]?.hours;
       const ageDays = ageInDays(dobValue);
       const timelineSection = build1000DaysTimeline(safeChild, ageDays);
+      const growthStatusHelper = await renderGrowthStatus(safeChild.id).catch((err) => {
+        console.warn('renderGrowthStatus failed', err);
+        return null;
+      });
       const formatStatValue = (value, suffix = '') => {
         if (value == null) return '—';
         const num = Number(value);
@@ -5221,6 +5223,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         }
         return `${safeLabel} : <strong class="chip-value">${escapeHtml(raw)}</strong>`;
       };
+      const latestGrowthEntry = growthStatusHelper?.entries?.[0] || null;
+      const growthAlert = latestGrowthEntry
+        ? (statusIsAlert(latestGrowthEntry.statusGlobal)
+          || statusIsAlert(latestGrowthEntry.statusHeight)
+          || statusIsAlert(latestGrowthEntry.statusWeight))
+        : false;
+      const growthStatusMessage = latestGrowthEntry
+        ? (growthAlert
+            ? 'À surveiller'
+            : 'Conforme aux normes OMS')
+        : 'Croissance indisponible pour le moment';
+      const growthStatusClass = growthAlert ? 'is-alert' : 'is-ok';
       if (rid !== renderDashboard._rid) return;
       setDashboardHtml(`
       <div class="grid-2 child-dashboard-grid">
@@ -5247,9 +5261,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               <span class="family-hero-stat-label">Dents</span>
               <strong class="family-hero-stat-value">${escapeHtml(formatStatValue(lastTeeth, ''))}</strong>
             </div>
-            <div class="family-hero-stat child-stat">
-              <span class="family-hero-stat-label">Sommeil</span>
-              <strong class="family-hero-stat-value">${escapeHtml(formatStatValue(lastSleepHours, ' h'))}</strong>
+            <div class="family-hero-stat child-stat child-growth-stat ${growthStatusClass}">
+              <span class="family-hero-stat-label">Croissance</span>
+              <strong class="family-hero-stat-value child-growth-value ${growthStatusClass}">${escapeHtml(growthStatusMessage)}</strong>
             </div>
           </div>
           <div class="family-hero-chips child-context-pills">
@@ -5332,7 +5346,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     // Ajouter le bloc d’historique des mises à jour
     try {
       const updates = await getChildUpdates(safeChild.id);
-      const growthStatus = await renderGrowthStatus(safeChild.id).catch((err) => {
+      const growthStatus = growthStatusHelper || await renderGrowthStatus(safeChild.id).catch((err) => {
         console.warn('renderGrowthStatus failed', err);
         return null;
       });
