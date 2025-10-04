@@ -68,35 +68,42 @@ serve(async (req) => {
     return jsonResponse({ error: "Method Not Allowed" }, 405);
   }
   try {
+    const body = await req
+      .clone()
+      .json()
+      .catch(() => {
+        throw new HttpError(400, "Invalid JSON body");
+      });
+
+    const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+    const hasBearer = /^\s*Bearer\s+(.+)$/i.test(authHeader);
+    const hasToken = typeof body?.token === "string" && body.token.trim().length > 0;
+    const hasAnonCode = typeof body?.anonCode === "string" && body.anonCode.trim().length > 0;
+    const hasCode = typeof body?.code === "string" && body.code.trim().length > 0;
+    const hasCodeUnique = typeof body?.code_unique === "string" && body.code_unique.trim().length > 0;
+
     let context: Record<string, unknown> | null = null;
-    try {
-      const candidate = await resolveUserContext(req);
-      if (candidate?.error) {
-        const msg = String(candidate.error.message ?? '');
-        if (/code or token required/i.test(msg)) {
-          context = null;
-        } else {
+    if (hasBearer || hasToken || hasAnonCode || hasCode || hasCodeUnique) {
+      try {
+        const candidate = await resolveUserContext(req);
+        if (candidate?.error) {
           const status = candidate.error.status ?? 400;
           return new Response(JSON.stringify(candidate.error), {
             status,
             headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
           });
         }
-      } else {
         context = candidate;
+      } catch (err) {
+        console.error('[profiles-create-anon] resolveUserContext failed', err);
+        context = null;
       }
-    } catch (err) {
-      console.error('[profiles-create-anon] resolveUserContext failed', err);
-      context = null;
     }
 
     console.log('[resolveUserContext] profiles-create-anon', {
       userId: context?.userId ?? null,
       mode: context?.mode ?? 'public',
       anon: context?.anon ?? false,
-    });
-    const body = await req.json().catch(() => {
-      throw new HttpError(400, "Invalid JSON body");
     });
     if (!supabaseUrl || !serviceKey) {
       throw new HttpError(500, "Server misconfigured");
@@ -115,17 +122,15 @@ serve(async (req) => {
       const response = await supabaseAdmin
         .from("profiles")
         .insert(insertPayload)
-        .select("id,code_unique,full_name,user_id")
+        .select("id,code_unique,full_name")
         .single();
 
       if (!response.error && response.data) {
-        const profile = {
+        return jsonResponse({
           id: response.data.id,
           code_unique: response.data.code_unique,
           full_name: response.data.full_name ?? fullName ?? "",
-          user_id: response.data.user_id ?? null,
-        };
-        return jsonResponse({ success: true, data: { profile } });
+        });
       }
 
       if (shouldRetryDuplicate(response.error)) {
@@ -140,7 +145,7 @@ serve(async (req) => {
       );
     }
 
-    throw new HttpError(500, "Create failed", lastError);
+    throw new HttpError(500, "Create failed after retries", lastError);
   } catch (error) {
     const status = error instanceof HttpError ? error.status || 400 : 500;
     const message = error instanceof HttpError ? error.message : "Server error";
