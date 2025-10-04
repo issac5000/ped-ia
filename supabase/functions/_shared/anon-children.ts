@@ -672,13 +672,25 @@ async function insertChildWelcomeUpdate({ supaUrl, headers, childId, firstName }
 // Charge un profil anonyme à partir de son code unique et refuse les comptes déjà liés à un utilisateur
 async function fetchAnonProfile(supaUrl, serviceKey, code) {
   const headers = { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` };
-  const data = await supabaseRequest(
-    `${supaUrl}/rest/v1/profiles?select=id,code_unique,user_id,full_name&code_unique=eq.${encodeURIComponent(code)}&limit=1`,
-    { headers }
-  );
+  let data;
+  try {
+    data = await supabaseRequest(
+      `${supaUrl}/rest/v1/profiles?select=id,code_unique,full_name,user_id,auth_user_id&code_unique=eq.${encodeURIComponent(code)}&limit=1`,
+      { headers }
+    );
+  } catch (err) {
+    if (err instanceof HttpError && [400, 406].includes(err.status ?? 0)) {
+      data = await supabaseRequest(
+        `${supaUrl}/rest/v1/profiles?select=id,code_unique,full_name,user_id&code_unique=eq.${encodeURIComponent(code)}&limit=1`,
+        { headers }
+      );
+    } else {
+      throw err;
+    }
+  }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new HttpError(404, 'Code non reconnu');
-  if (row.user_id) throw new HttpError(403, 'Accès non autorisé');
+  if (row.user_id || row.auth_user_id) throw new HttpError(403, 'Accès non autorisé');
   return row;
 }
 

@@ -35,6 +35,44 @@ function getSupabaseAdminClient(supaUrl, serviceKey) {
   return cachedAdminClient;
 }
 
+async function fetchProfileIdForAuthUser(supabaseAdmin, authUserId) {
+  if (!supabaseAdmin || !authUserId) return '';
+  const normalizedId = String(authUserId);
+  const attempts = [
+    { column: 'id', value: normalizedId },
+    { column: 'auth_user_id', value: normalizedId },
+    { column: 'user_id', value: normalizedId },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq(attempt.column, attempt.value)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        const code = typeof error.code === 'string' ? error.code : '';
+        if (code === '42703') {
+          continue;
+        }
+        console.log('[resolveUserContext] profile lookup error', { column: attempt.column, error });
+        continue;
+      }
+
+      if (data?.id) {
+        return String(data.id);
+      }
+    } catch (err) {
+      console.log('[resolveUserContext] profile lookup exception', { column: attempt.column, err });
+    }
+  }
+
+  return '';
+}
+
 export async function resolveUserContext(req) {
   const { supaUrl, serviceKey } = getServiceConfig();
   if (!supaUrl || !serviceKey) {
@@ -65,11 +103,16 @@ export async function resolveUserContext(req) {
       console.log('[resolveUserContext] invalid token', { error });
       return { error: { status: 401, message: 'Unauthorized' } };
     }
-    console.log('[resolveUserContext] resolved via token', { userId: data.user.id });
+    const profileId = await fetchProfileIdForAuthUser(supabaseAdmin, data.user.id);
+    if (!profileId) {
+      console.log('[resolveUserContext] profile not found for token', { authUserId: data.user.id });
+      return { error: { status: 403, message: 'Unauthorized' } };
+    }
+    console.log('[resolveUserContext] resolved via token', { profileId, authUserId: data.user.id });
     return {
       supaUrl,
       headers: supabaseHeaders,
-      userId: String(data.user.id),
+      userId: profileId,
       mode: 'token',
       anon: false,
       token,
