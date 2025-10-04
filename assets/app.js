@@ -7,6 +7,7 @@ import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
+import { loadChildById, configureChildLoader } from './utils/children.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -1331,6 +1332,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       growth: { measurements: [], sleep: [], teeth: [] }
     };
   }
+
+  configureChildLoader(() => ({
+    useRemote,
+    isAnonProfile,
+    getDataProxy: () => dataProxy,
+    mapRowToChild,
+    getActiveProfileId,
+    getSupabaseClient: () => supabase,
+    store,
+    keys: K,
+  }));
 
   try {
     supabase = await getSupabaseClient();
@@ -3309,76 +3321,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         if (c) return c;
       }
       return null;
-    };
-
-    const loadChildById = async (id) => {
-      if (!id) return null;
-      if (useRemote()) {
-        try {
-          if (isAnonProfile()) {
-            const childAccess = dataProxy.children();
-            const detail = await childAccess.callAnon('get', { childId: id });
-            const data = detail.child;
-            if (!data) return null;
-            const ch = mapRowToChild(data);
-            if (!ch) return null;
-            const growth = detail.growth || {};
-            (growth.measurements || []).forEach((m) => {
-              const h = Number(m?.height_cm);
-              const w = Number(m?.weight_kg);
-              const heightValid = Number.isFinite(h);
-              const weightValid = Number.isFinite(w);
-              ch.growth.measurements.push({
-                month: m.month,
-                height: heightValid ? h : null,
-                weight: weightValid ? w : null,
-                bmi: heightValid && weightValid && h ? w / Math.pow(h / 100, 2) : null,
-                measured_at: m.created_at,
-              });
-            });
-            (growth.sleep || []).forEach((s) => ch.growth.sleep.push({ month: s.month, hours: s.hours }));
-            (growth.teeth || []).forEach((t) => ch.growth.teeth.push({ month: t.month, count: t.count }));
-            return ch;
-          }
-          const uid = getActiveProfileId();
-          if (!uid) {
-            console.warn('Aucun user_id disponible pour la requête children (loadChildById) — fallback local');
-            const children = store.get(K.children, []);
-            return children.find((c) => c.id === id) || null;
-          }
-          const { data: r } = await supabase.from('children').select('*').eq('id', id).maybeSingle();
-          if (!r) return null;
-          const ch = mapRowToChild(r);
-          if (!ch) return null;
-          try {
-            const [{ data: gm }, { data: gs }, { data: gt }] = await Promise.all([
-              supabase.from('growth_measurements').select('month,height_cm,weight_kg,created_at').eq('child_id', r.id),
-              supabase.from('growth_sleep').select('month,hours').eq('child_id', r.id),
-              supabase.from('growth_teeth').select('month,count').eq('child_id', r.id),
-            ]);
-            (gm || [])
-              .map((m) => {
-                const h = m.height_cm == null ? null : Number(m.height_cm);
-                const w = m.weight_kg == null ? null : Number(m.weight_kg);
-                return {
-                  month: m.month,
-                  height: h,
-                  weight: w,
-                  bmi: w && h ? w / Math.pow(h / 100, 2) : null,
-                  measured_at: m.created_at,
-                };
-              })
-              .forEach((m) => ch.growth.measurements.push(m));
-            (gs || []).forEach((s) => ch.growth.sleep.push({ month: s.month, hours: s.hours }));
-            (gt || []).forEach((t) => ch.growth.teeth.push({ month: t.month, count: t.count }));
-          } catch {}
-          return ch;
-        } catch {
-          return null;
-        }
-      }
-      const children = store.get(K.children, []);
-      return children.find((c) => c.id === id) || null;
     };
 
     const chatKey = (c) => `pedia_ai_chat_${c?.id || 'anon'}`;
