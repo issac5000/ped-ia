@@ -1,5 +1,6 @@
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
+import { callEdgeFunction as callSupabaseEdgeFunction } from './supabase-edge-client.js';
 
 document.body.classList.remove('no-js');
 try {
@@ -182,6 +183,31 @@ async function fetchAnonProfileByCode(rawCode) {
   return profile;
 }
 
+async function resolveAccessToken() {
+  if (session?.access_token) {
+    return session.access_token;
+  }
+  if (supabase?.auth) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token || '';
+      if (token) return token;
+    } catch (err) {
+      console.warn('resolveAccessToken (messages) failed', err);
+    }
+  }
+  return '';
+}
+
+async function callEdgeFunction(name, options = {}) {
+  const { includeAuth = true, ...rest } = options || {};
+  const finalOptions = { ...rest };
+  if (includeAuth) {
+    finalOptions.getAuthToken = resolveAccessToken;
+  }
+  return callSupabaseEdgeFunction(name, finalOptions);
+}
+
 function presentLoginGate(){
   const shell = $('#messages-shell');
   if (shell) shell.hidden = true;
@@ -221,23 +247,16 @@ async function createAnonymousProfile(){
   }
   try {
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
-    const url = '/api/edge/profiles-create-anon';
     const payload = {};
-    console.debug("Calling Supabase function:", url, payload);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    console.debug('Calling Supabase function:', 'profiles-create-anon', payload);
+    const responsePayload = await callEdgeFunction('profiles-create-anon', {
+      body: payload,
+      includeAuth: false,
     });
-    let responsePayload = null;
-    try { responsePayload = await response.json(); } catch (e) { responsePayload = null; }
-    if (!response.ok || !responsePayload?.profile) {
-      const msg = responsePayload?.error || 'Création impossible pour le moment.';
-      const err = new Error(msg);
-      if (responsePayload?.details) err.details = responsePayload.details;
-      throw err;
+    const data = responsePayload?.profile;
+    if (!data) {
+      throw new Error('Création impossible pour le moment.');
     }
-    const data = responsePayload.profile;
     if (status) {
       status.classList.remove('error');
       status.innerHTML = `Ton code unique&nbsp;: <strong>${data.code_unique}</strong>.<br>Garde-le précieusement et saisis-le juste en dessous dans «&nbsp;Se connecter avec un code&nbsp;».`;
@@ -251,7 +270,11 @@ async function createAnonymousProfile(){
     console.error('createAnonymousProfile failed', e);
     if (status) {
       status.classList.add('error');
-      const msg = (e && typeof e.message === 'string' && e.message.trim()) ? e.message : 'Création impossible pour le moment.';
+      let msg = (e && typeof e.message === 'string' && e.message.trim()) ? e.message : 'Création impossible pour le moment.';
+      const isNetwork = e?.cause instanceof TypeError || msg === 'Connexion au service Supabase impossible.';
+      if (isNetwork) {
+        msg = 'Connexion Supabase impossible (réseau ou CORS). Vérifie ta configuration.';
+      }
       status.textContent = msg;
     }
   } finally {
@@ -544,30 +567,16 @@ async function anonMessagesRequest(code_unique, { since = null } = {}) {
   try {
     const payload = { action: 'recent-activity', code };
     if (since) payload.since = since;
-    const url = '/api/edge/anon-messages';
     console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-messages');
-    console.debug("Calling Supabase function:", url, payload);
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    console.debug('Calling Supabase function:', 'anon-messages', payload);
+    const data = await callEdgeFunction('anon-messages', {
+      body: payload,
+      includeAuth: false,
     });
-    console.debug("[anon-messages response]", res);
-    const text = await res.text().catch(() => '');
-    let json = {};
-    if (text) {
-      try { json = JSON.parse(text); } catch {}
-    }
-    if (!res.ok) {
-      const err = new Error(json?.error || 'Service indisponible');
-      if (json?.details) err.details = json.details;
-      throw err;
-    }
-    const data = json?.data || {};
-    const messages = Array.isArray(data.messages) ? data.messages : [];
+    const messages = Array.isArray(data?.messages) ? data.messages : [];
     const senders = data?.senders && typeof data.senders === 'object' ? data.senders : {};
-    if (json?.data?.self?.full_name) {
-      updateAnonFullNameFromSelf(json.data.self, 'anonMessagesRequest');
+    if (data?.self?.full_name) {
+      updateAnonFullNameFromSelf(data.self, 'anonMessagesRequest');
     }
     return { messages, senders };
   } catch (err) {
@@ -634,53 +643,26 @@ async function anonMessagesActionRequest(action, payload = {}) {
   if (!isAnon) throw new Error('Profil anonyme requis');
   const code = getStoredAnonCode();
   if (!code) throw new Error('Code unique manquant');
-  const url = '/api/edge/anon-messages';
   const payloadToSend = { action, code, ...payload };
   console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-messages');
-  console.debug("Calling Supabase function:", url, payloadToSend);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payloadToSend),
+  console.debug('Calling Supabase function:', 'anon-messages', payloadToSend);
+  return callEdgeFunction('anon-messages', {
+    body: payloadToSend,
+    includeAuth: false,
   });
-  console.debug("[anon-messages response]", res);
-  const text = await res.text().catch(() => '');
-  let json = null;
-  if (text) {
-    try { json = JSON.parse(text); } catch {}
-  }
-  if (!res.ok) {
-    const err = new Error(json?.error || 'Service indisponible');
-    if (json?.details) err.details = json.details;
-    throw err;
-  }
-  return json || {};
 }
 
 async function anonCommunityRequest(action, payload = {}) {
   if (!isAnon) throw new Error('Profil anonyme requis');
   const code = getStoredAnonCode();
   if (!code) throw new Error('Code unique manquant');
-  const url = '/api/edge/anon-community';
   const payloadToSend = { action, code, ...payload };
   console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', 'anon-community');
-  console.debug("Calling Supabase function:", url, payloadToSend);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payloadToSend),
+  console.debug('Calling Supabase function:', 'anon-community', payloadToSend);
+  return callEdgeFunction('anon-community', {
+    body: payloadToSend,
+    includeAuth: false,
   });
-  const text = await response.text().catch(() => '');
-  let json = null;
-  if (text) {
-    try { json = JSON.parse(text); } catch {}
-  }
-  if (!response.ok) {
-    const err = new Error(json?.error || 'Service indisponible');
-    if (json?.details) err.details = json.details;
-    throw err;
-  }
-  return json || {};
 }
 
 // Helpers pour compter les messages non lus par expéditeur
@@ -1108,33 +1090,14 @@ async function loadConversations(){
   let profiles = [];
   if(ids.length){
     try {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      const token = s?.access_token || '';
-      const url = '/api/edge/profiles-by-ids';
       const payload = { ids };
       console.debug('[profiles-by-ids request]', payload);
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      console.debug('[profiles-by-ids response]', r);
-      if (r.ok) {
-        const j = await r.json();
-        const profilesData = j?.data?.profiles || [];
-        console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profilesData);
-        profiles = profilesData
-          .map((p) => normalizeGoogleProfile(p, p?.id))
-          .filter(Boolean);
-      } else {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id,full_name')
-          .in('id', ids);
-        profiles = (Array.isArray(profs) ? profs : [])
-          .map((p) => normalizeGoogleProfile(p, p?.id))
-          .filter(Boolean);
-      }
+      const result = await callEdgeFunction('profiles-by-ids', { body: payload });
+      const profilesData = Array.isArray(result?.profiles) ? result.profiles : [];
+      console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profilesData);
+      profiles = profilesData
+        .map((p) => normalizeGoogleProfile(p, p?.id))
+        .filter(Boolean);
     } catch (e) {
       const { data: profs } = await supabase
         .from('profiles')
@@ -1205,33 +1168,14 @@ async function ensureConversation(otherId){
   }
   let profile = { id, full_name:'' };
   try {
-    const { data: { session: s } } = await supabase.auth.getSession();
-    const token = s?.access_token || '';
-    const url = '/api/edge/profiles-by-ids';
     const payload = { ids: [id] };
     console.debug('[profiles-by-ids request]', payload);
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(payload)
-    });
-    console.debug('[profiles-by-ids response]', r);
-    if (r.ok) {
-      const j = await r.json();
-      const profiles = j?.data?.profiles || [];
-      console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profiles);
-      const p = (profiles||[])[0];
-      const normalized = normalizeGoogleProfile(p, p?.id ?? id);
-      if (normalized) profile = normalized;
-    } else {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id,full_name')
-        .eq('id', id)
-        .maybeSingle();
-      const normalized = normalizeGoogleProfile(data, data?.id ?? id);
-      if (normalized) profile = normalized;
-    }
+    const result = await callEdgeFunction('profiles-by-ids', { body: payload });
+    const profiles = Array.isArray(result?.profiles) ? result.profiles : [];
+    console.debug('[GoogleAuth] Profiles-by-ids renvoyés:', profiles);
+    const p = (profiles||[])[0];
+    const normalized = normalizeGoogleProfile(p, p?.id ?? id);
+    if (normalized) profile = normalized;
   } catch {
     const { data } = await supabase
       .from('profiles')
@@ -1253,22 +1197,9 @@ async function deleteConversation(otherId){
     if (isAnon) {
       await anonMessagesActionRequest('delete-conversation', { otherId: id });
     } else {
-      const url = '/api/edge/messages-delete-conversation';
       const payload = { otherId: id };
-      console.debug("Calling Supabase function:", url, payload);
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`
-        },
-        body: JSON.stringify(payload)
-      });
-      if(!r.ok){
-        let info = '';
-        try { const j = await r.json(); info = j?.error ? `${j.error}${j.details?` - ${j.details}`:''}` : (await r.text()); } catch(e){}
-        throw new Error(`HTTP ${r.status}${info?`: ${info}`:''}`);
-      }
+      console.debug('Calling Supabase function:', 'messages-delete-conversation', payload);
+      await callEdgeFunction('messages-delete-conversation', { body: payload });
     }
   } catch (e){
     console.error('delete conv', e);

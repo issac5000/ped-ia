@@ -60,16 +60,43 @@ serve(async (req) => {
       throw new HttpError(400, "replyId required");
     }
     const payload = { reply_id: replyId, user_id: context.userId };
-    await supabaseRequest(
-      `${context.supaUrl}/rest/v1/forum_reply_likes`,
-      {
-        method: "POST",
-        headers: { ...context.headers, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
-        body: JSON.stringify(payload),
-      },
-    );
+    let alreadyLiked = false;
+    try {
+      await supabaseRequest(
+        `${context.supaUrl}/rest/v1/forum_reply_likes`,
+        {
+          method: "POST",
+          headers: { ...context.headers, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify(payload),
+        },
+      );
+    } catch (err) {
+      if (err instanceof HttpError) {
+        const detailObject = typeof err.details === 'object' && err.details ? err.details : {};
+        const detailMessage =
+          typeof err.details === 'string'
+            ? err.details
+            : typeof detailObject.message === 'string'
+            ? detailObject.message
+            : '';
+        const detailCode =
+          typeof detailObject.code === 'string' ? detailObject.code : '';
+        if (
+          err.status === 409
+          || detailCode === '23505'
+          || /duplicate key/i.test(detailMessage)
+        ) {
+          alreadyLiked = true;
+          console.log('[likes-add] duplicate like ignored', { replyId, userId: context.userId });
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
     const count = await fetchLikeCount(context.supaUrl, context.headers, replyId);
-    return jsonResponse({ success: true, data: { count, liked: true } });
+    return jsonResponse({ success: true, data: { count, liked: true, alreadyLiked } });
   } catch (error) {
     const status = error instanceof HttpError ? error.status || 400 : 500;
     const message = error instanceof HttpError ? error.message : "Server error";

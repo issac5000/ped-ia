@@ -8,6 +8,7 @@ import { getSupabaseClient } from './supabase-client.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
 import { loadChildById, configureChildLoader } from './utils/children.js';
+import { callEdgeFunction as callSupabaseEdgeFunction } from './supabase-edge-client.js';
 
 const TIMELINE_STAGES = [
   { label: 'Naissance', day: 0, subtitle: '0 j' },
@@ -1096,52 +1097,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   restoreAnonSession();
 
-  const EDGE_FUNCTION_BASE_URL = '/api/edge';
-
-  function resolveEdgeFunctionBase() {
-    if (typeof window !== 'undefined') {
-      const envUrl = window.__SUPABASE_ENV__?.url;
-      if (typeof envUrl === 'string' && envUrl.trim()) {
-        const trimmed = envUrl.trim().replace(/\/+$/, '');
-        if (/\/functions\/v1$/i.test(trimmed)) {
-          return trimmed;
-        }
-        if (trimmed === '/api/edge') {
-          return trimmed;
-        }
-        return `/api/edge`;
-      }
-    }
-    return EDGE_FUNCTION_BASE_URL;
-  }
-
-  async function callEdgeFunction(endpoint, { method = 'POST', body, includeAuth = true, headers = {} } = {}) {
-    const finalHeaders = { ...headers };
-    if (body !== undefined && finalHeaders['Content-Type'] == null) {
-      finalHeaders['Content-Type'] = 'application/json';
-    }
+  async function callEdgeFunction(name, options = {}) {
+    const { includeAuth = true, ...rest } = options || {};
+    const finalOptions = { ...rest };
     if (includeAuth) {
-      const token = await resolveAccessToken();
-      if (token) {
-        finalHeaders['Authorization'] = `Bearer ${token}`;
-      }
+      finalOptions.getAuthToken = resolveAccessToken;
     }
-    const requestInit = {
-      method,
-      headers: finalHeaders,
-    };
-    if (body !== undefined) {
-      requestInit.body = JSON.stringify(body);
-    }
-    const response = await fetch(`${resolveEdgeFunctionBase()}/${endpoint}`, requestInit);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.success) {
-      const errorMessage = payload?.error || 'Service indisponible';
-      const err = new Error(errorMessage);
-      if (payload?.details != null) err.details = payload.details;
-      throw err;
-    }
-    return payload.data ?? null;
+    return callSupabaseEdgeFunction(name, finalOptions);
   }
 
   async function callAnonEdgeFunction(slug, options = {}) {
@@ -1218,12 +1180,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     return data || {};
   }
 
-  anonChildRequest.__anonEndpoint = '/api/edge/anon-children';
+  anonChildRequest.__anonEndpoint = 'supabase-functions://anon-children';
   anonChildRequest.__expectsCode = true;
   anonChildRequest.__normalizePayload = normalizeAnonChildPayload;
-  anonParentRequest.__anonEndpoint = '/api/edge/anon-parent-updates';
+  anonParentRequest.__anonEndpoint = 'supabase-functions://anon-parent-updates';
   anonParentRequest.__expectsCode = true;
-  anonFamilyRequest.__anonEndpoint = '/api/edge/anon-family';
+  anonFamilyRequest.__anonEndpoint = 'supabase-functions://anon-family';
   anonFamilyRequest.__expectsCode = true;
 
   dataProxy = createDataProxy({
@@ -2999,7 +2961,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       console.error('createAnonymousProfile failed', e);
       if (status) {
         status.classList.add('error');
-        const msg = (e && typeof e.message === 'string' && e.message.trim()) ? e.message : 'Création impossible pour le moment.';
+        let msg = (e && typeof e.message === 'string' && e.message.trim()) ? e.message : 'Création impossible pour le moment.';
+        const isNetworkError = e?.cause instanceof TypeError || msg === 'Connexion au service Supabase impossible.';
+        if (isNetworkError) {
+          msg = 'Connexion Supabase impossible (réseau ou CORS). Vérifie ta configuration.';
+        }
         status.textContent = msg;
       }
     } finally {

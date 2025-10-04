@@ -1,0 +1,5 @@
+{
+  "restUrl": "https://<SUPABASE_PROJECT_ID>.supabase.co/rest/v1",
+  "functionsUrl": "https://<SUPABASE_PROJECT_ID>.supabase.co/functions/v1",
+  "anonKey": "<SUPABASE_ANON_KEY>"
+}

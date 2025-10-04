@@ -2,9 +2,14 @@ let cache = null;
 let loadingPromise = null;
 
 function normalize(raw = {}) {
-  const url = raw.url || raw.SUPABASE_URL || '';
+  const restUrl = raw.restUrl || raw.url || raw.SUPABASE_REST_URL || raw.SUPABASE_URL || '';
+  const functionsUrl = raw.functionsUrl || raw.SUPABASE_FUNCTIONS_URL || '';
   const anonKey = raw.anonKey || raw.SUPABASE_ANON_KEY || '';
-  return { url, anonKey };
+  return {
+    restUrl,
+    functionsUrl,
+    anonKey,
+  };
 }
 
 function remember(env) {
@@ -15,8 +20,8 @@ function remember(env) {
   return cache;
 }
 
-export function setSupabaseEnv(url, anonKey) {
-  return remember({ url, anonKey });
+export function setSupabaseEnv(restUrl, anonKey, functionsUrl = '') {
+  return remember({ restUrl, anonKey, functionsUrl });
 }
 
 async function fetchEnvCandidate(src) {
@@ -32,20 +37,20 @@ async function fetchEnvCandidate(src) {
 }
 
 export async function loadSupabaseEnv() {
-  if (cache && cache.url && cache.anonKey) return cache;
+  if (cache && cache.restUrl && cache.anonKey) return cache;
   if (typeof window !== 'undefined' && window.__SUPABASE_ENV__) {
     return remember(window.__SUPABASE_ENV__);
   }
   if (!loadingPromise) {
     loadingPromise = (async () => {
       let loaded = false;
-      const sources = ['/assets/supabase-env.json'];
+      const sources = [`/assets/supabase-env.json?ts=${Date.now()}`];
       for (const src of sources) {
         const candidate = await fetchEnvCandidate(src);
         if (!candidate) continue;
         remember(candidate);
         loaded = true;
-        if (candidate.url && candidate.anonKey) break;
+        if (candidate.restUrl && candidate.anonKey) break;
       }
       if (!loaded) {
         console.warn('supabase-env.json manquant, vérifiez vos assets');

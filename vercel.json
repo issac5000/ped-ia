@@ -1,5 +1,8 @@
 {
   "version": 2,
+  "rewrites": [
+    { "source": "/api/edge/(.*)", "destination": "https://myrwcjurblksypvekuzb.supabase.co/functions/v1/$1" }
+  ],
   "routes": [
     { "src": "/api/edge/(.*)", "dest": "/api/edge/[...slug].js" }
   ]

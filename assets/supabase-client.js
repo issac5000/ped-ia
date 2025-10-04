@@ -155,14 +155,27 @@ export async function getSupabaseClient(options = {}) {
   if (!initPromise) {
     initPromise = (async () => {
       const env = await loadSupabaseEnv();
-      if (!env?.url || !env?.anonKey) {
+      if (!env?.restUrl || !env?.anonKey) {
         throw new Error('Missing Supabase environment variables');
       }
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       if (typeof createClient !== 'function') {
         throw new Error('Supabase SDK unavailable');
       }
-      const client = createClient(env.url, env.anonKey, buildClientOptions(options));
+      const normalizedRestUrl = env.restUrl?.trim();
+      const baseUrl = normalizedRestUrl?.replace(/\/?rest\/v1\/?$/i, '') || normalizedRestUrl;
+      const builtOptions = buildClientOptions(options);
+      const client = createClient(baseUrl, env.anonKey, {
+        ...builtOptions,
+        global: {
+          ...(builtOptions.global || {}),
+          headers: {
+            ...(builtOptions.global?.headers || {}),
+            apikey: env.anonKey,
+          },
+        },
+      });
+      client.restUrl = normalizedRestUrl || baseUrl;
       cachedClient = client;
       setupSessionManagement(client);
       return client;

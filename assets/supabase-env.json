@@ -1,4 +1,5 @@
 {
-  "url": "https://myrwcjurblksypvekuzb.supabase.co",
+  "restUrl": "https://myrwcjurblksypvekuzb.supabase.co/rest/v1",
+  "functionsUrl": "https://myrwcjurblksypvekuzb.supabase.co/functions/v1",
   "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15cndjanVyYmxrc3lwdmVrdXpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczNjE4NjksImV4cCI6MjA3MjkzNzg2OX0.WOXYXA1GEFkqkLj_Str4yK4by7kmpwg9-KCBGPkDDQI"
 }
