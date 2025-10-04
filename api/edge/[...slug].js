@@ -19,26 +19,13 @@ export default async function handler(req, res) {
     return res.json({ error: 'Missing target function slug' });
   }
 
-  const rawBaseUrl = process.env.SUPABASE_EDGE_FUNCTION_URL
-    || process.env.SUPABASE_URL
-    || process.env.NEXT_PUBLIC_SUPABASE_URL
-    || 'https://myrwcjurblksypvekuzb.supabase.co';
-  const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+  const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
   const isAnon = targetPath.startsWith('anon-');
-  const anonKey = process.env.SUPABASE_ANON_KEY
-    || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    || '';
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    || process.env.SUPABASE_SERVICE_KEY
-    || '';
-  const chosenKey = isAnon ? anonKey : serviceKey;
+  const chosenKey = isAnon
+    ? process.env.SUPABASE_ANON_KEY || ''
+    : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const mode = isAnon ? 'ANON' : 'SERVICE';
-  if (!chosenKey) {
-    console.error('Proxying Supabase Edge request failed: missing credentials', { mode, targetPath });
-    res.status(500).setHeader('Access-Control-Allow-Origin', '*');
-    return res.json({ error: 'Supabase credentials manquantes', details: `Missing ${mode === 'ANON' ? 'anon' : 'service'} key` });
-  }
   const headers = {
     'Content-Type': 'application/json',
     apikey: chosenKey,
