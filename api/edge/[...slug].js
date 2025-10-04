@@ -20,7 +20,35 @@ export default async function handler(req, res) {
   }
 
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
-  const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
+  const method = (req.method || 'GET').toUpperCase();
+
+  const rawQuery = req.query || {};
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(rawQuery)) {
+    if (key === 'slug') continue;
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item != null) searchParams.append(key, String(item));
+      });
+    } else if (value != null) {
+      searchParams.append(key, String(value));
+    }
+  }
+  if (method !== 'GET') {
+    searchParams.delete('columns');
+  }
+
+  let targetUrl;
+  if (targetPath.startsWith('rest/')) {
+    targetUrl = new URL(`${baseUrl}/${targetPath}`);
+  } else {
+    targetUrl = new URL(`${baseUrl}/functions/v1/${targetPath}`);
+  }
+  const paramsString = searchParams.toString();
+  if (paramsString) {
+    targetUrl.search = paramsString;
+  }
+
   const isAnon = targetPath.startsWith('anon-');
   const chosenKey = isAnon
     ? process.env.SUPABASE_ANON_KEY || ''
@@ -45,7 +73,7 @@ export default async function handler(req, res) {
 
   console.log('Proxying Supabase Edge request', { slug: targetPath, mode, headers: Object.keys(headers) });
   console.log('Edge fetch debug', {
-    targetUrl,
+    targetUrl: targetUrl.toString(),
     headers: {
       apikey: headers.apikey ? `${headers.apikey.slice(0, 10)}...` : 'missing',
       Authorization: headers.Authorization ? headers.Authorization.split(' ')[0] : 'missing',
@@ -59,15 +87,15 @@ export default async function handler(req, res) {
     slug: targetPath,
     mode,
     keyPreview: keyPreview ? `${keyPreview}...` : '[empty]',
-    method: req.method,
+    method,
     headers: safeHeaders,
   });
 
   try {
-    const response = await fetch(targetUrl, {
-      method: req.method,
+    const response = await fetch(targetUrl.toString(), {
+      method,
       headers,
-      body: req.method !== 'GET' ? JSON.stringify(req.body || {}) : undefined,
+      body: method !== 'GET' ? JSON.stringify(req.body || {}) : undefined,
     });
 
     const text = await response.text();
