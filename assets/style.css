@@ -3632,6 +3632,81 @@ section[data-route="/community"] .author-parent-badge__icon{
 section[data-route="/community"] .author-parent-badge__label{
   white-space:nowrap;
 }
+
+.parent-preview-card{
+  position:fixed;
+  display:none;
+  z-index:4200;
+  min-width:220px;
+  max-width:min(280px, calc(100vw - 32px));
+  padding:16px 20px;
+  border-radius:20px;
+  background:linear-gradient(135deg, rgba(16,28,46,.94), rgba(36,18,48,.92));
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 24px 48px rgba(0,0,0,.55);
+  color:#e2e9ff;
+  opacity:0;
+  transform:translateY(10px) scale(.98);
+  transition:opacity .18s ease, transform .18s ease;
+  pointer-events:none;
+  backdrop-filter:saturate(135%) blur(12px);
+  -webkit-backdrop-filter:saturate(135%) blur(12px);
+}
+.parent-preview-card.is-active{
+  display:block;
+}
+.parent-preview-card.is-visible{
+  opacity:1;
+  transform:translateY(0) scale(1);
+  pointer-events:auto;
+}
+.parent-preview-card__header{
+  margin-bottom:12px;
+}
+.parent-preview-card__badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 10px;
+  border-radius:999px;
+  background:rgba(255,255,255,.16);
+  border:1px solid rgba(255,255,255,.24);
+  font-size:12px;
+  font-weight:600;
+  color:#ffffff;
+}
+.parent-preview-card__badge-icon{font-size:15px; line-height:1;}
+.parent-preview-card__body{
+  display:grid;
+  gap:6px;
+  font-size:13px;
+  color:rgba(226,233,255,.86);
+}
+.parent-preview-card__name{
+  margin:0;
+  font-size:15px;
+  color:#ffffff;
+}
+.parent-preview-card__body p{
+  margin:0;
+}
+.parent-preview-card__loading{
+  font-size:13px;
+  color:rgba(226,233,255,.72);
+}
+.parent-preview-card__loading::after{
+  content:' •';
+  animation:parent-preview-ellipsis 1.2s infinite;
+}
+@keyframes parent-preview-ellipsis{
+  0%{opacity:0;}
+  50%{opacity:1;}
+  100%{opacity:0;}
+}
+@media(prefers-reduced-motion: reduce){
+  .parent-preview-card{transition:none;}
+  .parent-preview-card__loading::after{animation:none; content:'';}
+}
 section[data-route="/community"] .topic-entry__meta time{
   font-size:12px;
   letter-spacing:.02em;

@@ -1129,6 +1129,30 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     return !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
   };
 
+  async function loadParentPreview(profileId) {
+    const normalizedId = profileId != null ? String(profileId).trim() : '';
+    if (!normalizedId) return null;
+    if (!useRemote() || isAnonProfile()) return null;
+    try {
+      const client = await ensureSupabaseReady();
+      if (!client?.rpc) return null;
+      const { data, error } = await client.rpc('get_parent_preview', { pid: normalizedId });
+      if (error) {
+        console.warn('loadParentPreview rpc failed', error);
+        return null;
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        return data[0] || null;
+      }
+      if (data && typeof data === 'object') {
+        return data;
+      }
+    } catch (err) {
+      console.warn('loadParentPreview failed', err);
+    }
+    return null;
+  }
+
   function normalizeParentBadgeSummary(badge) {
     if (!badge || typeof badge !== 'object') return null;
     const rawLevel = badge.level ?? badge.badge_level;
@@ -7311,6 +7335,294 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
   const communityLikes = new Map();
+  const parentPreviewCache = new Map();
+  const parentPreviewFetches = new Map();
+  let parentPreviewCard = null;
+  let parentPreviewHideTimer = null;
+  let parentPreviewRequestToken = 0;
+  let parentPreviewLastPointerType = null;
+  let parentPreviewGlobalHandlersBound = false;
+  const parentPreviewState = {
+    profileId: null,
+    anchor: null,
+    isLoading: false,
+  };
+
+  const buildParentPreviewHtml = (row) => {
+    if (!row || typeof row !== 'object') return '';
+    const badgeIconRaw = row.badge_icon ?? row.badgeIcon ?? '';
+    const badgeNameRaw = row.badge_name ?? row.badgeName ?? '';
+    const fullNameRaw = row.full_name ?? row.fullName ?? 'Parent de la communauté';
+    const childCountRaw = Number(row.number_of_children ?? row.children_count ?? row.child_count);
+    const updatesCountRaw = Number(row.total_updates ?? row.totalUpdates ?? row.updates_total);
+    const badgeIcon = badgeIconRaw ? `<span class="parent-preview-card__badge-icon" aria-hidden="true">${escapeHtml(badgeIconRaw)}</span>` : '';
+    const badgeName = badgeNameRaw ? `<span class="parent-preview-card__badge-label">${escapeHtml(badgeNameRaw)}</span>` : '';
+    const childLabel = Number.isFinite(childCountRaw)
+      ? `${childCountRaw} enfant${childCountRaw === 1 ? '' : 's'}`
+      : 'Nombre d’enfants non renseigné';
+    const updatesLabel = Number.isFinite(updatesCountRaw)
+      ? `${updatesCountRaw} mise${updatesCountRaw === 1 ? '' : 's'} à jour`
+      : 'Mises à jour non renseignées';
+    const lastUpdate = formatParentPreviewDate(row.last_update ?? row.lastUpdate ?? null);
+    const lastUpdateLabel = lastUpdate ? `Dernière activité : ${escapeHtml(lastUpdate)}` : 'Dernière activité : —';
+    const badgeBlock = (badgeIcon || badgeName)
+      ? `<span class="parent-preview-card__badge">${badgeIcon}${badgeName}</span>`
+      : '';
+    const headerHtml = badgeBlock
+      ? `<div class="parent-preview-card__header">${badgeBlock}</div>`
+      : '';
+    return `
+      ${headerHtml}
+      <div class="parent-preview-card__body">
+        <p class="parent-preview-card__name"><strong>${escapeHtml(fullNameRaw)}</strong></p>
+        <p>${escapeHtml(childLabel)}</p>
+        <p>${escapeHtml(updatesLabel)}</p>
+        <p>${lastUpdateLabel}</p>
+      </div>
+    `.trim();
+  };
+
+  const formatParentPreviewDate = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    try {
+      return date.toLocaleDateString('fr-FR', { dateStyle: 'medium' });
+    } catch {
+      return date.toLocaleDateString('fr-FR');
+    }
+  };
+
+  const ensureParentPreviewCard = () => {
+    if (parentPreviewCard && document.body.contains(parentPreviewCard)) {
+      return parentPreviewCard;
+    }
+    const card = document.createElement('div');
+    card.className = 'parent-preview-card';
+    card.dataset.parentPreviewCard = '1';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-live', 'polite');
+    card.addEventListener('pointerenter', () => {
+      clearTimeout(parentPreviewHideTimer);
+      parentPreviewHideTimer = null;
+    });
+    card.addEventListener('pointerleave', () => {
+      scheduleParentPreviewHide();
+    });
+    card.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+    if (!parentPreviewGlobalHandlersBound) {
+      document.addEventListener('pointerdown', (event) => {
+        if (!parentPreviewCard || !parentPreviewCard.classList.contains('is-active')) return;
+        const target = event.target;
+        if (parentPreviewCard.contains(target)) return;
+        if (target && typeof target.closest === 'function' && target.closest('[data-parent-profile]')) return;
+        hideParentPreview();
+      }, true);
+      window.addEventListener('resize', () => {
+        if (parentPreviewCard && parentPreviewCard.classList.contains('is-active') && parentPreviewState.anchor) {
+          positionParentPreview(parentPreviewState.anchor, parentPreviewCard);
+        }
+      });
+      parentPreviewGlobalHandlersBound = true;
+    }
+    parentPreviewCard = card;
+    document.body.appendChild(card);
+    return card;
+  };
+
+  const scheduleParentPreviewHide = (delay = 120) => {
+    clearTimeout(parentPreviewHideTimer);
+    parentPreviewHideTimer = window.setTimeout(() => {
+      hideParentPreview();
+    }, delay);
+  };
+
+  const hideParentPreview = (immediate = false) => {
+    clearTimeout(parentPreviewHideTimer);
+    parentPreviewHideTimer = null;
+    parentPreviewRequestToken += 1;
+    parentPreviewState.profileId = null;
+    parentPreviewState.anchor = null;
+    parentPreviewState.isLoading = false;
+    parentPreviewLastPointerType = null;
+    if (!parentPreviewCard) return;
+    parentPreviewCard.dataset.profileId = '';
+    if (immediate) {
+      parentPreviewCard.classList.remove('is-visible');
+      parentPreviewCard.classList.remove('is-active');
+      parentPreviewCard.innerHTML = '';
+      return;
+    }
+    if (!parentPreviewCard.classList.contains('is-active')) return;
+    parentPreviewCard.classList.remove('is-visible');
+    const handle = () => {
+      parentPreviewCard.classList.remove('is-active');
+      parentPreviewCard.innerHTML = '';
+      parentPreviewCard.removeEventListener('transitionend', handle);
+    };
+    parentPreviewCard.addEventListener('transitionend', handle);
+    window.setTimeout(() => {
+      if (!parentPreviewCard?.classList.contains('is-visible')) {
+        handle();
+      }
+    }, 220);
+  };
+
+  const positionParentPreview = (anchor, card) => {
+    if (!anchor || !card) return;
+    const anchorRect = anchor.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!anchorRect.width && !anchorRect.height) return;
+    card.style.top = '0px';
+    card.style.left = '0px';
+    const cardRect = card.getBoundingClientRect();
+    const margin = 12;
+    let top = anchorRect.bottom + margin;
+    if (top + cardRect.height > viewportHeight - margin) {
+      top = anchorRect.top - cardRect.height - margin;
+    }
+    top = Math.max(margin, Math.min(top, Math.max(margin, viewportHeight - cardRect.height - margin)));
+    let left = anchorRect.left + (anchorRect.width / 2) - (cardRect.width / 2);
+    const maxLeft = viewportWidth - cardRect.width - margin;
+    left = Math.max(margin, Math.min(left, maxLeft < margin ? margin : maxLeft));
+    card.style.top = `${Math.round(top)}px`;
+    card.style.left = `${Math.round(left)}px`;
+  };
+
+  const requestParentPreview = async (profileId) => {
+    const key = profileId;
+    if (!key) return null;
+    if (parentPreviewCache.has(key)) {
+      return parentPreviewCache.get(key);
+    }
+    if (parentPreviewFetches.has(key)) {
+      return parentPreviewFetches.get(key);
+    }
+    const promise = loadParentPreview(key)
+      .then((data) => {
+        if (data) parentPreviewCache.set(key, data);
+        return data;
+      })
+      .finally(() => {
+        parentPreviewFetches.delete(key);
+      });
+    parentPreviewFetches.set(key, promise);
+    return promise;
+  };
+
+  const showParentPreview = async (anchor, profileId) => {
+    const normalizedId = profileId != null ? String(profileId).trim() : '';
+    if (!normalizedId) return;
+    if (!useRemote() || isAnonProfile()) return;
+    clearTimeout(parentPreviewHideTimer);
+    parentPreviewHideTimer = null;
+    const card = ensureParentPreviewCard();
+    const cached = parentPreviewCache.get(normalizedId) || null;
+    if (
+      parentPreviewState.profileId === normalizedId
+      && card.classList.contains('is-active')
+      && !parentPreviewState.isLoading
+    ) {
+      parentPreviewState.anchor = anchor || parentPreviewState.anchor;
+      positionParentPreview(parentPreviewState.anchor || anchor, card);
+      card.classList.add('is-visible');
+      return;
+    }
+    if (cached) {
+      parentPreviewState.profileId = normalizedId;
+      parentPreviewState.anchor = anchor || null;
+      parentPreviewState.isLoading = false;
+      card.dataset.profileId = normalizedId;
+      card.innerHTML = buildParentPreviewHtml(cached);
+      card.classList.add('is-active');
+      card.classList.remove('is-visible');
+      positionParentPreview(parentPreviewState.anchor, card);
+      requestAnimationFrame(() => {
+        if (parentPreviewState.profileId === normalizedId) {
+          card.classList.add('is-visible');
+        }
+      });
+      return;
+    }
+    parentPreviewState.profileId = normalizedId;
+    parentPreviewState.anchor = anchor || null;
+    parentPreviewState.isLoading = true;
+    card.dataset.profileId = normalizedId;
+    card.innerHTML = '<div class="parent-preview-card__loading">Chargement…</div>';
+    card.classList.add('is-active');
+    card.classList.remove('is-visible');
+    positionParentPreview(parentPreviewState.anchor, card);
+    requestAnimationFrame(() => {
+      if (parentPreviewState.profileId === normalizedId) {
+        card.classList.add('is-visible');
+      }
+    });
+    parentPreviewRequestToken += 1;
+    const token = parentPreviewRequestToken;
+    const payload = await requestParentPreview(normalizedId);
+    if (token !== parentPreviewRequestToken || parentPreviewState.profileId !== normalizedId) {
+      return;
+    }
+    parentPreviewState.isLoading = false;
+    if (!payload) {
+      hideParentPreview(true);
+      return;
+    }
+    card.innerHTML = buildParentPreviewHtml(payload);
+    positionParentPreview(parentPreviewState.anchor, card);
+  };
+
+  const bindParentPreviewHandlers = (list) => {
+    if (!list || list.dataset.previewBound === '1') return;
+    list.addEventListener('pointerdown', (event) => {
+      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
+    }, true);
+    list.addEventListener('pointerenter', (event) => {
+      const anchor = event.target && typeof event.target.closest === 'function'
+        ? event.target.closest('[data-parent-profile]')
+        : null;
+      if (!anchor) return;
+      const profileId = anchor.getAttribute('data-parent-profile');
+      if (!profileId) return;
+      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
+      if (parentPreviewLastPointerType === 'touch') return;
+      showParentPreview(anchor, profileId);
+    }, true);
+    list.addEventListener('pointerleave', (event) => {
+      const anchor = event.target && typeof event.target.closest === 'function'
+        ? event.target.closest('[data-parent-profile]')
+        : null;
+      if (!anchor) return;
+      if (event.pointerType === 'touch') return;
+      scheduleParentPreviewHide();
+    }, true);
+    list.addEventListener('click', (event) => {
+      const anchor = event.target && typeof event.target.closest === 'function'
+        ? event.target.closest('[data-parent-profile]')
+        : null;
+      if (!anchor) return;
+      const profileId = anchor.getAttribute('data-parent-profile');
+      if (!profileId) return;
+      if (parentPreviewLastPointerType && parentPreviewLastPointerType !== 'touch' && parentPreviewLastPointerType !== 'pen') {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        parentPreviewState.profileId === profileId
+        && parentPreviewState.anchor === anchor
+        && parentPreviewCard?.classList.contains('is-visible')
+      ) {
+        hideParentPreview();
+        return;
+      }
+      showParentPreview(anchor, profileId);
+    });
+    list.dataset.previewBound = '1';
+  };
 
   // Communauté
   function renderCommunity() {
@@ -7321,6 +7633,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       console.warn('Forum list container introuvable');
       return;
     }
+    hideParentPreview(true);
+    bindParentPreviewHandlers(list);
     const isListActive = () => document.body.contains(list) && renderCommunity._rid === rid;
     list.innerHTML = '';
     const refreshBtn = $('#btn-refresh-community');
@@ -7882,6 +8196,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         if (!normalized) return '';
         const badge = normalized.parentBadge;
         if (!badge || !badge.isUnlocked) return '';
+        const profileIdRaw = normalized.profileId != null ? String(normalized.profileId).trim() : '';
+        const profileAttr = profileIdRaw ? ` data-parent-profile="${escapeHtml(profileIdRaw)}"` : '';
         const nameRaw = badge.name || '';
         const tooltipRaw = badge.tooltip || '';
         const ariaParts = [nameRaw, tooltipRaw].filter(Boolean).join(' – ');
@@ -7890,7 +8206,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const titleAttr = titleValue ? ` title="${escapeHtml(titleValue)}"` : '';
         const iconHtml = badge.icon ? `<span class="author-parent-badge__icon" aria-hidden="true">${escapeHtml(badge.icon)}</span>` : '';
         const labelHtml = nameRaw ? `<span class="author-parent-badge__label">${escapeHtml(nameRaw)}</span>` : '';
-        return `<span class="author-parent-badge"${titleAttr}${ariaAttr}>${iconHtml}${labelHtml}</span>`;
+        return `<span class="author-parent-badge"${titleAttr}${ariaAttr}${profileAttr}>${iconHtml}${labelHtml}</span>`;
       };
       const renderAuthorMetaInfo = () => {
         // Child counts stay hidden in the community to leave room for the full badge label.
@@ -7932,6 +8248,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         authorName,
         authorMetaHtml,
         authorBadgeHtml = '',
+        profileId = null,
         initials,
         timeLabel,
         timeIso,
@@ -7947,6 +8264,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const safeInitials = escapeHtml(initials || '✦');
         const safeAuthor = escapeHtml(authorName || 'Anonyme');
         const badgeInline = authorBadgeHtml ? authorBadgeHtml.trim() : '';
+        const profileIdRaw = profileId != null ? String(profileId).trim() : '';
+        const previewAttr = profileIdRaw ? ` data-parent-profile="${escapeHtml(profileIdRaw)}"` : '';
+        const avatarAttr = profileIdRaw ? ` data-parent-profile="${escapeHtml(profileIdRaw)}"` : '';
         const hasLabel = label != null && String(label).trim() !== '';
         const fallbackLabel = escapeHtml(
           isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`
@@ -7973,10 +8293,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           return `
             <article class="${entryClass}">
               <div class="topic-entry__head">
-                <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
+                <div class="topic-entry__avatar" aria-hidden="true"${avatarAttr}>${safeInitials}</div>
                 <div class="topic-entry__meta">
                   <div class="topic-entry__author">
-                    <span class="topic-entry__author-name">
+                    <span class="topic-entry__author-name"${previewAttr}>
                       <span class="author-name-text">${safeAuthor}</span>
                       ${badgeInline}
                     </span>
@@ -7999,10 +8319,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         return `
           <article class="${entryClass}">
             <div class="topic-entry__head">
-              <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
+              <div class="topic-entry__avatar" aria-hidden="true"${avatarAttr}>${safeInitials}</div>
               <div class="topic-entry__meta">
                 <div class="topic-entry__author">
-                  <span class="topic-entry__author-name">
+                  <span class="topic-entry__author-name"${previewAttr}>
                     <span class="author-name-text">${safeAuthor}</span>
                     ${badgeInline}
                   </span>
@@ -8033,6 +8353,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           || (typeof authorMeta === 'string' ? authorMeta : authorMeta?.full_name || authorMeta?.name)
           || t.author
           || 'Anonyme';
+        const topicProfileId = normalizedAuthor?.profileId ?? null;
         const rs = (replies.get(t.id) || []).slice().sort((a,b)=> timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
         const tid = String(t.id);
         const isOpen = openSet.has(tid);
@@ -8044,9 +8365,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const displayAuthor = formatAuthorName(rawAuthorName);
         const topicAuthorMetaHtml = renderAuthorMetaInfo(normalizedAuthor || authorMeta);
         const topicAuthorBadgeHtml = renderAuthorBadgeInline(normalizedAuthor || authorMeta);
+        const topicAuthorPreviewAttr = topicProfileId ? ` data-parent-profile="${escapeHtml(String(topicProfileId))}"` : '';
+        const topicAvatarAttr = topicProfileId ? ` data-parent-profile="${escapeHtml(String(topicProfileId))}"` : '';
         const topicAuthorBlock = `
           <span class="topic-author">
-            <span class="topic-author-name">
+            <span class="topic-author-name"${topicAuthorPreviewAttr}>
               <span class="author-name-text">${escapeHtml(displayAuthor)}</span>
               ${topicAuthorBadgeHtml}
             </span>
@@ -8073,6 +8396,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           isAi: topicIsAi,
           isSelf: topicIsSelf,
           isInitial: true,
+          profileId: topicProfileId,
         });
         const repliesHtml = rs.map(r=>{
           const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
@@ -8081,6 +8405,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             || (typeof replyMeta === 'string' ? replyMeta : replyMeta?.full_name || replyMeta?.name)
             || r.author
             || 'Anonyme';
+          const replyProfileId = normalizedReply?.profileId ?? null;
           const replyAuthor = formatAuthorName(rawReplyAuthor);
           const replyAuthorMetaHtml = renderAuthorMetaInfo(normalizedReply || replyMeta);
           const replyAuthorBadgeHtml = renderAuthorBadgeInline(normalizedReply || replyMeta);
@@ -8121,6 +8446,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             label: replyLabel,
             isAi: isReplyAi,
             isSelf: replyIsSelf,
+            profileId: replyProfileId,
           });
         }).join('');
         const repliesBlock = repliesCount
@@ -8140,7 +8466,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         el.setAttribute('data-open', isOpen ? '1' : '0');
         el.innerHTML = `
           <header class="topic-header">
-            <div class="topic-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
+            <div class="topic-avatar" aria-hidden="true"${topicAvatarAttr}>${escapeHtml(initials)}</div>
             <div class="topic-heading">
               <div class="topic-meta">
                 <span class="topic-cat">${escapeHtml(cat)}</span>
