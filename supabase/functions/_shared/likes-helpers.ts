@@ -45,7 +45,13 @@ export async function resolveUserContext(req) {
   const supabaseHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
   const supabaseAdmin = getSupabaseAdminClient(supaUrl, serviceKey);
 
-  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization') || '';
+  // ✅ lit aussi le header x-client-authorization pour Google Auth / proxy
+  const authHeader =
+    req.headers.get('authorization') ||
+    req.headers.get('Authorization') ||
+    req.headers.get('x-client-authorization') ||
+    '';
+
   const bearerToken = extractBearerToken(authHeader);
 
   let payload = {};
@@ -54,16 +60,24 @@ export async function resolveUserContext(req) {
   } catch (_err) {
     payload = {};
   }
+
+  // ✅ supporte token dans le body ou transmis par le proxy
   const tokenFromBody = typeof payload?.token === 'string' ? payload.token.trim() : '';
   const token = bearerToken || tokenFromBody;
-  const anonKey = typeof Deno !== 'undefined'
-    ? Deno.env.get('SUPABASE_ANON_KEY')
-        ?? Deno.env.get('NEXT_PUBLIC_SUPABASE_ANON_KEY')
-        ?? ''
-    : '';
+
+  const anonKey =
+    typeof Deno !== 'undefined'
+      ? Deno.env.get('SUPABASE_ANON_KEY') ??
+        Deno.env.get('NEXT_PUBLIC_SUPABASE_ANON_KEY') ??
+        ''
+      : '';
   const isAnonKeyToken = !!anonKey && token === anonKey;
 
-  console.log('[resolveUserContext] start', { hasBearer: !!bearerToken, hasBodyToken: !!tokenFromBody, anonKeyDetected: isAnonKeyToken });
+  console.log('[resolveUserContext] start', {
+    hasBearer: !!bearerToken,
+    hasBodyToken: !!tokenFromBody,
+    anonKeyDetected: isAnonKeyToken,
+  });
 
   if (token && !isAnonKeyToken) {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
@@ -84,10 +98,19 @@ export async function resolveUserContext(req) {
       };
     }
   } else if (isAnonKeyToken) {
-    console.log('[resolveUserContext] anon key detected in Authorization header, ignoring for anon flow');
+    console.log(
+      '[resolveUserContext] anon key detected in Authorization header, ignoring for anon flow'
+    );
   }
 
-  const anonCodeRaw = typeof payload?.anonCode === 'string' ? payload.anonCode.trim() : '';
+  // ✅ prend en compte anonCode ET anoncode (casse insensible)
+  const anonCodeRaw =
+    typeof payload?.anonCode === 'string'
+      ? payload.anonCode.trim()
+      : typeof payload?.anoncode === 'string'
+      ? payload.anoncode.trim()
+      : '';
+
   if (anonCodeRaw) {
     const anonCode = normalizeCode(anonCodeRaw);
     console.log('[resolveUserContext] anonCode supplied', { anonCode });
@@ -119,7 +142,8 @@ export async function resolveUserContext(req) {
     };
   }
 
-  const code = normalizeCode(payload?.code || payload?.code_unique);
+  // ✅ accepte code, CODE ou code_unique
+  const code = normalizeCode(payload?.code || payload?.CODE || payload?.code_unique);
   if (code) {
     console.log('[resolveUserContext] fallback code supplied', { code });
     try {

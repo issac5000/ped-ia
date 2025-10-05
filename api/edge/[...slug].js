@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   console.log('DEBUG edge handler', req.url, req.query);
 
-  // Extraction du slug cible
+  // --- Extraction du slug cible
   const querySlug = req?.query?.slug;
   let targetPath = '';
 
@@ -19,19 +19,47 @@ export default async function handler(req, res) {
     return res.json({ error: 'Missing target function slug' });
   }
 
+  // --- Préparation de l’URL cible
   const baseUrl = 'https://myrwcjurblksypvekuzb.supabase.co'.replace(/\/+$/, '');
   const targetUrl = `${baseUrl}/functions/v1/${targetPath}`;
   const isAnon = targetPath.startsWith('anon-');
-  const chosenKey = isAnon
-    ? process.env.SUPABASE_ANON_KEY || ''
-    : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+  // --- Sélection de la clé Supabase
+  const anonKey = process.env.SUPABASE_ANON_KEY || '';
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const chosenKey = isAnon ? anonKey : serviceKey;
   const mode = isAnon ? 'ANON' : 'SERVICE';
+
+  // --- Headers par défaut
   const headers = {
     'Content-Type': 'application/json',
     apikey: chosenKey,
-    Authorization: `Bearer ${chosenKey}`,
   };
 
+  // --- 🔧 Injection du bon header Authorization
+  // Si un JWT ou code client existe, on le relaie tel quel.
+  const incomingAuth =
+    req.headers.get?.('authorization') ||
+    req.headers?.authorization ||
+    req.headers.get?.('Authorization') ||
+    req.headers?.Authorization ||
+    null;
+
+  const incomingXClientAuth =
+    req.headers.get?.('x-client-authorization') ||
+    req.headers?.['x-client-authorization'] ||
+    null;
+
+  if (incomingXClientAuth) {
+    headers.Authorization = incomingXClientAuth;
+  } else if (incomingAuth) {
+    headers.Authorization = incomingAuth;
+  } else {
+    // Fallback : on garde la clé service uniquement si aucun token client n’existe
+    headers.Authorization = `Bearer ${chosenKey}`;
+  }
+
+  // --- Logs nettoyés pour débogage
   const keyPreview = (chosenKey || '').slice(0, 20);
   const safeHeaders = Object.fromEntries(
     Object.entries(headers).map(([header, value]) => {
@@ -44,23 +72,14 @@ export default async function handler(req, res) {
   );
 
   console.log('Proxying Supabase Edge request', { slug: targetPath, mode, headers: Object.keys(headers) });
-  console.log('Edge fetch debug', {
+  console.log('[DEBUG Proxy → Supabase]', {
     targetUrl,
-    headers: {
-      apikey: headers.apikey ? `${headers.apikey.slice(0, 10)}...` : 'missing',
-      Authorization: headers.Authorization ? headers.Authorization.split(' ')[0] : 'missing',
-      'Content-Type': headers['Content-Type'],
-    },
-  });
-
-  console.log('Proxy Mode:', mode, 'Slug:', targetPath, 'Key:', keyPreview ? `${keyPreview}...` : '[empty]');
-
-  console.log('Proxy Debug', {
-    slug: targetPath,
     mode,
-    keyPreview: keyPreview ? `${keyPreview}...` : '[empty]',
     method: req.method,
-    headers: safeHeaders,
+    incomingAuth,
+    incomingXClientAuth,
+    outgoingHeaders: safeHeaders,
+    hasBody: !!req.body,
   });
 
   try {
