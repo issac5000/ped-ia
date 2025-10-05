@@ -8623,7 +8623,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const initials = initialsFrom(rawAuthorName);
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
-        const topicMessageBtn = t.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>` : '';
+        const topicMessageBtn = (!isMobile && t.user_id)
+          ? `<a href="messages.html?user=${encodeURIComponent(String(t.user_id))}" class="btn btn-secondary btn-message"${messageAttrs}>${messageLabel}</a>`
+          : '';
         const topicIsAi = isAiAuthor(displayAuthor);
         const topicOwnerId = resolveAuthorId(t);
         const topicIsSelf = activeId && topicOwnerId ? String(topicOwnerId) === String(activeId) : false;
@@ -8655,7 +8657,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const replyAuthorBadgeHtml = renderAuthorBadgeInline(normalizedReply || replyMeta);
           const replyInitials = initialsFrom(rawReplyAuthor);
           const { label: replyTimeLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
-          const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
+          const replyMessageBtn = (!isMobile && r.user_id)
+            ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>`
+            : '';
           const isReplyAi = isAiAuthor(replyAuthor);
           const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
           const replyOwnerId = resolveAuthorId(r);

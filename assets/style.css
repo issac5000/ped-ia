@@ -3633,6 +3633,46 @@ section[data-route="/community"] .author-parent-badge__label{
   white-space:nowrap;
 }
 
+@media(max-width:640px){
+  body.force-mobile section[data-route="/community"] .topic-entry__author,
+  body.force-mobile section[data-route="/community"] .reply-author{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:4px;
+  }
+  body.force-mobile section[data-route="/community"] .topic-entry__author-name,
+  body.force-mobile section[data-route="/community"] .reply-author-name,
+  body.force-mobile section[data-route="/community"] .topic-author-name,
+  body.force-mobile section[data-route="/community"] .reply-author-name{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:4px;
+  }
+  body.force-mobile section[data-route="/community"] .topic-entry__author-name .author-parent-badge,
+  body.force-mobile section[data-route="/community"] .topic-author-name .author-parent-badge,
+  body.force-mobile section[data-route="/community"] .reply-author-name .author-parent-badge{
+    margin-left:0;
+  }
+  body.force-mobile section[data-route="/community"] .topic-entry__meta,
+  body.force-mobile section[data-route="/community"] .topic-author{
+    gap:6px;
+  }
+  body.force-mobile section[data-route="/community"] .topic-entry__meta time,
+  body.force-mobile section[data-route="/community"] .topic-author + time,
+  body.force-mobile section[data-route="/community"] .reply-author + time{
+    margin-left:0;
+    display:block;
+  }
+  body.force-mobile section[data-route="/community"] .topic-entry__actions{
+    gap:10px;
+  }
+  body.force-mobile section[data-route="/community"] .btn-message,
+  body.force-mobile section[data-route="/community"] .btn-message--small{
+    display:none !important;
+  }
+}
+
 .parent-preview-card{
   position:fixed;
   display:none;
