@@ -7882,6 +7882,22 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const isListActive = () => document.body.contains(list) && renderCommunity._rid === rid;
     list.innerHTML = '';
     const refreshBtn = $('#btn-refresh-community');
+    const setRefreshVisible = (visible) => {
+      if (!refreshBtn) return;
+      const show = !!visible;
+      if (!refreshBtn.dataset.defaultDisplay && typeof window !== 'undefined') {
+        try {
+          const computed = window.getComputedStyle(refreshBtn).display;
+          refreshBtn.dataset.defaultDisplay = (computed && computed !== 'none') ? computed : 'inline-flex';
+        } catch {
+          refreshBtn.dataset.defaultDisplay = 'inline-flex';
+        }
+      }
+      const defaultDisplay = refreshBtn.dataset.defaultDisplay || '';
+      refreshBtn.style.display = show ? defaultDisplay : 'none';
+      refreshBtn.setAttribute('aria-hidden', show ? 'false' : 'true');
+    };
+    setRefreshVisible(false);
     if (refreshBtn && !refreshBtn.dataset.bound) {
       refreshBtn.dataset.bound = '1';
       refreshBtn.addEventListener('click', () => location.reload());
@@ -9066,10 +9082,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             });
           }
           renderTopics(topics, repliesMap, authorsMap, likesMap);
+          setRefreshVisible(false);
         } catch (e) {
           console.error('renderCommunity load failed', e);
           showEmpty();
           showError('Impossible de charger la communauté. Vérifiez votre connexion ou réessayez plus tard.');
+          setRefreshVisible(true);
         }
       })();
     } else {
@@ -9078,6 +9096,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       forum.topics.forEach(t=> repliesMap.set(t.id, t.replies||[]));
       const authors = new Map();
       renderTopics(forum.topics.slice().reverse(), repliesMap, authors, new Map());
+      setRefreshVisible(false);
     }
 
     const btnExport = $('#btn-export');
