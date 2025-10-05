@@ -3660,6 +3660,36 @@ section[data-route="/community"] .author-parent-badge__label{
   transform:translateY(0) scale(1);
   pointer-events:auto;
 }
+.parent-preview-card--modal{
+  top:50% !important;
+  left:50% !important;
+  transform:translate(-50%, -50%) !important;
+  width:min(320px, calc(100vw - 36px));
+  max-height:80vh;
+  overflow:auto;
+  padding:22px 24px;
+  -webkit-overflow-scrolling:touch;
+}
+.parent-preview-card--modal.is-visible{
+  transform:translate(-50%, -50%) !important;
+}
+.parent-preview-backdrop{
+  position:fixed;
+  inset:0;
+  background:rgba(6,9,15,.72);
+  z-index:4190;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .18s ease;
+}
+.parent-preview-backdrop.is-active{
+  opacity:1;
+  pointer-events:auto;
+}
+body.parent-preview--modal-open{
+  touch-action:none;
+  overflow:hidden;
+}
 .parent-preview-card__header{
   margin-bottom:12px;
 }

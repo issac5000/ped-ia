@@ -341,6 +341,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   if (typeof window !== 'undefined') {
     window.ensureSupabaseReady = ensureSupabaseReady;
   }
+  const IS_IOS_SAFARI = (() => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || navigator.vendor || '';
+    const isIOS = /iP(hone|od|ad)/.test(ua);
+    if (!isIOS) return false;
+    const isSafari = /Safari/i.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS/i.test(ua);
+    return isSafari;
+  })();
   let authSession = null;
   let activeProfile = null;
   let dataProxy = null;
@@ -7338,6 +7346,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   const parentPreviewCache = new Map();
   const parentPreviewFetches = new Map();
   let parentPreviewCard = null;
+  let parentPreviewBackdrop = null;
   let parentPreviewHideTimer = null;
   let parentPreviewRequestToken = 0;
   let parentPreviewLastPointerType = null;
@@ -7352,6 +7361,38 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     profileId: null,
     anchor: null,
     isLoading: false,
+  };
+  const useParentPreviewModalMode = () => IS_IOS_SAFARI;
+
+  const ensureParentPreviewBackdrop = () => {
+    if (parentPreviewBackdrop && document.body.contains(parentPreviewBackdrop)) {
+      return parentPreviewBackdrop;
+    }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'parent-preview-backdrop';
+    backdrop.dataset.parentPreviewBackdrop = '1';
+    backdrop.addEventListener('click', () => {
+      hideParentPreview();
+    });
+    document.body.appendChild(backdrop);
+    parentPreviewBackdrop = backdrop;
+    return backdrop;
+  };
+
+  const setParentPreviewModalState = (isActive) => {
+    if (!useParentPreviewModalMode()) return;
+    const backdrop = isActive ? ensureParentPreviewBackdrop() : parentPreviewBackdrop;
+    if (!backdrop) {
+      if (!isActive) document.body.classList.remove('parent-preview--modal-open');
+      return;
+    }
+    if (isActive) {
+      backdrop.classList.add('is-active');
+      document.body.classList.add('parent-preview--modal-open');
+    } else {
+      backdrop.classList.remove('is-active');
+      document.body.classList.remove('parent-preview--modal-open');
+    }
   };
 
   const buildParentPreviewHtml = (row) => {
@@ -7403,6 +7444,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (parentPreviewCard && document.body.contains(parentPreviewCard)) {
       return parentPreviewCard;
     }
+    if (useParentPreviewModalMode()) ensureParentPreviewBackdrop();
     const card = document.createElement('div');
     card.className = 'parent-preview-card';
     card.dataset.parentPreviewCard = '1';
@@ -7435,6 +7477,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
     parentPreviewCard = card;
     document.body.appendChild(card);
+    if (useParentPreviewModalMode()) {
+      card.classList.add('parent-preview-card--modal');
+    }
     return card;
   };
 
@@ -7453,6 +7498,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     parentPreviewState.anchor = null;
     parentPreviewState.isLoading = false;
     parentPreviewLastPointerType = null;
+    parentPreviewTouchAnchor = null;
+    parentPreviewTouchStartX = 0;
+    parentPreviewTouchStartY = 0;
+    parentPreviewTouchStartTime = 0;
+    if (useParentPreviewModalMode()) {
+      setParentPreviewModalState(false);
+    }
     if (!parentPreviewCard) return;
     parentPreviewCard.dataset.profileId = '';
     if (immediate) {
@@ -7526,6 +7578,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     clearTimeout(parentPreviewHideTimer);
     parentPreviewHideTimer = null;
     const card = ensureParentPreviewCard();
+    const modalMode = useParentPreviewModalMode();
+    if (modalMode) {
+      setParentPreviewModalState(true);
+      card.classList.add('parent-preview-card--modal');
+      card.style.top = '';
+      card.style.left = '';
+    } else {
+      card.classList.remove('parent-preview-card--modal');
+    }
     const cached = parentPreviewCache.get(normalizedId) || null;
     if (
       parentPreviewState.profileId === normalizedId
@@ -7545,7 +7606,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       card.innerHTML = buildParentPreviewHtml(cached);
       card.classList.add('is-active');
       card.classList.remove('is-visible');
-      positionParentPreview(parentPreviewState.anchor, card);
+      if (!modalMode) {
+        positionParentPreview(parentPreviewState.anchor, card);
+      }
       requestAnimationFrame(() => {
         if (parentPreviewState.profileId === normalizedId) {
           card.classList.add('is-visible');
@@ -7560,7 +7623,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     card.innerHTML = '<div class="parent-preview-card__loading">Chargement…</div>';
     card.classList.add('is-active');
     card.classList.remove('is-visible');
-    positionParentPreview(parentPreviewState.anchor, card);
+    if (!modalMode) {
+      positionParentPreview(parentPreviewState.anchor, card);
+    }
     requestAnimationFrame(() => {
       if (parentPreviewState.profileId === normalizedId) {
         card.classList.add('is-visible');
@@ -7578,7 +7643,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       return;
     }
     card.innerHTML = buildParentPreviewHtml(payload);
-    positionParentPreview(parentPreviewState.anchor, card);
+    if (!modalMode) {
+      positionParentPreview(parentPreviewState.anchor, card);
+    }
   };
 
   const bindParentPreviewHandlers = (list) => {
@@ -7626,6 +7693,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       showParentPreview(anchor, profileId);
     }, true);
     list.addEventListener('pointerleave', (event) => {
+      if (useParentPreviewModalMode()) return;
       if (shouldSuppressPointer()) return;
       const anchor = resolvePreviewAnchor(event.target);
       if (!anchor) return;
