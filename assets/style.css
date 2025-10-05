@@ -3759,7 +3759,7 @@ body.parent-preview--modal-open{
 }
 .parent-preview-card__actions{
   display:flex;
-  justify-content:flex-end;
+  justify-content:center;
   margin-top:12px;
 }
 .parent-preview-card__actions .btn{
