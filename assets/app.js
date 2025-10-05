@@ -7344,6 +7344,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let parentPreviewGlobalHandlersBound = false;
   let parentPreviewSuppressClicksUntil = 0;
   let parentPreviewSuppressPointerUntil = 0;
+  let parentPreviewTouchAnchor = null;
+  let parentPreviewTouchStartX = 0;
+  let parentPreviewTouchStartY = 0;
+  let parentPreviewTouchStartTime = 0;
   const parentPreviewState = {
     profileId: null,
     anchor: null,
@@ -7638,24 +7642,66 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (!anchor) return;
       const type = event.pointerType || parentPreviewLastPointerType || '';
       if (type !== 'touch' && type !== 'pen') return;
-      parentPreviewLastPointerType = type;
-      parentPreviewSuppressClicksUntil = now() + 260;
-      event.preventDefault();
+      parentPreviewLastPointerType = type || 'touch';
+      const expiry = now() + 280;
+      parentPreviewSuppressClicksUntil = expiry;
+      parentPreviewSuppressPointerUntil = expiry;
+      if (event.cancelable) event.preventDefault();
       event.stopPropagation();
       togglePreviewFromAnchor(anchor);
     }, true);
+    const clearTouchTracking = () => {
+      parentPreviewTouchAnchor = null;
+      parentPreviewTouchStartX = 0;
+      parentPreviewTouchStartY = 0;
+      parentPreviewTouchStartTime = 0;
+    };
     const handleTouchStart = (event) => {
       const anchor = resolvePreviewAnchor(event.target);
-      if (!anchor) return;
+      if (!anchor) {
+        clearTouchTracking();
+        return;
+      }
       parentPreviewLastPointerType = 'touch';
-      const deadline = now() + 260;
-      parentPreviewSuppressClicksUntil = deadline;
-      parentPreviewSuppressPointerUntil = deadline;
+      parentPreviewTouchAnchor = anchor;
+      const touch = event.changedTouches && event.changedTouches[0];
+      parentPreviewTouchStartX = touch ? touch.clientX : 0;
+      parentPreviewTouchStartY = touch ? touch.clientY : 0;
+      parentPreviewTouchStartTime = now();
+      const expiry = parentPreviewTouchStartTime + 320;
+      parentPreviewSuppressClicksUntil = expiry;
+      parentPreviewSuppressPointerUntil = expiry;
+    };
+    const handleTouchMove = (event) => {
+      if (!parentPreviewTouchAnchor) return;
+      const touch = event.changedTouches && event.changedTouches[0];
+      if (!touch) return;
+      const dx = Math.abs(touch.clientX - parentPreviewTouchStartX);
+      const dy = Math.abs(touch.clientY - parentPreviewTouchStartY);
+      if (dx > 12 || dy > 12) {
+        clearTouchTracking();
+      }
+    };
+    const handleTouchEnd = (event) => {
+      if (!parentPreviewTouchAnchor) return;
+      const anchor = parentPreviewTouchAnchor;
+      const touch = event.changedTouches && event.changedTouches[0];
+      const elapsed = now() - parentPreviewTouchStartTime;
+      const dx = touch ? Math.abs(touch.clientX - parentPreviewTouchStartX) : 0;
+      const dy = touch ? Math.abs(touch.clientY - parentPreviewTouchStartY) : 0;
+      clearTouchTracking();
+      if (dx > 12 || dy > 12 || elapsed > 800) return;
       if (event.cancelable) event.preventDefault();
       event.stopPropagation();
       togglePreviewFromAnchor(anchor);
     };
-    list.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
+    const handleTouchCancel = () => {
+      clearTouchTracking();
+    };
+    list.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+    list.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
+    list.addEventListener('touchend', handleTouchEnd, { passive: false, capture: true });
+    list.addEventListener('touchcancel', handleTouchCancel, { passive: true, capture: true });
     list.addEventListener('click', (event) => {
       if (parentPreviewSuppressClicksUntil && now() < parentPreviewSuppressClicksUntil) {
         event.preventDefault();
