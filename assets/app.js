@@ -7362,7 +7362,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     anchor: null,
     isLoading: false,
   };
-  const useParentPreviewModalMode = () => IS_IOS_SAFARI;
+  const useParentPreviewModalMode = () => {
+    if (IS_IOS_SAFARI) return true;
+    if (typeof window === 'undefined') return false;
+    try {
+      const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)');
+      if (coarse && coarse.matches) return true;
+    } catch {
+      /* ignore */
+    }
+    return 'ontouchstart' in window;
+  };
 
   const ensureParentPreviewBackdrop = () => {
     if (parentPreviewBackdrop && document.body.contains(parentPreviewBackdrop)) {
@@ -7651,11 +7661,24 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   const bindParentPreviewHandlers = (list) => {
     if (!list || list.dataset.previewBound === '1') return;
     const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
-    const resolvePreviewAnchor = (target) => (
-      target && typeof target.closest === 'function'
-        ? target.closest('[data-parent-profile]')
-        : null
-    );
+    const resolvePreviewAnchor = (target) => {
+      if (!target) return null;
+      let node = target;
+      if (node.nodeType === 3 && node.parentElement) {
+        node = node.parentElement;
+      }
+      if (node && typeof node.closest === 'function') {
+        return node.closest('[data-parent-profile]');
+      }
+      if (node && node.parentElement) {
+        let current = node.parentElement;
+        while (current) {
+          if (current.matches?.('[data-parent-profile]')) return current;
+          current = current.parentElement;
+        }
+      }
+      return null;
+    };
     const shouldSuppressPointer = () => parentPreviewSuppressPointerUntil && now() < parentPreviewSuppressPointerUntil;
     const togglePreviewFromAnchor = (anchor) => {
       if (!anchor) return;
