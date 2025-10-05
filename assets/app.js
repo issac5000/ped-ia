@@ -7642,11 +7642,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       return;
     }
     if (cached) {
+      const cachedPayload = typeof cached === 'object' ? { ...cached } : cached;
       parentPreviewState.profileId = normalizedId;
       parentPreviewState.anchor = anchor || null;
       parentPreviewState.isLoading = false;
       card.dataset.profileId = normalizedId;
-      card.innerHTML = buildParentPreviewHtml(cached);
+      card.innerHTML = `${buildParentPreviewHtml(cachedPayload)}${renderParentPreviewActions(normalizedId, cachedPayload)}`;
       card.classList.add('is-active');
       card.classList.remove('is-visible');
       if (!modalMode) {
