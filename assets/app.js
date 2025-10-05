@@ -7439,6 +7439,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     `.trim();
   };
 
+  const renderParentPreviewActions = (profileId) => {
+    if (!profileId) return '';
+    const href = `messages.html?user=${encodeURIComponent(profileId)}`;
+    return `
+      <div class="parent-preview-card__actions">
+        <a class="btn btn-secondary" href="${href}">Envoyer un message</a>
+      </div>
+    `;
+  };
+
   const formatParentPreviewDate = (value) => {
     if (!value) return '';
     const date = new Date(value);
@@ -7655,13 +7665,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           <p>Nous n’avons pas pu charger les informations pour ce parent.</p>
           <p>Réessayez dans un instant.</p>
         </div>
+        ${renderParentPreviewActions(normalizedId)}
       `;
       if (!modalMode) {
         positionParentPreview(parentPreviewState.anchor, card);
       }
       return;
     }
-    card.innerHTML = buildParentPreviewHtml(payload);
+    card.innerHTML = `${buildParentPreviewHtml(payload)}${renderParentPreviewActions(normalizedId)}`;
     if (!modalMode) {
       positionParentPreview(parentPreviewState.anchor, card);
     }

@@ -3717,6 +3717,14 @@ body.parent-preview--modal-open{
   font-size:15px;
   color:#ffffff;
 }
+.parent-preview-card__actions{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:12px;
+}
+.parent-preview-card__actions .btn{
+  min-width:0;
+}
 .parent-preview-card__body p{
   margin:0;
 }
