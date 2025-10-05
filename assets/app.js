@@ -7731,16 +7731,25 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         return;
       }
       parentPreviewLastPointerType = 'touch';
+      const modalMode = useParentPreviewModalMode();
+      const expiry = now() + 360;
+      parentPreviewSuppressClicksUntil = expiry;
+      parentPreviewSuppressPointerUntil = expiry;
+      if (modalMode) {
+        clearTouchTracking();
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        togglePreviewFromAnchor(anchor);
+        return;
+      }
       parentPreviewTouchAnchor = anchor;
       const touch = event.changedTouches && event.changedTouches[0];
       parentPreviewTouchStartX = touch ? touch.clientX : 0;
       parentPreviewTouchStartY = touch ? touch.clientY : 0;
       parentPreviewTouchStartTime = now();
-      const expiry = parentPreviewTouchStartTime + 320;
-      parentPreviewSuppressClicksUntil = expiry;
-      parentPreviewSuppressPointerUntil = expiry;
     };
     const handleTouchMove = (event) => {
+      if (useParentPreviewModalMode()) return;
       if (!parentPreviewTouchAnchor) return;
       const touch = event.changedTouches && event.changedTouches[0];
       if (!touch) return;
@@ -7751,6 +7760,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       }
     };
     const handleTouchEnd = (event) => {
+      if (useParentPreviewModalMode()) return;
       if (!parentPreviewTouchAnchor) return;
       const anchor = parentPreviewTouchAnchor;
       const touch = event.changedTouches && event.changedTouches[0];
@@ -7766,7 +7776,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const handleTouchCancel = () => {
       clearTouchTracking();
     };
-    list.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+    list.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
     list.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
     list.addEventListener('touchend', handleTouchEnd, { passive: false, capture: true });
     list.addEventListener('touchcancel', handleTouchCancel, { passive: true, capture: true });
