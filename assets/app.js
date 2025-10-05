@@ -7439,9 +7439,32 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     `.trim();
   };
 
-  const renderParentPreviewActions = (profileId) => {
-    if (!profileId) return '';
-    const href = `messages.html?user=${encodeURIComponent(profileId)}`;
+  const resolvePreviewMessageTarget = (profileId, payload) => {
+    const normalize = (value) => {
+      if (value == null) return '';
+      const str = String(value).trim();
+      if (!str) return '';
+      if (str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined') return '';
+      return str;
+    };
+    const candidates = [];
+    candidates.push(normalize(profileId));
+    if (payload && typeof payload === 'object') {
+      candidates.push(normalize(payload.profile_id ?? payload.profileId));
+      candidates.push(normalize(payload.id));
+      candidates.push(normalize(payload.user_id ?? payload.userId));
+      candidates.push(normalize(payload.owner_id ?? payload.ownerId));
+    }
+    for (const candidate of candidates) {
+      if (candidate) return candidate;
+    }
+    return '';
+  };
+
+  const renderParentPreviewActions = (profileId, payload) => {
+    const targetId = resolvePreviewMessageTarget(profileId, payload);
+    if (!targetId) return '';
+    const href = `messages.html?user=${encodeURIComponent(targetId)}`;
     return `
       <div class="parent-preview-card__actions">
         <a class="btn btn-secondary" href="${href}">Envoyer un message</a>
@@ -7665,14 +7688,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           <p>Nous n’avons pas pu charger les informations pour ce parent.</p>
           <p>Réessayez dans un instant.</p>
         </div>
-        ${renderParentPreviewActions(normalizedId)}
+        ${renderParentPreviewActions(normalizedId, payload)}
       `;
       if (!modalMode) {
         positionParentPreview(parentPreviewState.anchor, card);
       }
       return;
     }
-    card.innerHTML = `${buildParentPreviewHtml(payload)}${renderParentPreviewActions(normalizedId)}`;
+    card.innerHTML = `${buildParentPreviewHtml(payload)}${renderParentPreviewActions(normalizedId, payload)}`;
     if (!modalMode) {
       positionParentPreview(parentPreviewState.anchor, card);
     }
