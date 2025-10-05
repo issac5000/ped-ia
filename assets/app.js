@@ -7681,6 +7681,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       return;
     }
     parentPreviewState.isLoading = false;
+    const reusablePayload = payload && typeof payload === 'object' ? { ...payload } : payload;
     if (!payload) {
       card.innerHTML = `
         <div class="parent-preview-card__body">
@@ -7688,14 +7689,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           <p>Nous n’avons pas pu charger les informations pour ce parent.</p>
           <p>Réessayez dans un instant.</p>
         </div>
-        ${renderParentPreviewActions(normalizedId, payload)}
+        ${renderParentPreviewActions(normalizedId, reusablePayload)}
       `;
       if (!modalMode) {
         positionParentPreview(parentPreviewState.anchor, card);
       }
       return;
     }
-    card.innerHTML = `${buildParentPreviewHtml(payload)}${renderParentPreviewActions(normalizedId, payload)}`;
+    card.innerHTML = `${buildParentPreviewHtml(payload)}${renderParentPreviewActions(normalizedId, reusablePayload)}`;
     if (!modalMode) {
       positionParentPreview(parentPreviewState.anchor, card);
     }
