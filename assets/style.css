@@ -3632,9 +3632,6 @@ section[data-route="/community"] .author-parent-badge__icon{
 section[data-route="/community"] .author-parent-badge__label{
   white-space:nowrap;
 }
-@media(max-width:640px){
-  section[data-route="/community"] .author-parent-badge__label{display:none;}
-}
 section[data-route="/community"] .topic-entry__meta time{
   font-size:12px;
   letter-spacing:.02em;

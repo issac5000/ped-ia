@@ -331,6 +331,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   // Chargement des informations Supabase et du client JS
   let supabase = null;
+  async function ensureSupabaseReady() {
+    if (supabase) return supabase;
+    while (!supabase) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return supabase;
+  }
+  if (typeof window !== 'undefined') {
+    window.ensureSupabaseReady = ensureSupabaseReady;
+  }
   let authSession = null;
   let activeProfile = null;
   let dataProxy = null;
@@ -1267,12 +1277,20 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   async function resolveAccessToken() {
     let token = authSession?.access_token || '';
-    if (!token && supabase?.auth) {
+    if (!token) {
+      let client = null;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        token = session?.access_token || '';
+        client = await ensureSupabaseReady();
       } catch (err) {
-        console.warn('resolveAccessToken getSession failed', err);
+        console.warn('resolveAccessToken ensureSupabaseReady failed', err);
+      }
+      if (client?.auth) {
+        try {
+          const { data: { session } } = await client.auth.getSession();
+          token = session?.access_token || '';
+        } catch (err) {
+          console.warn('resolveAccessToken getSession failed', err);
+        }
       }
     }
     return token || '';
@@ -7874,38 +7892,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const labelHtml = nameRaw ? `<span class="author-parent-badge__label">${escapeHtml(nameRaw)}</span>` : '';
         return `<span class="author-parent-badge"${titleAttr}${ariaAttr}>${iconHtml}${labelHtml}</span>`;
       };
-      const renderAuthorMetaInfo = (meta) => {
-        if (!meta) return '';
-        const normalized = (typeof meta === 'object' && meta !== null && 'childCount' in meta && 'showChildCount' in meta)
-          ? meta
-          : normalizeAuthorMeta(meta);
-        if (!normalized) return '';
-        const isAnon = isAnonProfile();
-        const viewerProfileIdRaw = getActiveProfileId();
-        const viewerProfileId = viewerProfileIdRaw != null ? String(viewerProfileIdRaw) : null;
-        const targetProfileIdRaw = normalized.profileId != null ? normalized.profileId : null;
-        const targetProfileId = targetProfileIdRaw != null ? String(targetProfileIdRaw) : null;
-        const parsedCount = Number(normalized.childCount);
-        const hasChildrenCount = Number.isFinite(parsedCount);
-        const numberOfChildren = hasChildrenCount ? parsedCount : null;
-        const showChildrenCount = !!normalized.showChildCount;
-        const isSameProfile = (
-          targetProfileId && viewerProfileId ? targetProfileId === viewerProfileId
-            : normalized.isSelf === true
-        );
-        const shouldDisplay = hasChildrenCount && (isSameProfile || showChildrenCount);
-        console.debug('Render children_count', {
-          isAnon,
-          viewerProfileId,
-          targetProfileId,
-          showChildrenCount,
-          numberOfChildren,
-        });
-        if (!shouldDisplay) return '';
-        const count = numberOfChildren;
-        const suffix = count > 1 ? 'enfants' : 'enfant';
-        const label = `Parent de ${count} ${suffix}`;
-        return `<span class="author-meta">${escapeHtml(label)}</span>`;
+      const renderAuthorMetaInfo = () => {
+        // Child counts stay hidden in the community to leave room for the full badge label.
+        return '';
       };
       const isAiAuthor = (name) => {
         if (!name) return false;
