@@ -1,8 +1,3 @@
-// --- Edge Proxy (patched version) ---
-// Gère la redirection des requêtes front vers Supabase Edge Functions
-// Correction : fusion des headers client + ajout X-Client-Authorization pour transmettre le JWT utilisateur
-// Sans impacter les routes anon-* ni casser les appels anonymes
-
 export default async function handler(req, res) {
   console.log('DEBUG edge handler', req.url, req.query);
 
@@ -31,20 +26,12 @@ export default async function handler(req, res) {
     ? process.env.SUPABASE_ANON_KEY || ''
     : process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const mode = isAnon ? 'ANON' : 'SERVICE';
-
-  // ✅ Fusion des headers : garde le JWT client si présent
   const headers = {
     'Content-Type': 'application/json',
     apikey: chosenKey,
-    ...(req.headers.authorization
-      ? {
-          'X-Client-Authorization': req.headers.authorization,
-          Authorization: `Bearer ${chosenKey}`,
-        }
-      : { Authorization: `Bearer ${chosenKey}` }),
+    Authorization: `Bearer ${chosenKey}`,
   };
 
-  // 🔍 Debug clair et sans fuite de clé complète
   const keyPreview = (chosenKey || '').slice(0, 20);
   const safeHeaders = Object.fromEntries(
     Object.entries(headers).map(([header, value]) => {
@@ -56,34 +43,24 @@ export default async function handler(req, res) {
     })
   );
 
-  console.log('Proxying Supabase Edge request', {
-    slug: targetPath,
-    mode,
-    headers: Object.keys(headers),
-  });
+  console.log('Proxying Supabase Edge request', { slug: targetPath, mode, headers: Object.keys(headers) });
   console.log('Edge fetch debug', {
     targetUrl,
     headers: {
       apikey: headers.apikey ? `${headers.apikey.slice(0, 10)}...` : 'missing',
       Authorization: headers.Authorization ? headers.Authorization.split(' ')[0] : 'missing',
       'Content-Type': headers['Content-Type'],
-      'X-Client-Authorization': headers['X-Client-Authorization']
-        ? 'present'
-        : 'absent',
     },
   });
+
   console.log('Proxy Mode:', mode, 'Slug:', targetPath, 'Key:', keyPreview ? `${keyPreview}...` : '[empty]');
+
   console.log('Proxy Debug', {
     slug: targetPath,
     mode,
     keyPreview: keyPreview ? `${keyPreview}...` : '[empty]',
     method: req.method,
     headers: safeHeaders,
-  });
-  console.log('[Proxy Auth Debug]', {
-    incomingAuth: req.headers.authorization,
-    outgoingAuth: headers.Authorization,
-    xClientAuth: headers['X-Client-Authorization'],
   });
 
   try {
