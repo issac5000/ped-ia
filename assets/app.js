@@ -7649,7 +7649,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
     parentPreviewState.isLoading = false;
     if (!payload) {
-      hideParentPreview(true);
+      card.innerHTML = `
+        <div class="parent-preview-card__body">
+          <p class="parent-preview-card__name"><strong>Profil indisponible</strong></p>
+          <p>Nous n’avons pas pu charger les informations pour ce parent.</p>
+          <p>Réessayez dans un instant.</p>
+        </div>
+      `;
+      if (!modalMode) {
+        positionParentPreview(parentPreviewState.anchor, card);
+      }
       return;
     }
     card.innerHTML = buildParentPreviewHtml(payload);
