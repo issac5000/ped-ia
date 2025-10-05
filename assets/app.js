@@ -42,6 +42,45 @@ const DASHBOARD_BADGES = [
   { key: '24_36_start_toilet_training', label: 'Autonomie', milestoneLabel: 'Commence l’apprentissage de la propreté', icon: '🚽' }
 ];
 
+const PARENT_BADGE_DEFS = [
+  {
+    level: 2,
+    name: 'Parent attentif',
+    icon: '👀',
+    tooltip: 'Vous avez commencé à suivre activement le développement de votre enfant.',
+  },
+  {
+    level: 5,
+    name: 'Parent impliqué',
+    icon: '🤝',
+    tooltip: 'Votre régularité inspire confiance. Continuez comme ça !',
+  },
+  {
+    level: 8,
+    name: 'Parent engagé',
+    icon: '🔗',
+    tooltip: 'Votre implication crée un lien fort avec votre enfant.',
+  },
+  {
+    level: 10,
+    name: 'Parent dévoué',
+    icon: '❤️',
+    tooltip: 'Votre constance est un exemple de dévouement.',
+  },
+  {
+    level: 15,
+    name: 'Parent exemplaire',
+    icon: '🌟',
+    tooltip: 'Votre suivi dépasse les attentes. Vous êtes un modèle !',
+  },
+  {
+    level: 20,
+    name: 'Parent légendaire',
+    icon: '👑',
+    tooltip: 'Votre engagement est légendaire. Vous méritez tous les honneurs !',
+  },
+];
+
 const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) => [question.key, index]));
 // import { LENGTH_FOR_AGE, WEIGHT_FOR_AGE, BMI_FOR_AGE } from '/src/data/who-curves.js';
 (async () => {
@@ -1079,6 +1118,152 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
     return !!activeProfile?.isAnonymous && !!activeProfile?.code_unique;
   };
+
+  function normalizeParentBadgeSummary(badge) {
+    if (!badge || typeof badge !== 'object') return null;
+    const rawLevel = badge.level ?? badge.badge_level;
+    const levelNum = Number(rawLevel);
+    if (!Number.isFinite(levelNum)) return null;
+    const def = PARENT_BADGE_DEFS.find((item) => item.level === levelNum) || null;
+    const unlockedRaw = badge.isUnlocked ?? badge.is_unlocked;
+    const isUnlocked = unlockedRaw === true || unlockedRaw === 'true' || unlockedRaw === 1;
+    const normalized = {
+      level: levelNum,
+      name: badge.name || badge.badge_name || def?.name || '',
+      icon: badge.icon || badge.badge_icon || def?.icon || '',
+      tooltip: badge.tooltip || badge.description || def?.tooltip || '',
+      isUnlocked,
+      unlockedAt: badge.unlockedAt || badge.unlocked_at || null,
+    };
+    return normalized;
+  }
+
+  function normalizeParentBadges(rows = []) {
+    const byLevel = new Map();
+    rows.forEach((row) => {
+      const summary = normalizeParentBadgeSummary(row);
+      if (!summary) return;
+      byLevel.set(summary.level, summary);
+    });
+    return PARENT_BADGE_DEFS.map((def) => {
+      const stored = byLevel.get(def.level) || null;
+      return {
+        level: def.level,
+        name: stored?.name || def.name,
+        icon: stored?.icon || def.icon,
+        tooltip: def.tooltip,
+        isUnlocked: stored?.isUnlocked === true,
+        unlockedAt: stored?.unlockedAt || null,
+      };
+    });
+  }
+
+  async function loadParentBadges(profileId) {
+    const hasSupabase = !!supabase;
+    const candidate = profileId == null ? '' : String(profileId).trim();
+    if (!hasSupabase || !candidate) {
+      return normalizeParentBadges();
+    }
+    let filterValue = candidate;
+    if (typeof profileId === 'number' && Number.isFinite(profileId)) {
+      filterValue = profileId;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('badges_parent')
+        .select('badge_level,badge_name,badge_icon,is_unlocked,unlocked_at')
+        .eq('profile_id', filterValue)
+        .order('badge_level', { ascending: true });
+      if (error) throw error;
+      return normalizeParentBadges(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn('loadParentBadges failed', err);
+      return normalizeParentBadges();
+    }
+  }
+
+  function highestUnlockedParentBadge(badges = []) {
+    const source = Array.isArray(badges) ? badges : [];
+    let best = null;
+    for (const badge of source) {
+      if (!badge || !badge.isUnlocked) continue;
+      if (!best || (Number(badge.level) || 0) > (Number(best.level) || 0)) {
+        best = badge;
+      }
+    }
+    return best;
+  }
+
+  async function loadParentBadgeSummaries(profileIds = []) {
+    if (!supabase || !Array.isArray(profileIds) || !profileIds.length) {
+      return new Map();
+    }
+    const idSet = new Set();
+    profileIds.forEach((value) => {
+      const normalized = value == null ? '' : String(value).trim();
+      if (!normalized || normalized === 'undefined' || normalized === 'null') return;
+      idSet.add(normalized);
+    });
+    if (!idSet.size) return new Map();
+    const filterValues = Array.from(idSet).map((value) => (/^-?\d+$/.test(value) ? Number(value) : value));
+    try {
+      const { data, error } = await supabase
+        .from('badges_parent')
+        .select('profile_id,badge_level,badge_name,badge_icon,is_unlocked,unlocked_at')
+        .in('profile_id', filterValues)
+        .eq('is_unlocked', true);
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      const result = new Map();
+      rows.forEach((row) => {
+        if (!row || typeof row !== 'object') return;
+        const rawId = row.profile_id ?? row.profileId;
+        const idStr = rawId == null ? '' : String(rawId).trim();
+        if (!idStr) return;
+        const summary = normalizeParentBadgeSummary({ ...row, is_unlocked: true });
+        if (!summary) return;
+        const existing = result.get(idStr);
+        if (!existing || summary.level > existing.level) {
+          result.set(idStr, { ...summary, isUnlocked: true });
+        }
+      });
+      return result;
+    } catch (err) {
+      console.warn('loadParentBadgeSummaries failed', err);
+      return new Map();
+    }
+  }
+
+  async function attachParentBadgesToAuthors(map) {
+    if (!(map instanceof Map) || !map.size) return;
+    if (!supabase) return;
+    const ids = new Set();
+    map.forEach((value, key) => {
+      const candidate = value?.profileId ?? key;
+      const normalized = candidate == null ? '' : String(candidate).trim();
+      if (!normalized || normalized === 'undefined' || normalized === 'null') return;
+      ids.add(normalized);
+    });
+    if (!ids.size) {
+      map.forEach((value, key) => {
+        if (!value || typeof value !== 'object' || Object.prototype.hasOwnProperty.call(value, 'parentBadge')) return;
+        map.set(String(key), { ...value, parentBadge: null });
+      });
+      return;
+    }
+    const summaries = await loadParentBadgeSummaries(Array.from(ids));
+    map.forEach((value, key) => {
+      if (!value || typeof value !== 'object') return;
+      const candidateKey = value?.profileId ?? key;
+      const normalizedKey = candidateKey == null ? '' : String(candidateKey).trim();
+      const lookupKey = normalizedKey && normalizedKey !== 'undefined' && normalizedKey !== 'null'
+        ? normalizedKey
+        : null;
+      const badge = lookupKey ? summaries.get(lookupKey) || null : null;
+      const nextValue = { ...value, parentBadge: badge || null };
+      map.set(String(key), nextValue);
+    });
+  }
 
   async function resolveAccessToken() {
     let token = authSession?.access_token || '';
@@ -6334,6 +6519,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         </div>
       `
       : '';
+    const parentBadgesData = Array.isArray(data.parentBadges) && data.parentBadges.length
+      ? data.parentBadges
+      : normalizeParentBadges();
+    const parentBadgesHtml = renderParentBadges(parentBadgesData);
+    const parentBadgesSection = parentBadgesHtml
+      ? `
+        <div class="badges-container parent-badges" id="parent-badges" role="list">
+          ${parentBadgesHtml}
+        </div>
+      `
+      : '';
     const parentDisplayName = parentInfo.pseudo || 'Parent principal';
     const avatarInitial = parentDisplayName ? parentDisplayName.slice(0, 1).toUpperCase() : 'P';
     const children = Array.isArray(data.children) ? data.children : [];
@@ -6388,6 +6584,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         </div>
         ${moodChips}
         ${heroStats}
+        ${parentBadgesSection}
       </div>
     `;
     const contextCard = `
@@ -6574,6 +6771,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         familyContext: null,
         parentUpdates: [],
         growthAlerts: [],
+        parentBadges: normalizeParentBadges(),
       };
     }
     if (isAnonProfile()) {
@@ -6588,15 +6786,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         state.loading = true;
         state.error = null;
         try {
-          const parentContext = getEffectiveParentContext();
-          const parentInfo = {
-            pseudo: activeProfile?.full_name || '',
-            role: activeProfile?.parent_role || 'parent',
-          };
-          const normalizeChild = (child) => {
-            if (!child) return null;
-            const id = child.id != null ? child.id : child.childId;
-            if (id == null) return null;
+      const parentContext = getEffectiveParentContext();
+      const parentInfo = {
+        pseudo: activeProfile?.full_name || '',
+        role: activeProfile?.parent_role || 'parent',
+      };
+      let resolvedProfileId = activeProfile?.id ?? null;
+      const normalizeChild = (child) => {
+        if (!child) return null;
+        const id = child.id != null ? child.id : child.childId;
+        if (id == null) return null;
             const dob = child.dob || child.birthdate || null;
             const firstName = child.firstName || child.first_name || '';
             const sex = child.sex || child.gender || '';
@@ -6635,15 +6834,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           let parentUpdates = [];
           let familyContext = state.data?.familyContext || null;
           try {
-            const parentAccess = dataProxy.parentUpdates();
-            const updatesRes = await withRetry(() => parentAccess.callAnon('list', { limit: PARENT_UPDATES_LIMIT }));
-            if (Array.isArray(updatesRes.parentUpdates)) {
-              parentUpdates = updatesRes.parentUpdates;
-            }
-            const profileRow = updatesRes?.profile || null;
-            if (profileRow) {
-              const normalizedCtx = normalizeParentContext(profileRow, parentContext);
-              parentContext.maritalStatus = normalizedCtx.maritalStatus;
+          const parentAccess = dataProxy.parentUpdates();
+          const updatesRes = await withRetry(() => parentAccess.callAnon('list', { limit: PARENT_UPDATES_LIMIT }));
+          if (Array.isArray(updatesRes.parentUpdates)) {
+            parentUpdates = updatesRes.parentUpdates;
+          }
+          const profileRow = updatesRes?.profile || null;
+          if (profileRow) {
+            const normalizedCtx = normalizeParentContext(profileRow, parentContext);
+            parentContext.maritalStatus = normalizedCtx.maritalStatus;
               parentContext.numberOfChildren = normalizedCtx.numberOfChildren;
               parentContext.parentalEmployment = normalizedCtx.parentalEmployment;
               parentContext.parentalEmotion = normalizedCtx.parentalEmotion;
@@ -6653,6 +6852,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               parentInfo.role = profileRow.parent_role || parentInfo.role;
               const nextProfile = { ...(activeProfile || {}) };
               if (profileRow.id) nextProfile.id = profileRow.id;
+              if (profileRow.id != null) resolvedProfileId = profileRow.id;
               if (Object.prototype.hasOwnProperty.call(profileRow, 'full_name')) {
                 nextProfile.full_name = profileRow.full_name || parentInfo.pseudo;
               }
@@ -6700,6 +6900,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           } catch (err) {
             console.warn('collectGrowthAlerts anon failed', err);
           }
+          const parentBadges = await loadParentBadges(resolvedProfileId);
+          if (resolvedProfileId != null && !parentInfo.id) {
+            parentInfo.id = resolvedProfileId;
+          }
           const result = {
             parentContext,
             parentInfo,
@@ -6707,6 +6911,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             familyContext,
             parentUpdates,
             growthAlerts,
+            parentBadges,
           };
           state.data = result;
           state.lastFetchedAt = Date.now();
@@ -6768,6 +6973,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const parentInfo = {
           pseudo: profileRes.data?.full_name || settingsState.user?.pseudo || storedUser.pseudo || '',
           role: profileRes.data?.parent_role || settingsState.user?.role || storedUser.role || 'maman',
+          id: uid,
         };
         const children = Array.isArray(childrenRes.data)
           ? childrenRes.data.map((row) => ({
@@ -6786,6 +6992,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         } catch (err) {
           console.warn('collectGrowthAlerts failed', err);
         }
+        const parentBadges = await loadParentBadges(uid);
         return {
           parentContext,
           parentInfo,
@@ -6793,6 +7000,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           familyContext: familyRow,
           parentUpdates,
           growthAlerts,
+          parentBadges,
         };
       } finally {
         state.loading = false;
@@ -7439,7 +7647,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const normalizeAuthorMeta = (raw) => {
       if (!raw) return null;
       if (typeof raw === 'string') {
-        const authorMeta = { name: raw, childCount: null, showChildCount: null };
+        const authorMeta = { name: raw, childCount: null, showChildCount: null, parentBadge: null };
         console.debug('normalizeAuthorMeta', {
           id: null,
           showChildCount: authorMeta.showChildCount,
@@ -7464,7 +7672,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         } else {
           showChildCount = !!rawShow;
         }
-        const authorMeta = { name: name || 'Utilisateur', childCount, showChildCount };
+        let badgeCandidate = raw.parentBadge ?? raw.parent_badge ?? null;
+        if (Array.isArray(badgeCandidate)) {
+          const normalized = normalizeParentBadges(badgeCandidate);
+          badgeCandidate = highestUnlockedParentBadge(normalized);
+        }
+        const parentBadge = normalizeParentBadgeSummary(badgeCandidate) || null;
+        const authorMeta = { name: name || 'Utilisateur', childCount, showChildCount, parentBadge };
         console.debug('normalizeAuthorMeta', {
           id: raw.id ?? null,
           showChildCount: authorMeta.showChildCount,
@@ -7642,6 +7856,24 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const safeName = baseName || 'Anonyme';
         return safeName;
       };
+      const renderAuthorBadgeInline = (meta) => {
+        if (!meta) return '';
+        const normalized = (typeof meta === 'object' && meta !== null && Object.prototype.hasOwnProperty.call(meta, 'parentBadge'))
+          ? meta
+          : normalizeAuthorMeta(meta);
+        if (!normalized) return '';
+        const badge = normalized.parentBadge;
+        if (!badge || !badge.isUnlocked) return '';
+        const nameRaw = badge.name || '';
+        const tooltipRaw = badge.tooltip || '';
+        const ariaParts = [nameRaw, tooltipRaw].filter(Boolean).join(' – ');
+        const ariaAttr = ariaParts ? ` aria-label="${escapeHtml(ariaParts)}"` : '';
+        const titleValue = tooltipRaw || nameRaw;
+        const titleAttr = titleValue ? ` title="${escapeHtml(titleValue)}"` : '';
+        const iconHtml = badge.icon ? `<span class="author-parent-badge__icon" aria-hidden="true">${escapeHtml(badge.icon)}</span>` : '';
+        const labelHtml = nameRaw ? `<span class="author-parent-badge__label">${escapeHtml(nameRaw)}</span>` : '';
+        return `<span class="author-parent-badge"${titleAttr}${ariaAttr}>${iconHtml}${labelHtml}</span>`;
+      };
       const renderAuthorMetaInfo = (meta) => {
         if (!meta) return '';
         const normalized = (typeof meta === 'object' && meta !== null && 'childCount' in meta && 'showChildCount' in meta)
@@ -7710,6 +7942,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const renderThreadEntry = ({
         authorName,
         authorMetaHtml,
+        authorBadgeHtml = '',
         initials,
         timeLabel,
         timeIso,
@@ -7724,6 +7957,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const highlight = !!(isAi || isSelf);
         const safeInitials = escapeHtml(initials || '✦');
         const safeAuthor = escapeHtml(authorName || 'Anonyme');
+        const badgeInline = authorBadgeHtml ? authorBadgeHtml.trim() : '';
         const hasLabel = label != null && String(label).trim() !== '';
         const fallbackLabel = escapeHtml(
           isAi ? `Réponse de ${authorName}` : `Commentaire de ${authorName}`
@@ -7753,7 +7987,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
                 <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
                 <div class="topic-entry__meta">
                   <div class="topic-entry__author">
-                    <span class="topic-entry__author-name">${safeAuthor}</span>
+                    <span class="topic-entry__author-name">
+                      <span class="author-name-text">${safeAuthor}</span>
+                      ${badgeInline}
+                    </span>
                     ${authorMetaHtml || ''}
                   </div>
                   ${timeHtml}
@@ -7776,7 +8013,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               <div class="topic-entry__avatar" aria-hidden="true">${safeInitials}</div>
               <div class="topic-entry__meta">
                 <div class="topic-entry__author">
-                  <span class="topic-entry__author-name">${safeAuthor}</span>
+                  <span class="topic-entry__author-name">
+                    <span class="author-name-text">${safeAuthor}</span>
+                    ${badgeInline}
+                  </span>
                   ${authorMetaHtml || ''}
                 </div>
                 ${timeHtml}
@@ -7814,9 +8054,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const { label: createdLabel, iso: createdIso } = formatDateParts(t.created_at || t.createdAt);
         const displayAuthor = formatAuthorName(rawAuthorName);
         const topicAuthorMetaHtml = renderAuthorMetaInfo(normalizedAuthor || authorMeta);
+        const topicAuthorBadgeHtml = renderAuthorBadgeInline(normalizedAuthor || authorMeta);
         const topicAuthorBlock = `
           <span class="topic-author">
-            <span class="topic-author-name">${escapeHtml(displayAuthor)}</span>
+            <span class="topic-author-name">
+              <span class="author-name-text">${escapeHtml(displayAuthor)}</span>
+              ${topicAuthorBadgeHtml}
+            </span>
             ${topicAuthorMetaHtml}
           </span>
         `.trim();
@@ -7830,6 +8074,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const topicEntryHtml = renderThreadEntry({
           authorName: displayAuthor,
           authorMetaHtml: topicAuthorMetaHtml,
+          authorBadgeHtml: topicAuthorBadgeHtml,
           initials,
           timeLabel: createdLabel,
           timeIso: createdIso,
@@ -7849,6 +8094,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             || 'Anonyme';
           const replyAuthor = formatAuthorName(rawReplyAuthor);
           const replyAuthorMetaHtml = renderAuthorMetaInfo(normalizedReply || replyMeta);
+          const replyAuthorBadgeHtml = renderAuthorBadgeInline(normalizedReply || replyMeta);
           const replyInitials = initialsFrom(rawReplyAuthor);
           const { label: replyTimeLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
           const replyMessageBtn = r.user_id ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>` : '';
@@ -7876,6 +8122,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           return renderThreadEntry({
             authorName: replyAuthor,
             authorMetaHtml: replyAuthorMetaHtml,
+            authorBadgeHtml: replyAuthorBadgeHtml,
             initials: replyInitials,
             timeLabel: replyTimeLabel,
             timeIso: replyIso,
@@ -8019,6 +8266,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               authorsMap.set(String(id), entry);
             });
             await enrichAuthorsMapWithProfiles(authorsMap, getActiveAnonCode());
+            await attachParentBadgesToAuthors(authorsMap);
             const repliesMap = new Map();
             const replyIds = [];
             repliesArr.forEach((r) => {
@@ -8229,6 +8477,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             authorsMap = await withRetry(() => loadCommunityProfiles());
           }
           await enrichAuthorsMapWithProfiles(authorsMap, getActiveAnonCode());
+          await attachParentBadgesToAuthors(authorsMap);
           const repliesMap = new Map();
           const replyIds = [];
           replies.forEach((reply) => {
@@ -8382,6 +8631,39 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const str = typeof value === 'string' ? value : String(value);
     return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
   }
+  function renderParentBadges(badges = []) {
+    const list = Array.isArray(badges) ? badges : [];
+    if (!list.length) return '';
+    const lockIcon = '<div class="badge-lock" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use xlink:href="#icon-lock" href="#icon-lock"></use></svg></div>';
+    return list
+      .map((badge) => {
+        if (!badge || typeof badge !== 'object') return '';
+        const stateClass = badge.isUnlocked ? 'badge-unlocked' : 'badge-locked';
+        const safeLabel = escapeHtml(badge.name || `Badge niveau ${badge.level || ''}`);
+        const safeDescription = escapeHtml(badge.tooltip || '');
+        const safeIcon = escapeHtml(badge.icon || '✨');
+        const ariaParts = [
+          `Badge ${badge.name || badge.level || ''}`.trim(),
+          badge.isUnlocked ? 'débloqué' : 'verrouillé',
+          badge.tooltip || '',
+        ].filter(Boolean);
+        const ariaLabel = ariaParts.join(' – ');
+        return `
+          <div class="badge ${stateClass} parent-badge" role="listitem" tabindex="0" aria-label="${escapeHtml(ariaLabel)}" data-level="${escapeHtml(String(badge.level ?? ''))}">
+            <div class="badge-icon" aria-hidden="true">
+              <span class="badge-emoji">${safeIcon}</span>
+            </div>
+            <div class="badge-label-group">
+              <div class="badge-label">${safeLabel}</div>
+              ${safeDescription ? `<div class="badge-description">${safeDescription}</div>` : ''}
+            </div>
+            ${badge.isUnlocked ? '' : lockIcon}
+          </div>
+        `;
+      })
+      .join('');
+  }
+
   function renderDashboardBadges(milestones){
     const safeMilestones = Array.isArray(milestones) ? milestones : [];
     return DASHBOARD_BADGES.map((badge) => {
