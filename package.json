@@ -1,0 +1,16 @@
+{
+  "name": "pedia-spa",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ped’IA — Suivi & évolution 0–7 ans (SPA prototype)",
+  "scripts": {
+    "start": "node api/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.2"
+  }
+}

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Messages privés</title>
+  <link rel="icon" type="image/png" href="/logoonly.png" />
+  <link rel="stylesheet" href="assets/style.css?v=6" />
+  <style>
+    .chat-area{display:flex;gap:20px;margin-top:20px;height:70vh;min-height:60vh;align-items:stretch}
+    .parent-list{flex:0 0 250px;height:100%;overflow-y:auto}
+    #parents-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+    .parent-item{display:flex;align-items:flex-start;gap:8px;padding:8px;cursor:pointer;border-radius:12px;width:100%}
+    .parent-item.active{background:rgba(255,255,255,.1)}
+    .parent-item .meta{flex:1}
+    .parent-item .name{font-weight:600; display:flex; align-items:center; gap:6px}
+    .parent-item time{display:block;font-size:.75rem;opacity:.7;color:var(--muted,#666)}
+    .parent-item .del-btn{background:none;border:none;color:var(--muted,#666);cursor:pointer;padding:2px;margin-left:auto}
+    .parent-item .del-btn:hover{color:#c00}
+    .chat-window{display:none;flex-direction:column;flex:1 1 auto;height:70vh;min-height:60vh;max-height:70vh}
+    .chat-window.open{display:flex}
+    .chat-placeholder{flex:1;display:flex;align-items:center;justify-content:center;height:70vh;min-height:60vh;text-align:center}
+    #conversation{flex:1 1 auto;overflow-y:auto;min-height:0}
+    /* Ensure my sent bubbles use solid black text */
+    .chat-window .bubble.user{color:#000}
+    /* Small green dot for unread conversations */
+    .dot-unread{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok,#2dc07a);box-shadow:0 0 0 2px rgba(255,255,255,.12)}
+    @media(max-width:600px){
+        .chat-area{flex-direction:column;height:auto;min-height:60vh}
+        .parent-list{flex:0 0 auto;width:100%;max-height:30vh;height:auto}
+        .chat-window{flex:1 1 auto;width:100%;height:60vh;min-height:60vh;max-height:60vh}
+        .chat-placeholder{flex:1 1 auto;width:100%;min-height:60vh;height:60vh}
+        #conversation{max-height:100%}
+      }
+  </style>
+</head>
+<body class="no-js interior-page">
+  <div id="loading-overlay"><div class="loader"></div><button id="refresh-btn" class="btn btn-secondary" hidden>Forcer le chargement</button></div>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/#/">
+        <img src="/logotexte.png" alt="Synap'Kids" width="377" height="74" decoding="async" fetchpriority="high" class="brand-text-logo" />
+      </a>
+      <nav id="main-nav" class="main-nav" aria-label="Navigation principale">
+        <a href="/#/" class="nav-link"><span class="nav-ico">🏠</span><span>Accueil</span></a>
+        <a href="/#/dashboard" class="nav-link"><span class="nav-ico">📊</span><span>Carnet de suivi</span></a>
+        <a href="/#/community" class="nav-link"><span class="nav-ico">💬</span><span>Communauté</span></a>
+        <a href="messages.html" class="nav-link"><span class="nav-ico">📨</span><span>Messages</span></a>
+        <a href="/#/ai" class="nav-link"><span class="nav-ico">🤖</span><span>Fonctionnalité IA</span></a>
+        <a href="blog.html" class="nav-link"><span class="nav-ico">📝</span><span>Articles de blog</span></a>
+        <a href="/#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
+        <a href="/#/about" class="nav-link"><span class="nav-ico">ℹ️</span><span>À propos</span></a>
+      </nav>
+      <div class="auth-actions">
+        <button id="nav-toggle" class="nav-toggle" aria-controls="main-nav" aria-expanded="false" title="Menu">☰</button>
+        <span id="login-status" class="login-status" hidden aria-label="Connecté" title="Connecté"></span>
+        <button id="btn-login" class="btn btn-secondary">Se connecter</button>
+        <button id="btn-logout" class="btn btn-secondary" hidden>Se déconnecter</button>
+      </div>
+    </div>
+  </header>
+  <div id="page-logo" class="page-logo" hidden>
+    <div class="container">
+      <img src="/logo.png" alt="Logo" class="page-logo-img" loading="lazy" decoding="async" />
+    </div>
+  </div>
+  <div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
+  <main class="container">
+    <div id="messages-shell" hidden>
+      <div class="page-header">
+        <h2>Discussion privée</h2>
+        <p class="page-subtitle">Pour plus d’intimités</p>
+      </div>
+      <div class="chat-area">
+        <aside class="parent-list card">
+          <ul id="parents-list"></ul>
+        </aside>
+        <section id="chat-placeholder" class="chat-placeholder card">
+          <div class="stack" style="margin:auto">
+            <p class="muted">Sélectionnez une conversation pour commencer</p>
+          </div>
+        </section>
+        <section class="chat-window card">
+          <div id="conversation" class="chat-messages"></div>
+          <form id="message-form" class="chat-input" autocomplete="off">
+            <div class="chat-row">
+              <textarea id="message-input" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
+              <button class="btn btn-primary chat-send" type="submit">Envoyer</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+    <section id="login-gate" class="route" data-route="/login" hidden aria-labelledby="login-gate-title">
+      <div class="page-header login-header">
+        <h2 id="login-gate-title">Connexion à Synap'Kids</h2>
+        <p class="page-subtitle">Connectez-vous pour consulter vos messages privés.</p>
+      </div>
+      <div class="login-panels">
+        <article class="login-panel login-panel--google">
+          <div class="login-panel__header">
+            <span class="login-pill">Synchronisé</span>
+            <h3>Se connecter avec Google</h3>
+            <p class="login-panel__text">Retrouvez vos conversations instantanément sur tous vos appareils.</p>
+          </div>
+          <button class="btn btn-primary btn-google-login login-panel__action" type="button">
+            <span class="login-panel__icon" aria-hidden="true">G</span>
+            <span>Continuer avec Google</span>
+          </button>
+          <ul class="login-panel__list" aria-label="Avantages de la connexion Google">
+            <li>Synchronisation automatique et sauvegarde Supabase.</li>
+            <li>Accès rapide sans nouveau mot de passe.</li>
+          </ul>
+          <p class="login-panel__note">Nous respectons votre confidentialité : seul votre identifiant Google est utilisé pour vous authentifier.</p>
+        </article>
+        <article class="login-panel login-panel--anon">
+          <div class="login-panel__header">
+            <span class="login-pill login-pill--outline">Sans adresse e-mail</span>
+            <h3>Connexion anonyme</h3>
+            <p class="login-panel__text">Générez un code confidentiel pour accéder à vos messages en toute discrétion.</p>
+          </div>
+          <button class="btn btn-secondary login-panel__action" type="button" id="btn-create-anon">Créer un code anonyme</button>
+          <div id="anon-create-status" class="form-status" aria-live="polite"></div>
+          <div class="login-panel__divider" role="separator"><span>Déjà un code&nbsp;?</span></div>
+          <label class="login-code-label" for="anon-code-input">Entrez votre code unique</label>
+          <div class="login-code-row">
+            <div class="login-code-field">
+              <span class="login-code-field__label" aria-hidden="true">CODE</span>
+              <input
+                id="anon-code-input"
+                class="login-code-input"
+                type="text"
+                inputmode="text"
+                autocomplete="one-time-code"
+                placeholder="Ex : A1B2-C3D4-E5F6"
+              />
+            </div>
+            <button class="btn btn-secondary" type="button" id="btn-login-code">Se connecter</button>
+          </div>
+          <p class="login-panel__hint">Conservez ce code en lieu sûr : il vous permet de retrouver vos conversations depuis n’importe quel appareil.</p>
+          <div id="anon-login-status" class="form-status" aria-live="polite"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer home-footer">
+    <div class="footer-bg" aria-hidden="true">
+      <svg viewBox="0 0 1440 600" preserveAspectRatio="none">
+        <path class="layer rev" fill="rgba(255,255,255,.08)" d="M0,152 C240,130 500,160 760,136 C1040,110 1260,146 1440,132 L1440,600 L0,600 Z"></path>
+        <path class="layer" fill="rgba(32,38,50,.18)" d="M0,134 C220,110 460,140 740,112 C1020,86 1200,126 1440,104 L1440,600 L0,600 Z"></path>
+        <path class="layer rev" fill="rgba(26,32,42,.26)" d="M0,118 C200,80 460,130 760,92 C1060,54 1220,120 1440,86 L1440,600 L0,600 Z"></path>
+        <path class="layer" fill="rgba(18,22,29,.38)" d="M0,96 C240,20 420,150 720,64 C1020,-12 1240,150 1440,44 L1440,600 L0,600 Z"></path>
+      </svg>
+    </div>
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a class="brand" href="/#/" aria-label="Accueil Synap'Kids">
+            <img src="/logo.png" alt="Synap'Kids" class="footer-logo" />
+          </a>
+          <p>Le copilote parental 0–3 ans, pour suivre en douceur l’évolution de votre enfant.</p>
+        </div>
+        <nav class="footer-col" aria-label="Liens utiles">
+          <h4>Liens utiles</h4>
+          <ul class="footer-links">
+            <li><a href="/#/">Accueil</a></li>
+            <li><a href="/#/dashboard">Carnet de suivi</a></li>
+            <li><a href="/#/ai">Fonctionnalité IA</a></li>
+            <li><a href="/#/community">Communauté</a></li>
+            <li><a href="messages.html">Messages</a></li>
+            <li><a href="blog.html">Articles de blog</a></li>
+            <li><a href="/#/settings">Paramètres</a></li>
+          </ul>
+        </nav>
+        <nav class="footer-col" aria-label="Contenus">
+          <h4>Contenus</h4>
+          <ul class="footer-links">
+            <li><a href="les-1000-premiers-jours.html">Les 1000 premiers jours</a></li>
+            <li><a href="la-theorie-de-l-esprit.html">La théorie de l’esprit</a></li>
+            <li><a href="la-theorie-de-l-attachement.html">La théorie de l’attachement</a></li>
+          </ul>
+        </nav>
+        <div class="footer-col" aria-label="Légal">
+          <h4>Légal</h4>
+          <ul class="footer-links">
+            <li><a href="/#/about">À propos</a></li>
+            <li><a href="/#/legal">Mentions légales</a></li>
+            <li><a href="/#/legal">Confidentialité</a></li>
+          </ul>
+        </div>
+        <div class="footer-col" aria-label="Contact">
+          <h4>Contact</h4>
+          <ul class="footer-links">
+            <li><a href="/#/contact">Formulaire de contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2025 Synap'Kids — Infos indicatives, pas de conseil médical</span>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/loading.js"></script>
+  <script type="module" src="assets/messages.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+name: Deploy Supabase Functions
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "supabase/functions/**"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Installe la CLI via le paquet .deb officiel (plus de tar.gz côté Linux)
+      - name: Install Supabase CLI
+        run: |
+          set -euo pipefail
+          VERSION="2.47.2"
+          echo "➡️ Downloading supabase_${VERSION}_linux_amd64.deb"
+          curl -fsSL -o supabase.deb \
+            "https://github.com/supabase/cli/releases/download/v${VERSION}/supabase_${VERSION}_linux_amd64.deb"
+          sudo dpkg -i supabase.deb
+          supabase --version
+
+      - name: Deploy Supabase Functions
+        env:
+          PROJECT: myrwcjurblksypvekuzb
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "➡️ Deploying functions…"
+          supabase functions deploy --project-ref "$PROJECT" --no-verify-jwt --debug
