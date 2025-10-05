@@ -7342,6 +7342,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let parentPreviewRequestToken = 0;
   let parentPreviewLastPointerType = null;
   let parentPreviewGlobalHandlersBound = false;
+  let parentPreviewSuppressClicksUntil = 0;
   const parentPreviewState = {
     profileId: null,
     anchor: null,
@@ -7577,40 +7578,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   const bindParentPreviewHandlers = (list) => {
     if (!list || list.dataset.previewBound === '1') return;
-    list.addEventListener('pointerdown', (event) => {
-      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
-    }, true);
-    list.addEventListener('pointerenter', (event) => {
-      const anchor = event.target && typeof event.target.closest === 'function'
-        ? event.target.closest('[data-parent-profile]')
-        : null;
+    const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+    const resolvePreviewAnchor = (target) => (
+      target && typeof target.closest === 'function'
+        ? target.closest('[data-parent-profile]')
+        : null
+    );
+    const togglePreviewFromAnchor = (anchor) => {
       if (!anchor) return;
       const profileId = anchor.getAttribute('data-parent-profile');
       if (!profileId) return;
-      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
-      if (parentPreviewLastPointerType === 'touch') return;
-      showParentPreview(anchor, profileId);
-    }, true);
-    list.addEventListener('pointerleave', (event) => {
-      const anchor = event.target && typeof event.target.closest === 'function'
-        ? event.target.closest('[data-parent-profile]')
-        : null;
-      if (!anchor) return;
-      if (event.pointerType === 'touch') return;
-      scheduleParentPreviewHide();
-    }, true);
-    list.addEventListener('click', (event) => {
-      const anchor = event.target && typeof event.target.closest === 'function'
-        ? event.target.closest('[data-parent-profile]')
-        : null;
-      if (!anchor) return;
-      const profileId = anchor.getAttribute('data-parent-profile');
-      if (!profileId) return;
-      if (parentPreviewLastPointerType && parentPreviewLastPointerType !== 'touch' && parentPreviewLastPointerType !== 'pen') {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
       if (
         parentPreviewState.profileId === profileId
         && parentPreviewState.anchor === anchor
@@ -7620,6 +7597,52 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         return;
       }
       showParentPreview(anchor, profileId);
+    };
+    list.addEventListener('pointerdown', (event) => {
+      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
+    }, true);
+    list.addEventListener('pointerenter', (event) => {
+      const anchor = resolvePreviewAnchor(event.target);
+      if (!anchor) return;
+      const profileId = anchor.getAttribute('data-parent-profile');
+      if (!profileId) return;
+      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
+      if (parentPreviewLastPointerType === 'touch') return;
+      showParentPreview(anchor, profileId);
+    }, true);
+    list.addEventListener('pointerleave', (event) => {
+      const anchor = resolvePreviewAnchor(event.target);
+      if (!anchor) return;
+      if (event.pointerType === 'touch') return;
+      scheduleParentPreviewHide();
+    }, true);
+    list.addEventListener('pointerup', (event) => {
+      const anchor = resolvePreviewAnchor(event.target);
+      if (!anchor) return;
+      const type = event.pointerType || parentPreviewLastPointerType || '';
+      if (type !== 'touch' && type !== 'pen') return;
+      parentPreviewLastPointerType = type;
+      parentPreviewSuppressClicksUntil = now() + 260;
+      event.preventDefault();
+      event.stopPropagation();
+      togglePreviewFromAnchor(anchor);
+    }, true);
+    list.addEventListener('click', (event) => {
+      if (parentPreviewSuppressClicksUntil && now() < parentPreviewSuppressClicksUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const anchor = resolvePreviewAnchor(event.target);
+      if (!anchor) return;
+      const profileId = anchor.getAttribute('data-parent-profile');
+      if (!profileId) return;
+      if (parentPreviewLastPointerType && parentPreviewLastPointerType !== 'touch' && parentPreviewLastPointerType !== 'pen') {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      togglePreviewFromAnchor(anchor);
     });
     list.dataset.previewBound = '1';
   };
