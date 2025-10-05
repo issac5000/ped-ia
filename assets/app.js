@@ -7343,6 +7343,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let parentPreviewLastPointerType = null;
   let parentPreviewGlobalHandlersBound = false;
   let parentPreviewSuppressClicksUntil = 0;
+  let parentPreviewSuppressPointerUntil = 0;
   const parentPreviewState = {
     profileId: null,
     anchor: null,
@@ -7584,6 +7585,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         ? target.closest('[data-parent-profile]')
         : null
     );
+    const shouldSuppressPointer = () => parentPreviewSuppressPointerUntil && now() < parentPreviewSuppressPointerUntil;
     const togglePreviewFromAnchor = (anchor) => {
       if (!anchor) return;
       const profileId = anchor.getAttribute('data-parent-profile');
@@ -7599,9 +7601,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       showParentPreview(anchor, profileId);
     };
     list.addEventListener('pointerdown', (event) => {
-      parentPreviewLastPointerType = event.pointerType || parentPreviewLastPointerType || 'mouse';
+      if (shouldSuppressPointer()) return;
+      const pointerType = event.pointerType || (typeof event.pointerType === 'string' && event.pointerType.length ? event.pointerType : '');
+      if (pointerType) {
+        parentPreviewLastPointerType = pointerType;
+      } else if (event.width && event.width > 1 && event.height && event.height > 1) {
+        parentPreviewLastPointerType = 'touch';
+      } else {
+        parentPreviewLastPointerType = parentPreviewLastPointerType || 'mouse';
+      }
     }, true);
     list.addEventListener('pointerenter', (event) => {
+      if (shouldSuppressPointer()) return;
       const anchor = resolvePreviewAnchor(event.target);
       if (!anchor) return;
       const profileId = anchor.getAttribute('data-parent-profile');
@@ -7611,12 +7622,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       showParentPreview(anchor, profileId);
     }, true);
     list.addEventListener('pointerleave', (event) => {
+      if (shouldSuppressPointer()) return;
       const anchor = resolvePreviewAnchor(event.target);
       if (!anchor) return;
       if (event.pointerType === 'touch') return;
       scheduleParentPreviewHide();
     }, true);
     list.addEventListener('pointerup', (event) => {
+      if (shouldSuppressPointer()) {
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const anchor = resolvePreviewAnchor(event.target);
       if (!anchor) return;
       const type = event.pointerType || parentPreviewLastPointerType || '';
@@ -7627,6 +7644,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       event.stopPropagation();
       togglePreviewFromAnchor(anchor);
     }, true);
+    const handleTouchStart = (event) => {
+      const anchor = resolvePreviewAnchor(event.target);
+      if (!anchor) return;
+      parentPreviewLastPointerType = 'touch';
+      const deadline = now() + 260;
+      parentPreviewSuppressClicksUntil = deadline;
+      parentPreviewSuppressPointerUntil = deadline;
+      if (event.cancelable) event.preventDefault();
+      event.stopPropagation();
+      togglePreviewFromAnchor(anchor);
+    };
+    list.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
     list.addEventListener('click', (event) => {
       if (parentPreviewSuppressClicksUntil && now() < parentPreviewSuppressClicksUntil) {
         event.preventDefault();
