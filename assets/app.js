@@ -1133,6 +1133,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       requestInit.body = JSON.stringify(body);
     }
     const response = await fetch(`${resolveEdgeFunctionBase()}/${endpoint}`, requestInit);
+    if (response.status === 403) {
+      console.warn('[callEdgeFunction] 403 ignored (anon call too early)');
+      return null;
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.success) {
       const errorMessage = payload?.error || 'Service indisponible';

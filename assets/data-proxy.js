@@ -262,6 +262,10 @@ export function createDataProxy({
 // Handles fetching a child profile by ID from Supabase
 async function loadChildById(id) {
   if (!id) return null;
+  if (typeof supabase === 'undefined' || !supabase) {
+    console.warn('[loadChildById] Supabase client not ready yet');
+    return null;
+  }
   try {
     const { data, error } = await supabase
       .from('children')
