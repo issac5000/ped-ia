@@ -219,6 +219,101 @@ export async function processAnonCommunityRequest(body) {
       };
     }
 
+    if (action === 'parent-preview') {
+      const profileIdRaw =
+        body?.profileId ??
+        body?.profile_id ??
+        body?.targetId ??
+        body?.target_id ??
+        body?.user_id ??
+        body?.userId ??
+        body?.id;
+      const targetId = normalizeId(profileIdRaw);
+      if (!targetId) throw new HttpError(400, 'profile_id required');
+      const rpcHeaders = { ...headers, 'Content-Type': 'application/json' };
+      let preview = null;
+      try {
+        const rpcPayload = await supabaseRequest(
+          `${supaUrl}/rest/v1/rpc/get_parent_preview`,
+          {
+            method: 'POST',
+            headers: rpcHeaders,
+            body: JSON.stringify({ pid: targetId }),
+          }
+        );
+        if (Array.isArray(rpcPayload) && rpcPayload.length > 0) {
+          preview = rpcPayload[0] ?? null;
+        } else if (rpcPayload && typeof rpcPayload === 'object') {
+          preview = rpcPayload;
+        }
+      } catch (err) {
+        console.warn('anon-community parent-preview rpc failed', err);
+      }
+      if (!preview) {
+        try {
+          const encodedId = encodeURIComponent(targetId);
+          const profileRows = await supabaseRequest(
+            `${supaUrl}/rest/v1/profiles?select=id,full_name&limit=1&id=eq.${encodedId}`,
+            { headers }
+          );
+          const profileRow = Array.isArray(profileRows) ? profileRows[0] : profileRows;
+          const childrenRows = await supabaseRequest(
+            `${supaUrl}/rest/v1/children?select=id&user_id=eq.${encodedId}`,
+            { headers }
+          );
+          const updatesRows = await supabaseRequest(
+            `${supaUrl}/rest/v1/parent_updates?select=id,created_at&order=created_at.desc&limit=500&profile_id=eq.${encodedId}`,
+            { headers }
+          );
+          const badgesRows = await supabaseRequest(
+            `${supaUrl}/rest/v1/badges_parent?select=badge_level,badge_name,badge_icon,is_unlocked,unlocked_at&profile_id=eq.${encodedId}`,
+            { headers }
+          );
+          const childCount = Array.isArray(childrenRows) ? childrenRows.length : 0;
+          const updatesArray = Array.isArray(updatesRows) ? updatesRows : [];
+          const totalUpdates = updatesArray.length;
+          const lastUpdate = updatesArray.length ? updatesArray[0]?.created_at ?? updatesArray[0]?.createdAt ?? null : null;
+          let badgeName = '';
+          let badgeIcon = '';
+          let bestLevel = -Infinity;
+          (Array.isArray(badgesRows) ? badgesRows : []).forEach((row) => {
+            if (!row) return;
+            const unlockedRaw = row.is_unlocked ?? row.isUnlocked ?? null;
+            const unlocked = unlockedRaw === true || unlockedRaw === 'true' || unlockedRaw === 1;
+            if (!unlocked) return;
+            const levelRaw = row.badge_level ?? row.badgeLevel ?? row.level;
+            const level = Number(levelRaw);
+            if (!Number.isFinite(level)) return;
+            if (level > bestLevel) {
+              bestLevel = level;
+              badgeName = row.badge_name ?? row.badgeName ?? '';
+              badgeIcon = row.badge_icon ?? row.badgeIcon ?? '';
+            }
+          });
+          preview = {
+            id: targetId,
+            profile_id: targetId,
+            full_name: profileRow?.full_name ?? profileRow?.fullName ?? 'Parent de la communauté',
+            number_of_children: Number.isFinite(childCount) ? childCount : null,
+            total_updates: totalUpdates,
+            last_update: lastUpdate,
+            badge_name: badgeName,
+            badge_icon: badgeIcon,
+          };
+        } catch (fallbackErr) {
+          console.warn('anon-community parent-preview fallback failed', fallbackErr);
+        }
+      }
+      if (preview && typeof preview === 'object') {
+        const sanitized = { ...preview };
+        if (sanitized.profile_id == null) sanitized.profile_id = targetId;
+        if (sanitized.profileId == null) sanitized.profileId = targetId;
+        if (sanitized.id == null) sanitized.id = targetId;
+        return { status: 200, body: { preview: sanitized } };
+      }
+      return { status: 200, body: { preview: null } };
+    }
+
     if (action === 'create-topic') {
       const title = sanitizeTitle(body?.title ?? '');
       const content = sanitizeContent(body?.content ?? '');
