@@ -106,23 +106,44 @@ serve(async (req) => {
     let lastError: unknown = null;
 
     for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
+      const code = generateAnonCode();
+      const { data: existing, error: existingErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id,code_unique,full_name,user_id')
+        .eq('code_unique', code)
+        .maybeSingle();
+      if (existingErr && existingErr.code !== 'PGRST116') {
+        throw new HttpError(existingErr.status ?? 500, 'Lookup failed', existingErr.message || existingErr);
+      }
+      if (existing) {
+        console.log(`[Anon Debug] Profile reused for code ${code}`, { id: existing.id });
+        const profile = {
+          id: existing.id,
+          code_unique: existing.code_unique,
+          full_name: existing.full_name ?? fullName ?? '',
+          user_id: existing.user_id ?? null,
+        };
+        return jsonResponse({ success: true, data: { profile } });
+      }
+
       const insertPayload: Record<string, unknown> = {
         id: crypto.randomUUID(),
-        code_unique: generateAnonCode(),
+        code_unique: code,
       };
       if (fullName) insertPayload.full_name = fullName;
 
       const response = await supabaseAdmin
-        .from("profiles")
+        .from('profiles')
         .insert(insertPayload)
-        .select("id,code_unique,full_name,user_id")
+        .select('id,code_unique,full_name,user_id')
         .single();
 
       if (!response.error && response.data) {
+        console.log('[Anon Debug] Profile created', { id: response.data.id, code: response.data.code_unique });
         const profile = {
           id: response.data.id,
           code_unique: response.data.code_unique,
-          full_name: response.data.full_name ?? fullName ?? "",
+          full_name: response.data.full_name ?? fullName ?? '',
           user_id: response.data.user_id ?? null,
         };
         return jsonResponse({ success: true, data: { profile } });
@@ -135,12 +156,12 @@ serve(async (req) => {
 
       throw new HttpError(
         response.error?.status ?? 500,
-        "Create failed",
+        'Create failed',
         response.error?.message || response.error,
       );
     }
 
-    throw new HttpError(500, "Create failed", lastError);
+    throw new HttpError(500, 'Create failed', lastError);
   } catch (error) {
     const status = error instanceof HttpError ? error.status || 400 : 500;
     const message = error instanceof HttpError ? error.message : "Server error";

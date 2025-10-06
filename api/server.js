@@ -2,7 +2,6 @@
 // Utilisation : OPENAI_API_KEY=sk-... node api/server.js
 
 import { createServer } from 'http';
-import { randomBytes, randomUUID } from 'crypto';
 import { readFile, stat } from 'fs/promises';
 import { extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -14,34 +13,6 @@ import { processAnonParentUpdatesRequest } from '../lib/anon-parent-updates.js';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
-const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const CODE_DIGITS = '23456789';
-const MAX_ANON_ATTEMPTS = 5;
-
-/**
- * Génère un code lisible pour les profils anonymes en alternant lettres et chiffres.
- * On exclut volontairement les caractères ambigus (I, O, 0, 1) pour limiter les erreurs de saisie.
- */
-function generateAnonCode() {
-  const bytes = randomBytes(12);
-  let out = '';
-  for (let i = 0; i < 12; i += 1) {
-    const alphabet = i % 2 === 0 ? CODE_LETTERS : CODE_DIGITS;
-    const index = bytes[i] % alphabet.length;
-    out += alphabet[index];
-  }
-  return out;
-}
-
-/**
- * Détermine s’il faut retenter une création de profil après une erreur Supabase.
- * Les collisions de code_unique déclenchent un nouvel essai jusqu’à atteindre MAX_ANON_ATTEMPTS.
- */
-function shouldRetryDuplicate(status, detailsText) {
-  if (status === 409) return true;
-  if (!detailsText) return false;
-  return /duplicate key value/i.test(detailsText) && /code_unique/i.test(detailsText);
-}
 
 // Charge les variables d’environnement depuis .env.local/.env en local si nécessaire
 async function loadLocalEnv() {
@@ -542,86 +513,6 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  if (req.method === 'OPTIONS' && url.pathname === '/api/profiles/create-anon') {
-    return send(res, 204, '', {
-      'Access-Control-Allow-Methods': 'POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/profiles/create-anon') {
-    try {
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
-      const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-      if (!serviceKey || !supaUrl) {
-        return send(res, 500, JSON.stringify({ error: 'Server misconfigured' }), { 'Content-Type': 'application/json; charset=utf-8' });
-      }
-
-      let body = {};
-      try {
-        body = await parseJson(req);
-      } catch {
-        return send(res, 400, JSON.stringify({ error: 'Invalid JSON body' }), { 'Content-Type': 'application/json; charset=utf-8' });
-      }
-      const fullNameRaw = typeof body.fullName === 'string' ? body.fullName.trim() : '';
-      const basePayload = {};
-      if (fullNameRaw) basePayload.full_name = fullNameRaw.slice(0, 120);
-
-      let lastError = null;
-      for (let attempt = 0; attempt < MAX_ANON_ATTEMPTS; attempt += 1) {
-        const insertPayload = {
-          ...basePayload,
-          id: randomUUID(),
-          code_unique: generateAnonCode()
-        };
-
-        const response = await fetch(`${supaUrl}/rest/v1/profiles`, {
-          method: 'POST',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(insertPayload)
-        });
-
-        const text = await response.text().catch(() => '');
-        let json = null;
-        if (text) {
-          try { json = JSON.parse(text); } catch {}
-        }
-
-        if (response.ok) {
-          const row = Array.isArray(json) ? json?.[0] : json;
-          const id = row?.id || insertPayload.id;
-          const code = row?.code_unique || insertPayload.code_unique;
-          if (!id || !code) {
-            return send(res, 500, JSON.stringify({ error: 'Invalid response from Supabase' }), { 'Content-Type': 'application/json; charset=utf-8' });
-          }
-          const profile = {
-            id,
-            code_unique: code,
-            full_name: row?.full_name || basePayload.full_name || '',
-            user_id: row?.user_id ?? null
-          };
-          return send(res, 200, JSON.stringify({ profile }), { 'Content-Type': 'application/json; charset=utf-8' });
-        }
-
-        const detailsText = json ? JSON.stringify(json) : text;
-        if (shouldRetryDuplicate(response.status, detailsText)) {
-          lastError = { status: response.status, details: detailsText };
-          continue;
-        }
-
-        return send(res, response.status, JSON.stringify({ error: 'Create failed', details: detailsText || undefined }), { 'Content-Type': 'application/json; charset=utf-8' });
-      }
-
-      return send(res, lastError?.status || 500, JSON.stringify({ error: 'Create failed', details: lastError?.details || undefined }), { 'Content-Type': 'application/json; charset=utf-8' });
-    } catch (e) {
-      return send(res, 500, JSON.stringify({ error: 'Server error', details: String(e.message || e) }), { 'Content-Type': 'application/json; charset=utf-8' });
-    }
-  }
 
   if (req.method === 'OPTIONS' && url.pathname === '/api/anon/children') {
     return send(res, 204, '', {

@@ -3140,24 +3140,60 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   // Garantir l’existence d’une ligne profil pour l’utilisateur authentifié sans écraser son pseudo
   async function ensureProfile(user){
     try {
-      if (!supabase || !user?.id) return;
+      if (!supabase || !user?.id) return null;
       const uid = user.id;
       const metaName = user.user_metadata?.full_name || user.email || '';
-      // Vérifier si un profil existe déjà
-      const { data: existing, error: selErr } = await supabase
+
+      const { data: profileByUser, error: selectErr } = await supabase
         .from('profiles')
-        .select('id, full_name')
+        .select('*')
+        .eq('user_id', uid)
+        .maybeSingle();
+      if (selectErr && selectErr.code !== 'PGRST116') throw selectErr;
+      if (profileByUser) {
+        console.log('[Auth Debug] Profile reused', { id: profileByUser.id, user_id: profileByUser.user_id });
+        return profileByUser;
+      }
+
+      const { data: profileById, error: orphanErr } = await supabase
+        .from('profiles')
+        .select('*')
         .eq('id', uid)
         .maybeSingle();
-      if (selErr) throw selErr;
-      if (!existing) {
-        // Insérer un nouveau profil avec les métadonnées par défaut (pas d’avatar)
-        await supabase.from('profiles').insert({ id: uid, full_name: metaName });
-      } else {
-        // Ne pas écraser un full_name choisi par l’utilisateur ; rien d’autre à mettre à jour
+      if (orphanErr) throw orphanErr;
+      if (profileById) {
+        if (profileById.user_id == null) {
+          const updatePayload = { user_id: uid };
+          if ((!profileById.full_name || !profileById.full_name.trim()) && metaName) {
+            updatePayload.full_name = metaName;
+          }
+          const { data: linkedProfile, error: linkErr } = await supabase
+            .from('profiles')
+            .update(updatePayload)
+            .eq('id', uid)
+            .select('*')
+            .maybeSingle();
+          if (linkErr) throw linkErr;
+          console.log('[Auth Debug] Profile linked to user_id', { id: linkedProfile?.id, user_id: linkedProfile?.user_id });
+          return linkedProfile;
+        }
+        console.log('[Auth Debug] Profile reused by id', { id: profileById.id, user_id: profileById.user_id });
+        return profileById;
       }
+
+      const insertPayload = { id: uid, user_id: uid };
+      if (metaName) insertPayload.full_name = metaName;
+      const { data: createdProfile, error: insertErr } = await supabase
+        .from('profiles')
+        .insert(insertPayload)
+        .select('*')
+        .maybeSingle();
+      if (insertErr) throw insertErr;
+      console.log('[Auth Debug] Profile created', { id: createdProfile?.id, user_id: createdProfile?.user_id });
+      return createdProfile;
     } catch (e) {
       if (DEBUG_AUTH) console.warn('ensureProfile failed', e);
+      return null;
     }
   }
 
