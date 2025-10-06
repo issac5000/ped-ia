@@ -1140,7 +1140,27 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   async function loadParentPreview(profileId) {
     const normalizedId = profileId != null ? String(profileId).trim() : '';
     if (!normalizedId) return null;
-    if (!useRemote() || isAnonProfile()) return null;
+    if (!useRemote()) return null;
+    if (isAnonProfile()) {
+      try {
+        const data = await anonCommunityRequest('parent-preview', { profileId: normalizedId });
+        if (data && typeof data === 'object') {
+          const payload = Array.isArray(data.preview)
+            ? data.preview[0] || null
+            : data.preview ?? data;
+          if (payload && typeof payload === 'object') {
+            const enriched = { ...payload };
+            if (enriched.profile_id == null) enriched.profile_id = normalizedId;
+            if (enriched.profileId == null) enriched.profileId = normalizedId;
+            if (enriched.id == null) enriched.id = normalizedId;
+            return enriched;
+          }
+        }
+      } catch (err) {
+        console.warn('loadParentPreview anon failed', err);
+      }
+      return null;
+    }
     try {
       const client = await ensureSupabaseReady();
       if (!client?.rpc) return null;
@@ -1150,10 +1170,22 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         return null;
       }
       if (Array.isArray(data) && data.length > 0) {
-        return data[0] || null;
+        const payload = data[0] || null;
+        if (payload && typeof payload === 'object') {
+          const enriched = { ...payload };
+          if (enriched.profile_id == null) enriched.profile_id = normalizedId;
+          if (enriched.profileId == null) enriched.profileId = normalizedId;
+          if (enriched.id == null) enriched.id = normalizedId;
+          return enriched;
+        }
+        return payload;
       }
       if (data && typeof data === 'object') {
-        return data;
+        const enriched = { ...data };
+        if (enriched.profile_id == null) enriched.profile_id = normalizedId;
+        if (enriched.profileId == null) enriched.profileId = normalizedId;
+        if (enriched.id == null) enriched.id = normalizedId;
+        return enriched;
       }
     } catch (err) {
       console.warn('loadParentPreview failed', err);
@@ -7617,7 +7649,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   const showParentPreview = async (anchor, profileId) => {
     const normalizedId = profileId != null ? String(profileId).trim() : '';
     if (!normalizedId) return;
-    if (!useRemote() || isAnonProfile()) return;
+    if (!useRemote()) return;
     clearTimeout(parentPreviewHideTimer);
     parentPreviewHideTimer = null;
     const card = ensureParentPreviewCard();
