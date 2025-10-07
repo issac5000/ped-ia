@@ -7467,7 +7467,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     return 'ontouchstart' in window;
   }
 
-  const ensureParentPreviewBackdrop = () => {
+  function ensureParentPreviewBackdrop() {
     if (parentPreviewBackdrop && document.body.contains(parentPreviewBackdrop)) {
       return parentPreviewBackdrop;
     }
@@ -7480,9 +7480,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     document.body.appendChild(backdrop);
     parentPreviewBackdrop = backdrop;
     return backdrop;
-  };
+  }
 
-  const setParentPreviewModalState = (isActive) => {
+  function setParentPreviewModalState(isActive) {
     if (!useParentPreviewModalMode()) return;
     const backdrop = isActive ? ensureParentPreviewBackdrop() : parentPreviewBackdrop;
     if (!backdrop) {
@@ -7496,9 +7496,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       backdrop.classList.remove('is-active');
       document.body.classList.remove('parent-preview--modal-open');
     }
-  };
+  }
 
-  const buildParentPreviewHtml = (row) => {
+  function buildParentPreviewHtml(row) {
     if (!row || typeof row !== 'object') return '';
     const badgeIconRaw = row.badge_icon ?? row.badgeIcon ?? '';
     const badgeNameRaw = row.badge_name ?? row.badgeName ?? '';
@@ -7530,9 +7530,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         <p>${lastUpdateLabel}</p>
       </div>
     `.trim();
-  };
+  }
 
-  const resolvePreviewMessageTarget = (profileId, payload) => {
+  function resolvePreviewMessageTarget(profileId, payload) {
     const normalize = (value) => {
       if (value == null) return '';
       const str = String(value).trim();
@@ -7552,9 +7552,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (candidate) return candidate;
     }
     return '';
-  };
+  }
 
-  const renderParentPreviewActions = (profileId, payload) => {
+  function renderParentPreviewActions(profileId, payload) {
     const targetId = resolvePreviewMessageTarget(profileId, payload);
     if (!targetId) return '';
     const href = `messages.html?user=${encodeURIComponent(targetId)}`;
@@ -7563,9 +7563,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         <a class="btn btn-secondary" href="${href}">Envoyer un message</a>
       </div>
     `;
-  };
+  }
 
-  const formatParentPreviewDate = (value) => {
+  function formatParentPreviewDate(value) {
     if (!value) return '';
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) return '';
@@ -7574,9 +7574,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } catch {
       return date.toLocaleDateString('fr-FR');
     }
-  };
+  }
 
-  const ensureParentPreviewCard = () => {
+  function ensureParentPreviewCard() {
     if (parentPreviewCard && document.body.contains(parentPreviewCard)) {
       return parentPreviewCard;
     }
@@ -7617,14 +7617,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       card.classList.add('parent-preview-card--modal');
     }
     return card;
-  };
+  }
 
-  const scheduleParentPreviewHide = (delay = 120) => {
+  function scheduleParentPreviewHide(delay = 120) {
     clearTimeout(parentPreviewHideTimer);
     parentPreviewHideTimer = window.setTimeout(() => {
       hideParentPreview();
     }, delay);
-  };
+  }
 
   function hideParentPreview(immediate = false) {
     if (!parentPreviewState) {
@@ -7667,7 +7667,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }, 220);
   }
 
-  const positionParentPreview = (anchor, card) => {
+  function positionParentPreview(anchor, card) {
     if (!anchor || !card) return;
     const anchorRect = anchor.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -7687,9 +7687,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     left = Math.max(margin, Math.min(left, maxLeft < margin ? margin : maxLeft));
     card.style.top = `${Math.round(top)}px`;
     card.style.left = `${Math.round(left)}px`;
-  };
+  }
 
-  const requestParentPreview = async (profileId) => {
+  async function requestParentPreview(profileId) {
     const key = profileId;
     if (!key) return null;
     if (parentPreviewCache.has(key)) {
@@ -7708,9 +7708,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       });
     parentPreviewFetches.set(key, promise);
     return promise;
-  };
+  }
 
-  const showParentPreview = async (anchor, profileId) => {
+  async function showParentPreview(anchor, profileId) {
     const normalizedId = profileId != null ? String(profileId).trim() : '';
     if (!normalizedId) return;
     if (!useRemote()) return;
@@ -7797,9 +7797,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (!modalMode) {
       positionParentPreview(parentPreviewState.anchor, card);
     }
-  };
+  }
 
-  const bindParentPreviewHandlers = (list) => {
+  function bindParentPreviewHandlers(list) {
     if (!list || list.dataset.previewBound === '1') return;
     const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
     const resolvePreviewAnchor = (target) => {
