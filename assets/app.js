@@ -8030,10 +8030,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           if (isAnonProfile()) {
             const anonCode = getActiveAnonCode() || getStoredAnonCode();
             if (!anonCode) throw new Error('Code unique manquant');
-            console.debug('[Delete Debug] Sending payload', { action: 'delete-reply', reply_id: replyId, anon_code: anonCode });
-            const res = await anonCommunityRequest('delete-reply', { reply_id: replyId, anon_code: anonCode });
+            const replyPayload = { reply_id: replyId, anon_code: anonCode };
+            console.debug('[Delete Debug] Payload envoyé vers anon-community:', replyPayload);
+            const res = await anonCommunityRequest('delete-reply', { payload: replyPayload });
             if (res && res.reply_id) {
               deleted = true;
+              console.debug('[Delete Debug] Commentaire supprimé avec succès ✅', replyId);
             } else {
               errorMessage = res?.error || 'Suppression impossible.';
             }
