@@ -1495,12 +1495,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const body = {
         action,
         code: anonCode,
-        ...payload,
       };
 
-      console.log('[AnonCommunity Debug] Sending body to anon-community:', body);
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        Object.keys(payload).forEach((key) => {
+          if (key !== 'action') body[key] = payload[key];
+        });
+      }
 
-      return await callEdgeFunction('anon-community', body);
+      console.log('[AnonCommunity Debug] Final body sent to anon-community:', body);
+
+      const response = await callEdgeFunction('anon-community', body);
+      return response;
     } catch (err) {
       console.error('[AnonCommunity Error]', err);
       throw err;
