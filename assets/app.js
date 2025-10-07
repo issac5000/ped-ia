@@ -8650,6 +8650,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       renderCommunity();
     };
 
+    const handleReplyDeleted = (topicId, replyId) => {
+      removeNestedReplyMapping(topicId, replyId);
+      renderCommunity();
+    };
+
     const bindReplyForms = (root = document) => {
       root.querySelectorAll('.form-reply').forEach((form) => {
         if (form.dataset.bound) return;
