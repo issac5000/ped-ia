@@ -7442,14 +7442,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let parentPreviewBackdrop = null;
   var parentPreviewHideTimer = null;
   var parentPreviewRequestToken = 0;
-  let parentPreviewLastPointerType = null;
-  let parentPreviewGlobalHandlersBound = false;
-  let parentPreviewSuppressClicksUntil = 0;
-  let parentPreviewSuppressPointerUntil = 0;
-  let parentPreviewTouchAnchor = null;
-  let parentPreviewTouchStartX = 0;
-  let parentPreviewTouchStartY = 0;
-  let parentPreviewTouchStartTime = 0;
+  var parentPreviewLastPointerType = null;
+  var parentPreviewGlobalHandlersBound = false;
+  var parentPreviewSuppressClicksUntil = 0;
+  var parentPreviewSuppressPointerUntil = 0;
+  var parentPreviewTouchAnchor = null;
+  var parentPreviewTouchStartX = 0;
+  var parentPreviewTouchStartY = 0;
+  var parentPreviewTouchStartTime = 0;
   var parentPreviewState = {
     profileId: null,
     anchor: null,
