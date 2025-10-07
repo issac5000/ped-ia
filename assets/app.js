@@ -7441,7 +7441,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let parentPreviewCard = null;
   let parentPreviewBackdrop = null;
   var parentPreviewHideTimer = null;
-  let parentPreviewRequestToken = 0;
+  var parentPreviewRequestToken = 0;
   let parentPreviewLastPointerType = null;
   let parentPreviewGlobalHandlersBound = false;
   let parentPreviewSuppressClicksUntil = 0;
