@@ -4,6 +4,7 @@ import {
   HttpError,
   fetchAnonProfile,
   getServiceConfig,
+  getSupabaseAdminClientInstance,
   normalizeCode,
   supabaseRequest,
 } from './anon-children.ts';
@@ -380,15 +381,14 @@ export async function processAnonCommunityRequest(body) {
       const ownerId = existing?.user_id != null ? String(existing.user_id) : '';
       const existingAnonCode = normalizeCode(existing?.anon_code || '');
       console.log('[delete-reply] Owner:', { ownerId, existingAnonCode, profileId, anonCode });
-      const replyIdParam = encodeURIComponent(replyId);
+      const supabaseAdmin = getSupabaseAdminClientInstance(supaUrl, serviceKey);
       const deleteLikes = async () => {
-        try {
-          await supabaseRequest(
-            `${supaUrl}/rest/v1/forum_reply_likes?reply_id=eq.${replyIdParam}`,
-            { method: 'DELETE', headers }
-          );
-        } catch (err) {
-          console.warn('[delete-reply] Unable to delete reply likes', err?.details || err);
+        const { error } = await supabaseAdmin
+          .from('forum_reply_likes')
+          .delete()
+          .eq('reply_id', replyId);
+        if (error) {
+          console.warn('[delete-reply] Unable to delete reply likes', error);
         }
       };
 
@@ -398,10 +398,11 @@ export async function processAnonCommunityRequest(body) {
           return { status: 403, body: { error: 'Unauthorized: cannot delete another user’s reply.' } };
         }
         await deleteLikes();
-        const { error: deleteError } = await supabaseRequest(
-          `${supaUrl}/rest/v1/forum_replies?id=eq.${replyIdParam}&user_id=eq.${encodeURIComponent(profileId)}`,
-          { method: 'DELETE', headers }
-        );
+        const { error: deleteError } = await supabaseAdmin
+          .from('forum_replies')
+          .delete()
+          .eq('id', replyId)
+          .eq('user_id', profileId);
         if (deleteError) {
           console.error('[delete-reply] Delete error (auth user):', deleteError);
           return { status: 500, body: { error: deleteError.message || 'Delete failed.' } };
@@ -412,10 +413,11 @@ export async function processAnonCommunityRequest(body) {
           return { status: 403, body: { error: 'Unauthorized: cannot delete another user’s reply.' } };
         }
         await deleteLikes();
-        const { error: deleteError } = await supabaseRequest(
-          `${supaUrl}/rest/v1/forum_replies?id=eq.${replyIdParam}&anon_code=eq.${encodeURIComponent(existingAnonCode)}`,
-          { method: 'DELETE', headers }
-        );
+        const { error: deleteError } = await supabaseAdmin
+          .from('forum_replies')
+          .delete()
+          .eq('id', replyId)
+          .eq('anon_code', existingAnonCode);
         if (deleteError) {
           console.error('[delete-reply] Delete error (anon user):', deleteError);
           return { status: 500, body: { error: deleteError.message || 'Delete failed.' } };

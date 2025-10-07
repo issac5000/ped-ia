@@ -1109,6 +1109,7 @@ export {
   buildSleepRecords,
   fetchAnonProfile,
   getServiceConfig,
+  getSupabaseAdminClientInstance,
   normalizeCode,
   supabaseRequest,
 };
