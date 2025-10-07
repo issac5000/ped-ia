@@ -8025,8 +8025,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         let errorMessage = '';
         if (useRemote()) {
           if (isAnonProfile()) {
-            const res = await anonCommunityRequest('delete-reply', { replyId });
-            if (res?.success) {
+            const anonCode = getActiveAnonCode() || getStoredAnonCode();
+            if (!anonCode) throw new Error('Code unique manquant');
+            const res = await anonCommunityRequest('delete-reply', { reply_id: replyId, anon_code: anonCode });
+            if (res && res.reply_id) {
               deleted = true;
             } else {
               errorMessage = res?.error || 'Suppression impossible.';

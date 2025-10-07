@@ -360,32 +360,57 @@ export async function processAnonCommunityRequest(body) {
     }
 
     if (action === 'delete-reply') {
-      const replyId = normalizeId(body?.replyId ?? body?.reply_id ?? body?.id);
-      if (!replyId) throw new HttpError(400, 'reply_id required');
+      const replyId = normalizeId(body?.reply_id ?? body?.replyId ?? body?.id);
+      const anonCode = normalizeCode(body?.anon_code ?? body?.code);
+      console.log('[delete-reply] Payload reçu :', { replyId, anonCode });
+      if (!replyId || !anonCode) {
+        console.error('[delete-reply] Paramètres manquants', { replyId, anonCode });
+        return { status: 400, body: { error: 'Missing parameters: reply_id and anon_code are required.' } };
+      }
       const existingData = await supabaseRequest(
-        `${supaUrl}/rest/v1/forum_replies?select=id,user_id,anon_code&limit=1&id=eq.${encodeURIComponent(replyId)}`,
+        `${supaUrl}/rest/v1/forum_replies?select=id,anon_code,user_id&limit=1&id=eq.${encodeURIComponent(replyId)}`,
         { headers }
       );
       const existing = Array.isArray(existingData) ? existingData[0] : existingData;
-      if (!existing) throw new HttpError(404, 'Reply not found');
+      if (!existing) {
+        console.warn('[delete-reply] Reply not found', replyId);
+        return { status: 404, body: { error: 'Reply not found.' } };
+      }
       const ownerId = existing?.user_id != null ? String(existing.user_id) : '';
-      const anonOwner = existing?.anon_code ? normalizeCode(existing.anon_code) : '';
+      const existingAnonCode = normalizeCode(existing?.anon_code || '');
+      console.log('[delete-reply] Owner:', { ownerId, existingAnonCode, profileId, anonCode });
       if (ownerId) {
-        if (ownerId !== profileId) throw new HttpError(403, 'Accès non autorisé');
-        await supabaseRequest(
+        if (ownerId !== profileId) {
+          console.warn('[delete-reply] Unauthorized user mismatch', { expected: ownerId, received: profileId });
+          return { status: 403, body: { error: 'Unauthorized: cannot delete another user’s reply.' } };
+        }
+        const { error: deleteError } = await supabaseRequest(
           `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&user_id=eq.${encodeURIComponent(profileId)}`,
           { method: 'DELETE', headers }
         );
-      } else if (anonOwner) {
-        if (anonOwner !== code) throw new HttpError(403, 'Accès non autorisé');
-        await supabaseRequest(
-          `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&anon_code=eq.${encodeURIComponent(anonOwner)}`,
+        if (deleteError) {
+          console.error('[delete-reply] Delete error (auth user):', deleteError);
+          return { status: 500, body: { error: deleteError.message || 'Delete failed.' } };
+        }
+      } else if (existingAnonCode) {
+        if (existingAnonCode !== anonCode) {
+          console.warn('[delete-reply] Unauthorized anon mismatch', { expected: existingAnonCode, received: anonCode });
+          return { status: 403, body: { error: 'Unauthorized: cannot delete another user’s reply.' } };
+        }
+        const { error: deleteError } = await supabaseRequest(
+          `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&anon_code=eq.${encodeURIComponent(existingAnonCode)}`,
           { method: 'DELETE', headers }
         );
+        if (deleteError) {
+          console.error('[delete-reply] Delete error (anon user):', deleteError);
+          return { status: 500, body: { error: deleteError.message || 'Delete failed.' } };
+        }
       } else {
-        throw new HttpError(403, 'Accès non autorisé');
+        console.warn('[delete-reply] Reply owner indéterminé', existing);
+        return { status: 403, body: { error: 'Unauthorized: cannot delete this reply.' } };
       }
-      return { status: 200, body: { success: true, replyId } };
+      console.log('[delete-reply] Suppression réussie :', replyId);
+      return { status: 200, body: { reply_id: replyId } };
     }
 
     if (action === 'delete-topic') {
