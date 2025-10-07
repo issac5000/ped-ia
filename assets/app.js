@@ -7450,7 +7450,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let parentPreviewTouchStartX = 0;
   let parentPreviewTouchStartY = 0;
   let parentPreviewTouchStartTime = 0;
-  const parentPreviewState = {
+  var parentPreviewState = {
     profileId: null,
     anchor: null,
     isLoading: false,
