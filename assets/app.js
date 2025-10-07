@@ -7627,6 +7627,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   };
 
   function hideParentPreview(immediate = false) {
+    if (!parentPreviewState) {
+      parentPreviewState = { profileId: null, anchor: null, isLoading: false };
+    }
     clearTimeout(parentPreviewHideTimer);
     parentPreviewHideTimer = null;
     parentPreviewRequestToken += 1;
