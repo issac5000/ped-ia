@@ -7455,7 +7455,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     anchor: null,
     isLoading: false,
   };
-  const useParentPreviewModalMode = () => {
+  function useParentPreviewModalMode() {
     if (IS_IOS_SAFARI) return true;
     if (typeof window === 'undefined') return false;
     try {
@@ -7465,7 +7465,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       /* ignore */
     }
     return 'ontouchstart' in window;
-  };
+  }
 
   const ensureParentPreviewBackdrop = () => {
     if (parentPreviewBackdrop && document.body.contains(parentPreviewBackdrop)) {
