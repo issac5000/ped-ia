@@ -7440,7 +7440,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   const parentPreviewFetches = new Map();
   let parentPreviewCard = null;
   let parentPreviewBackdrop = null;
-  let parentPreviewHideTimer = null;
+  var parentPreviewHideTimer = null;
   let parentPreviewRequestToken = 0;
   let parentPreviewLastPointerType = null;
   let parentPreviewGlobalHandlersBound = false;
