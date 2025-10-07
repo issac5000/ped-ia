@@ -363,17 +363,29 @@ export async function processAnonCommunityRequest(body) {
       const replyId = normalizeId(body?.replyId ?? body?.reply_id ?? body?.id);
       if (!replyId) throw new HttpError(400, 'reply_id required');
       const existingData = await supabaseRequest(
-        `${supaUrl}/rest/v1/forum_replies?select=id,user_id&limit=1&id=eq.${encodeURIComponent(replyId)}`,
+        `${supaUrl}/rest/v1/forum_replies?select=id,user_id,anon_code&limit=1&id=eq.${encodeURIComponent(replyId)}`,
         { headers }
       );
       const existing = Array.isArray(existingData) ? existingData[0] : existingData;
       if (!existing) throw new HttpError(404, 'Reply not found');
-      if (String(existing.user_id) !== profileId) throw new HttpError(403, 'Accès non autorisé');
-      await supabaseRequest(
-        `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&user_id=eq.${encodeURIComponent(profileId)}`,
-        { method: 'DELETE', headers }
-      );
-      return { status: 200, body: { success: true } };
+      const ownerId = existing?.user_id != null ? String(existing.user_id) : '';
+      const anonOwner = existing?.anon_code ? normalizeCode(existing.anon_code) : '';
+      if (ownerId) {
+        if (ownerId !== profileId) throw new HttpError(403, 'Accès non autorisé');
+        await supabaseRequest(
+          `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&user_id=eq.${encodeURIComponent(profileId)}`,
+          { method: 'DELETE', headers }
+        );
+      } else if (anonOwner) {
+        if (anonOwner !== code) throw new HttpError(403, 'Accès non autorisé');
+        await supabaseRequest(
+          `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&anon_code=eq.${encodeURIComponent(anonOwner)}`,
+          { method: 'DELETE', headers }
+        );
+      } else {
+        throw new HttpError(403, 'Accès non autorisé');
+      }
+      return { status: 200, body: { success: true, replyId } };
     }
 
     if (action === 'delete-topic') {

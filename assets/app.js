@@ -8022,20 +8022,31 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       button.disabled = true;
       try {
         let deleted = false;
+        let errorMessage = '';
         if (useRemote()) {
           if (isAnonProfile()) {
-            await anonCommunityRequest('delete-reply', { replyId });
-            deleted = true;
+            const res = await anonCommunityRequest('delete-reply', { replyId });
+            if (res?.success) {
+              deleted = true;
+            } else {
+              errorMessage = res?.error || 'Suppression impossible.';
+            }
           } else {
             const uid = getActiveProfileId();
             if (!uid) throw new Error('Pas de user_id');
-            const { error } = await supabase
+            const { data, error } = await supabase
               .from('forum_replies')
               .delete()
               .eq('id', replyId)
-              .eq('user_id', uid);
-            if (error) throw error;
-            deleted = true;
+              .eq('user_id', uid)
+              .select();
+            if (error) {
+              errorMessage = error.message || 'Suppression impossible.';
+            } else if (Array.isArray(data) && data.length) {
+              deleted = true;
+            } else {
+              errorMessage = 'Suppression impossible.';
+            }
           }
         } else {
           const forum = store.get(K.forum);
@@ -8049,11 +8060,26 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             }
           }
         }
+        if (!deleted && errorMessage) throw new Error(errorMessage);
         if (deleted) {
-          if (renderCommunity._activeInline && renderCommunity._activeInline.parentId === replyId) {
-            closeActiveInlineReply();
+          const selector = `[data-reply-id="${escapeSelectorValue(replyId)}"]`;
+          const replyEl = list.querySelector(selector);
+          const finalizeRemoval = () => {
+            if (renderCommunity._activeInline && renderCommunity._activeInline.parentId === replyId) {
+              closeActiveInlineReply();
+            }
+            handleReplyDeleted(topicId, replyId);
+          };
+          if (replyEl) {
+            replyEl.style.transition = replyEl.style.transition ? `${replyEl.style.transition}, opacity .25s ease` : 'opacity .25s ease';
+            replyEl.style.opacity = '0';
+            window.setTimeout(() => {
+              replyEl.remove();
+              finalizeRemoval();
+            }, 260);
+          } else {
+            finalizeRemoval();
           }
-          handleReplyDeleted(topicId, replyId);
         }
       } catch (error) {
         console.error('deleteReply failed', error);
@@ -9186,7 +9212,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           if (deleteButtonHtml) controlItems.push(deleteButtonHtml);
           const controlsHtml = controlItems.length ? `<div class="community-comment-controls">${controlItems.join('')}</div>` : '';
           const inlineContainer = replyId ? `<div class="community-reply-inline" data-inline-reply="${escapeHtml(replyId)}" hidden></div>` : '';
-          const blockAttr = replyId ? ` data-reply-block="${escapeHtml(replyId)}"` : '';
+          const blockAttr = replyId
+            ? ` data-reply-block="${escapeHtml(replyId)}" data-reply-id="${escapeHtml(replyId)}"`
+            : '';
           return `
             <div class="community-comment-block${depth ? ' community-comment-block--nested' : ''}"${blockAttr}>
               ${replyEntryHtml}
