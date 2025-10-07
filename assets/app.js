@@ -1483,12 +1483,28 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
   async function anonCommunityRequest(action, payload = {}) {
-    if (!isAnonProfile()) throw new Error('Profil anonyme requis');
-    const code = getStoredAnonCode();
-    if (!code) throw new Error('Code unique manquant');
-    const body = { action, code, ...payload };
-    const data = await callAnonEdgeFunction('anon-community', { body });
-    return data || {};
+    try {
+      const anonCode =
+        (typeof getStoredAnonCode === 'function' && getStoredAnonCode())
+        || (typeof localStorage !== 'undefined' ? localStorage.getItem('anon_code') : null);
+
+      if (!anonCode) {
+        console.warn('[AnonCommunity Warning] Aucun code anonyme trouvé dans le stockage local.');
+      }
+
+      const body = {
+        action,
+        code: anonCode,
+        ...payload,
+      };
+
+      console.log('[AnonCommunity Debug] Sending body to anon-community:', body);
+
+      return await callEdgeFunction('anon-community', body);
+    } catch (err) {
+      console.error('[AnonCommunity Error]', err);
+      throw err;
+    }
   }
 
   anonChildRequest.__anonEndpoint = '/api/edge/anon-children';
