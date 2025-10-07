@@ -254,6 +254,28 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     BMI_FOR_AGE: BMI_FOR_AGE || fallbackCurves,
   };
 
+
+  const communityLikes = new Map();
+  const parentPreviewCache = new Map();
+  const parentPreviewFetches = new Map();
+  let parentPreviewCard = null;
+  let parentPreviewBackdrop = null;
+  var parentPreviewHideTimer = null;
+  var parentPreviewRequestToken = 0;
+  var parentPreviewLastPointerType = null;
+  var parentPreviewGlobalHandlersBound = false;
+  var parentPreviewSuppressClicksUntil = 0;
+  var parentPreviewSuppressPointerUntil = 0;
+  var parentPreviewTouchAnchor = null;
+  var parentPreviewTouchStartX = 0;
+  var parentPreviewTouchStartY = 0;
+  var parentPreviewTouchStartTime = 0;
+  var parentPreviewState = {
+    profileId: null,
+    anchor: null,
+    isLoading: false,
+  };
+
   const store = {
     get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
     set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
@@ -7435,26 +7457,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     return best;
   }
 
-  const communityLikes = new Map();
-  const parentPreviewCache = new Map();
-  const parentPreviewFetches = new Map();
-  let parentPreviewCard = null;
-  let parentPreviewBackdrop = null;
-  var parentPreviewHideTimer = null;
-  var parentPreviewRequestToken = 0;
-  var parentPreviewLastPointerType = null;
-  var parentPreviewGlobalHandlersBound = false;
-  var parentPreviewSuppressClicksUntil = 0;
-  var parentPreviewSuppressPointerUntil = 0;
-  var parentPreviewTouchAnchor = null;
-  var parentPreviewTouchStartX = 0;
-  var parentPreviewTouchStartY = 0;
-  var parentPreviewTouchStartTime = 0;
-  var parentPreviewState = {
-    profileId: null,
-    anchor: null,
-    isLoading: false,
-  };
   function useParentPreviewModalMode() {
     if (IS_IOS_SAFARI) return true;
     if (typeof window === 'undefined') return false;
