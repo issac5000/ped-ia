@@ -359,6 +359,23 @@ export async function processAnonCommunityRequest(body) {
       return { status: 200, body: { reply } };
     }
 
+    if (action === 'delete-reply') {
+      const replyId = normalizeId(body?.replyId ?? body?.reply_id ?? body?.id);
+      if (!replyId) throw new HttpError(400, 'reply_id required');
+      const existingData = await supabaseRequest(
+        `${supaUrl}/rest/v1/forum_replies?select=id,user_id&limit=1&id=eq.${encodeURIComponent(replyId)}`,
+        { headers }
+      );
+      const existing = Array.isArray(existingData) ? existingData[0] : existingData;
+      if (!existing) throw new HttpError(404, 'Reply not found');
+      if (String(existing.user_id) !== profileId) throw new HttpError(403, 'Accès non autorisé');
+      await supabaseRequest(
+        `${supaUrl}/rest/v1/forum_replies?id=eq.${encodeURIComponent(replyId)}&user_id=eq.${encodeURIComponent(profileId)}`,
+        { method: 'DELETE', headers }
+      );
+      return { status: 200, body: { success: true } };
+    }
+
     if (action === 'delete-topic') {
       const topicId = normalizeId(body?.topicId ?? body?.topic_id ?? body?.id);
       if (!topicId) throw new HttpError(400, 'topic_id required');

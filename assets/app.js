@@ -7949,6 +7949,121 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     bindParentPreviewHandlers(list);
     const isListActive = () => document.body.contains(list) && renderCommunity._rid === rid;
     list.innerHTML = '';
+    renderCommunity._activeInline = null;
+
+    const escapeSelectorValue = (value) => {
+      const str = String(value ?? '');
+      if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return CSS.escape(str);
+      }
+      return str.replace(/"/g, '\"');
+    };
+
+    const closeActiveInlineReply = () => {
+      const active = renderCommunity._activeInline;
+      if (!active) return;
+      const selector = `[data-inline-reply="${escapeSelectorValue(active.parentId)}"]`;
+      const container = list.querySelector(selector);
+      if (container) {
+        container.classList.remove('is-open');
+        container.hidden = true;
+        container.innerHTML = '';
+      }
+      renderCommunity._activeInline = null;
+    };
+
+    const openInlineReply = (button) => {
+      const parentId = button.getAttribute('data-reply-trigger');
+      const topicId = button.getAttribute('data-topic-id');
+      const authorName = (button.getAttribute('data-reply-author') || '').trim();
+      if (!parentId || !topicId) return;
+      const active = renderCommunity._activeInline;
+      if (active && active.parentId === parentId) {
+        closeActiveInlineReply();
+        return;
+      }
+      closeActiveInlineReply();
+      const selector = `[data-inline-reply="${escapeSelectorValue(parentId)}"]`;
+      const container = list.querySelector(selector);
+      if (!container) return;
+      const mentionBase = authorName ? `@${authorName.replace(/\s+/g, ' ')} ` : '';
+      const safeTopicId = escapeHtml(topicId);
+      const safeParentId = escapeHtml(parentId);
+      const safeMention = escapeHtml(mentionBase);
+      container.innerHTML = `
+        <form class="community-inline-reply form-reply" data-id="${safeTopicId}" data-parent-reply="${safeParentId}">
+          <label class="sr-only" for="inline-reply-${safeParentId}">Réponse</label>
+          <textarea id="inline-reply-${safeParentId}" name="content" rows="2">${safeMention}</textarea>
+          <div class="community-inline-reply__actions">
+            <button class="btn btn-secondary" type="submit">Envoyer</button>
+          </div>
+        </form>
+      `;
+      container.hidden = false;
+      requestAnimationFrame(() => container.classList.add('is-open'));
+      bindReplyForms(container);
+      const textarea = container.querySelector('textarea');
+      if (textarea) {
+        if (!textarea.value) textarea.value = mentionBase;
+        textarea.focus();
+        const end = textarea.value.length;
+        try { textarea.setSelectionRange(end, end); } catch {}
+      }
+      renderCommunity._activeInline = { parentId, topicId };
+    };
+
+    const deleteReply = async (button) => {
+      if (!button || button.dataset.busy === '1') return;
+      const replyId = button.getAttribute('data-del-reply');
+      const topicId = button.getAttribute('data-topic-id');
+      if (!replyId || !topicId) return;
+      if (!confirm('Supprimer ce commentaire ?')) return;
+      button.dataset.busy = '1';
+      button.disabled = true;
+      try {
+        let deleted = false;
+        if (useRemote()) {
+          if (isAnonProfile()) {
+            await anonCommunityRequest('delete-reply', { replyId });
+            deleted = true;
+          } else {
+            const uid = getActiveProfileId();
+            if (!uid) throw new Error('Pas de user_id');
+            const { error } = await supabase
+              .from('forum_replies')
+              .delete()
+              .eq('id', replyId)
+              .eq('user_id', uid);
+            if (error) throw error;
+            deleted = true;
+          }
+        } else {
+          const forum = store.get(K.forum);
+          const topic = forum.topics.find((item) => String(item.id) === String(topicId));
+          if (topic && Array.isArray(topic.replies)) {
+            const initialLength = topic.replies.length;
+            topic.replies = topic.replies.filter((reply) => String(reply.id) !== String(replyId));
+            if (topic.replies.length !== initialLength) {
+              store.set(K.forum, forum);
+              deleted = true;
+            }
+          }
+        }
+        if (deleted) {
+          if (renderCommunity._activeInline && renderCommunity._activeInline.parentId === replyId) {
+            closeActiveInlineReply();
+          }
+          handleReplyDeleted(topicId, replyId);
+        }
+      } catch (error) {
+        console.error('deleteReply failed', error);
+        alert(error?.message || 'Suppression impossible pour le moment.');
+      } finally {
+        button.dataset.busy = '0';
+        button.disabled = false;
+      }
+    };
+
     const refreshBtn = $('#btn-refresh-community');
     const setRefreshVisible = (visible) => {
       if (!refreshBtn) return;
@@ -8200,6 +8315,222 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       `.trim();
     }
 
+    const COMMUNITY_INLINE_REPLY_KEY = 'communityNestedReplies';
+    const COMMUNITY_NESTED_OPEN_KEY = 'communityNestedOpen';
+    let cachedNestedReplies = null;
+    let nestedRepliesLoaded = false;
+    let cachedNestedOpen = null;
+    let nestedOpenLoaded = false;
+
+    const loadNestedReplies = () => {
+      if (!nestedRepliesLoaded) {
+        cachedNestedReplies = new Map();
+        if (typeof sessionStorage !== 'undefined') {
+          try {
+            const raw = sessionStorage.getItem(COMMUNITY_INLINE_REPLY_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object') {
+                Object.entries(parsed).forEach(([topicId, parents]) => {
+                  const topicMap = new Map();
+                  if (parents && typeof parents === 'object') {
+                    Object.entries(parents).forEach(([parentId, children]) => {
+                      if (Array.isArray(children) && children.length) {
+                        topicMap.set(parentId, new Set(children.map(String)));
+                      }
+                    });
+                  }
+                  if (topicMap.size) cachedNestedReplies.set(topicId, topicMap);
+                });
+              }
+            }
+          } catch {}
+        }
+        nestedRepliesLoaded = true;
+      }
+      return cachedNestedReplies;
+    };
+
+    const persistNestedReplies = () => {
+      if (!nestedRepliesLoaded || !cachedNestedReplies || typeof sessionStorage === 'undefined') {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(COMMUNITY_INLINE_REPLY_KEY);
+        }
+        return;
+      }
+      const payload = {};
+      cachedNestedReplies.forEach((topicMap, topicId) => {
+        const topicEntries = {};
+        topicMap.forEach((childSet, parentId) => {
+          if (childSet.size) topicEntries[parentId] = Array.from(childSet);
+        });
+        if (Object.keys(topicEntries).length) payload[topicId] = topicEntries;
+      });
+      if (Object.keys(payload).length) sessionStorage.setItem(COMMUNITY_INLINE_REPLY_KEY, JSON.stringify(payload));
+      else sessionStorage.removeItem(COMMUNITY_INLINE_REPLY_KEY);
+    };
+
+    const getTopicNestedReplies = (topicId) => {
+      const store = loadNestedReplies();
+      const key = String(topicId);
+      let topicMap = store.get(key);
+      if (!topicMap) {
+        topicMap = new Map();
+        store.set(key, topicMap);
+      }
+      return topicMap;
+    };
+
+    const sanitizeNestedRepliesForTopic = (topicId, validIds) => {
+      const topicMap = getTopicNestedReplies(topicId);
+      let changed = false;
+      topicMap.forEach((childSet, parentId) => {
+        if (!validIds.has(parentId)) {
+          topicMap.delete(parentId);
+          changed = true;
+          return;
+        }
+        const filtered = Array.from(childSet).filter((id) => validIds.has(id));
+        if (filtered.length !== childSet.size) {
+          if (filtered.length) topicMap.set(parentId, new Set(filtered));
+          else topicMap.delete(parentId);
+          changed = true;
+        }
+      });
+      if (changed) persistNestedReplies();
+      return topicMap;
+    };
+
+    const registerNestedReply = (topicId, parentReplyId, replyId) => {
+      if (!parentReplyId || !replyId) return;
+      const topicMap = getTopicNestedReplies(topicId);
+      const parentKey = String(parentReplyId);
+      const childKey = String(replyId);
+      let childSet = topicMap.get(parentKey);
+      if (!childSet) {
+        childSet = new Set();
+        topicMap.set(parentKey, childSet);
+      }
+      childSet.add(childKey);
+      topicMap.forEach((set, key) => {
+        if (key !== parentKey) set.delete(childKey);
+        if (!set.size) topicMap.delete(key);
+      });
+      persistNestedReplies();
+      ensureNestedOpen(topicId, parentReplyId, true);
+    };
+
+    const sanitizeNestedOpenForTopic = (topicId, validParents) => {
+      const set = getTopicNestedOpen(topicId);
+      let changed = false;
+      Array.from(set).forEach((parentId) => {
+        if (!validParents.has(parentId)) {
+          set.delete(parentId);
+          changed = true;
+        }
+      });
+      if (changed) persistNestedOpen();
+      return set;
+    };
+
+    const loadNestedOpen = () => {
+      if (!nestedOpenLoaded) {
+        cachedNestedOpen = new Map();
+        if (typeof sessionStorage !== 'undefined') {
+          try {
+            const raw = sessionStorage.getItem(COMMUNITY_NESTED_OPEN_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object') {
+                Object.entries(parsed).forEach(([topicId, parents]) => {
+                  if (Array.isArray(parents) && parents.length) {
+                    cachedNestedOpen.set(topicId, new Set(parents.map(String)));
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+        nestedOpenLoaded = true;
+      }
+      return cachedNestedOpen;
+    };
+
+    const persistNestedOpen = () => {
+      if (!nestedOpenLoaded || !cachedNestedOpen || typeof sessionStorage === 'undefined') {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(COMMUNITY_NESTED_OPEN_KEY);
+        }
+        return;
+      }
+      const payload = {};
+      cachedNestedOpen.forEach((set, topicId) => {
+        if (set && set.size) payload[topicId] = Array.from(set);
+      });
+      if (Object.keys(payload).length) sessionStorage.setItem(COMMUNITY_NESTED_OPEN_KEY, JSON.stringify(payload));
+      else sessionStorage.removeItem(COMMUNITY_NESTED_OPEN_KEY);
+    };
+
+    const getTopicNestedOpen = (topicId) => {
+      const store = loadNestedOpen();
+      const key = String(topicId);
+      let openSet = store.get(key);
+      if (!openSet) {
+        openSet = new Set();
+        store.set(key, openSet);
+      }
+      return openSet;
+    };
+
+    const ensureNestedOpen = (topicId, parentReplyId, open) => {
+      if (!parentReplyId) return;
+      const set = getTopicNestedOpen(topicId);
+      const key = String(parentReplyId);
+      if (open) {
+        if (!set.has(key)) {
+          set.add(key);
+          persistNestedOpen();
+        }
+      } else if (set.has(key)) {
+        set.delete(key);
+        persistNestedOpen();
+      }
+    };
+
+    const toggleNestedOpen = (topicId, parentReplyId) => {
+      if (!parentReplyId) return false;
+      const set = getTopicNestedOpen(topicId);
+      const key = String(parentReplyId);
+      let isOpen;
+      if (set.has(key)) {
+        set.delete(key);
+        isOpen = false;
+      } else {
+        set.add(key);
+        isOpen = true;
+      }
+      persistNestedOpen();
+      return isOpen;
+    };
+
+    const removeNestedReplyMapping = (topicId, replyId) => {
+      if (!replyId) return;
+      const topicMap = getTopicNestedReplies(topicId);
+      const key = String(replyId);
+      let changed = false;
+      if (topicMap.delete(key)) changed = true;
+      topicMap.forEach((set, parentId) => {
+        if (set.delete(key)) changed = true;
+        if (!set.size) {
+          topicMap.delete(parentId);
+          changed = true;
+        }
+      });
+      if (changed) persistNestedReplies();
+      const openSet = getTopicNestedOpen(topicId);
+      if (openSet.delete(key)) persistNestedOpen();
+    };
+
     function updateLikeButton(button, state) {
       if (!button) return;
       const liked = !!state?.liked;
@@ -8254,6 +8585,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       }
     }
 
+    const handleReplyInserted = (topicId, replyRecord, parentReplyId) => {
+      const replyId = replyRecord?.id != null ? String(replyRecord.id) : null;
+      if (parentReplyId && replyId) {
+        registerNestedReply(topicId, parentReplyId, replyId);
+      }
+      renderCommunity._activeInline = null;
+      renderCommunity();
+    };
+
     const bindReplyForms = (root = document) => {
       root.querySelectorAll('.form-reply').forEach((form) => {
         if (form.dataset.bound) return;
@@ -8267,6 +8607,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           if (submitBtn) submitBtn.disabled = true;
           try {
             const id = currentForm.getAttribute('data-id');
+            const parentReplyId = currentForm.getAttribute('data-parent-reply') || '';
             const fd = new FormData(currentForm);
             const rawContent = fd.get('content');
             const content = rawContent == null ? '' : rawContent.toString().trim();
@@ -8274,14 +8615,19 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             if (useRemote()) {
               try {
                 if (isAnonProfile()) {
-                  await anonCommunityRequest('reply', { topicId: id, content });
-                  renderCommunity();
+                  const res = await anonCommunityRequest('reply', { topicId: id, content });
+                  handleReplyInserted(id, res?.reply || null, parentReplyId);
                   return;
                 }
                 const uid = getActiveProfileId();
                 if (!uid) { console.warn('Aucun user_id disponible pour forum_replies'); throw new Error('Pas de user_id'); }
-                await supabase.from('forum_replies').insert([{ topic_id: id, user_id: uid, content }]);
-                renderCommunity();
+                const { data: insertedRows, error } = await supabase
+                  .from('forum_replies')
+                  .insert([{ topic_id: id, user_id: uid, content }])
+                  .select()
+                  .single();
+                if (error) throw error;
+                handleReplyInserted(id, insertedRows, parentReplyId);
                 return;
               } catch {}
             }
@@ -8293,9 +8639,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
             const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
             const uid = getActiveProfileId();
-            topic.replies.push({ content, author: whoAmI, createdAt: Date.now(), user_id: uid || null });
+            const localReply = {
+              id: genId(),
+              topic_id: id,
+              user_id: uid || null,
+              content,
+              created_at: new Date().toISOString(),
+              author: whoAmI,
+            };
+            topic.replies.push(localReply);
             store.set(K.forum, forum);
-            renderCommunity();
+            handleReplyInserted(id, localReply, parentReplyId);
           } finally {
             currentForm.dataset.busy='0';
             if (submitBtn) submitBtn.disabled = false;
@@ -8506,6 +8860,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         return letters || '✦';
       };
       const normalizeContent = (text) => escapeHtml(text || '').replace(/\n/g, '<br>');
+      const buildTopicPreview = (text, maxLength = 240) => {
+        const plain = (text == null ? '' : String(text))
+          .replace(/\r?\n+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!plain) return '';
+        if (plain.length <= maxLength) return escapeHtml(plain);
+        return escapeHtml(plain.slice(0, maxLength).trim()) + '...';
+      };
       const timestampOf = (value) => {
         const date = new Date(value || 0);
         const time = date.getTime();
@@ -8674,7 +9037,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         if (m) { cat = m[1]; title = m[2]; }
         if (activeCat !== 'all' && cat !== activeCat) return;
         const el = document.createElement('div');
-        el.className = 'topic';
+        el.className = 'topic community-topic';
         const authorMeta = authorsMap.get(String(t.user_id)) || authorsMap.get(t.user_id) || null;
         const normalizedAuthor = normalizeAuthorMetaForId(authorMeta, t.user_id);
         const rawAuthorName = (normalizedAuthor && normalizedAuthor.name)
@@ -8691,19 +9054,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const isMobile = document.body.classList.contains('force-mobile');
         const { label: createdLabel, iso: createdIso } = formatDateParts(t.created_at || t.createdAt);
         const displayAuthor = formatAuthorName(rawAuthorName);
-        const topicAuthorMetaHtml = renderAuthorMetaInfo(normalizedAuthor || authorMeta);
         const topicAuthorBadgeHtml = renderAuthorBadgeInline(normalizedAuthor || authorMeta);
         const topicAuthorPreviewAttr = topicProfileId ? ` data-parent-profile="${escapeHtml(String(topicProfileId))}"` : '';
         const topicAvatarAttr = topicProfileId ? ` data-parent-profile="${escapeHtml(String(topicProfileId))}"` : '';
-        const topicAuthorBlock = `
-          <span class="topic-author">
-            <span class="topic-author-name"${topicAuthorPreviewAttr}>
-              <span class="author-name-text">${escapeHtml(displayAuthor)}</span>
-              ${topicAuthorBadgeHtml}
-            </span>
-            ${topicAuthorMetaHtml}
-          </span>
-        `.trim();
         const initials = initialsFrom(rawAuthorName);
         const messageLabel = isMobile ? '💬' : '💬 Message privé';
         const messageAttrs = isMobile ? ' aria-label="Envoyer un message privé" title="Envoyer un message privé"' : ' title="Envoyer un message privé"';
@@ -8713,42 +9066,60 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const topicIsAi = isAiAuthor(displayAuthor);
         const topicOwnerId = resolveAuthorId(t);
         const topicIsSelf = activeId && topicOwnerId ? String(topicOwnerId) === String(activeId) : false;
-        const topicEntryHtml = renderThreadEntry({
-          authorName: displayAuthor,
-          authorMetaHtml: topicAuthorMetaHtml,
-          authorBadgeHtml: topicAuthorBadgeHtml,
-          initials,
-          timeLabel: createdLabel,
-          timeIso: createdIso,
-          contentHtml: normalizeContent(t.content),
-          messageBtn: '',
-          label: topicIsAi ? 'Message de Ped’IA' : null,
-          isAi: topicIsAi,
-          isSelf: topicIsSelf,
-          isInitial: true,
-          profileId: topicProfileId,
+        const fullContentHtml = normalizeContent(t.content);
+        const topicBadgeLabel = topicIsAi
+          ? 'Message de Ped’IA'
+          : (topicIsSelf ? 'Votre publication' : '');
+        const topicBadgeChip = topicBadgeLabel
+          ? `<span class="community-topic-card__badge">${escapeHtml(topicBadgeLabel)}</span>`
+          : '';
+        const collapseButton = `<button type="button" class="topic-toggle community-topic-card__collapse" data-toggle-comments="${tid}" aria-expanded="${isOpen ? 'true' : 'false'}" data-label-open="Réduire la publication" data-label-closed="Afficher les commentaires" data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>`;
+        const storyBlock = `
+          <div class="community-topic-card__story">
+            <div class="community-topic-card__story-bar">
+              ${topicBadgeChip || '<span class="community-topic-card__badge-placeholder" aria-hidden="true"></span>'}
+              ${collapseButton}
+            </div>
+            ${fullContentHtml ? `<div class="community-topic-card__story-text">${fullContentHtml}</div>` : ''}
+          </div>
+        `;
+        const repliesById = new Map();
+        rs.forEach((reply) => {
+          const key = reply?.id != null ? String(reply.id) : '';
+          if (key) repliesById.set(key, reply);
         });
-        const repliesHtml = rs.map(r=>{
-          const replyMeta = authorsMap.get(String(r.user_id)) || authorsMap.get(r.user_id) || null;
-          const normalizedReply = normalizeAuthorMetaForId(replyMeta, r.user_id);
+        const validReplyIds = new Set(repliesById.keys());
+        const topicNestedMap = sanitizeNestedRepliesForTopic(tid, validReplyIds);
+        const nestedChildIds = new Set();
+        topicNestedMap.forEach((childSet) => childSet.forEach((childId) => nestedChildIds.add(childId)));
+        const toggleableParents = new Set();
+        topicNestedMap.forEach((childSet, parentId) => {
+          if (childSet && childSet.size && !nestedChildIds.has(parentId)) {
+            toggleableParents.add(String(parentId));
+          }
+        });
+        const topicOpenSet = sanitizeNestedOpenForTopic(tid, toggleableParents);
+
+        const renderReplyBlock = (reply, depth = 0) => {
+          const replyMeta = authorsMap.get(String(reply.user_id)) || authorsMap.get(reply.user_id) || null;
+          const normalizedReply = normalizeAuthorMetaForId(replyMeta, reply.user_id);
           const rawReplyAuthor = (normalizedReply && normalizedReply.name)
             || (typeof replyMeta === 'string' ? replyMeta : replyMeta?.full_name || replyMeta?.name)
-            || r.author
+            || reply.author
             || 'Anonyme';
           const replyProfileId = normalizedReply?.profileId ?? null;
           const replyAuthor = formatAuthorName(rawReplyAuthor);
           const replyAuthorMetaHtml = renderAuthorMetaInfo(normalizedReply || replyMeta);
           const replyAuthorBadgeHtml = renderAuthorBadgeInline(normalizedReply || replyMeta);
           const replyInitials = initialsFrom(rawReplyAuthor);
-          const { label: replyTimeLabel, iso: replyIso } = formatDateParts(r.created_at || r.createdAt);
-          const replyMessageBtn = (!isMobile && r.user_id)
-            ? `<a href="messages.html?user=${encodeURIComponent(String(r.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>`
+          const { iso: replyIso } = formatDateParts(reply.created_at || reply.createdAt);
+          const replyMessageBtn = (!isMobile && reply.user_id)
+            ? `<a href="messages.html?user=${encodeURIComponent(String(reply.user_id))}" class="btn btn-secondary btn-message btn-message--small"${messageAttrs}>${messageLabel}</a>`
             : '';
           const isReplyAi = isAiAuthor(replyAuthor);
-          const replyLabel = isReplyAi ? 'Réponse de Ped’IA' : `Réponse de ${replyAuthor}`;
-          const replyOwnerId = resolveAuthorId(r);
+          const replyOwnerId = resolveAuthorId(reply);
           const replyIsSelf = activeId && replyOwnerId ? String(replyOwnerId) === String(activeId) : false;
-          const replyId = r?.id != null ? String(r.id) : '';
+          const replyId = reply?.id != null ? String(reply.id) : '';
           if (replyId && !communityLikes.has(replyId)) {
             const fetched = likesMap.get(replyId);
             if (fetched) {
@@ -8765,64 +9136,133 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const replyActions = [];
           if (likeButton) replyActions.push(likeButton);
           if (replyMessageBtn) replyActions.push(replyMessageBtn);
-          return renderThreadEntry({
+          const replyEntryHtml = renderThreadEntry({
             authorName: replyAuthor,
             authorMetaHtml: replyAuthorMetaHtml,
             authorBadgeHtml: replyAuthorBadgeHtml,
             initials: replyInitials,
-            timeLabel: replyTimeLabel,
+            timeLabel: '',
             timeIso: replyIso,
-            contentHtml: normalizeContent(r.content),
+            contentHtml: normalizeContent(reply.content),
             messageBtn: null,
             actions: replyActions,
-            label: replyLabel,
+            label: '',
             isAi: isReplyAi,
             isSelf: replyIsSelf,
             profileId: replyProfileId,
           });
-        }).join('');
-        const repliesBlock = repliesCount
-          ? repliesHtml
-          : '<p class="topic-empty topic-empty--thread">Aucune réponse pour le moment. Lancez la conversation !</p>';
-        const threadHtml = `
-          <div class="topic-thread">
-            ${topicEntryHtml}
+          const replyButtonHtml = replyId
+            ? `<button type="button" class="community-reply-button" data-reply-trigger="${escapeHtml(replyId)}" data-topic-id="${escapeHtml(tid)}" data-reply-author="${escapeHtml(replyAuthor)}">↩️ Répondre</button>`
+            : '';
+          const deleteButtonHtml = (replyIsSelf && replyId)
+            ? `<button type="button" class="btn btn-danger community-delete-reply" data-del-reply="${escapeHtml(replyId)}" data-topic-id="${escapeHtml(tid)}">Supprimer</button>`
+            : '';
+          const childSet = replyId ? topicNestedMap.get(replyId) : null;
+          let childrenHtml = '';
+          let nestedToggleHtml = '';
+          if (childSet && childSet.size) {
+            const allowToggle = toggleableParents.has(replyId);
+            const orderedChildren = Array.from(childSet)
+              .map((childId) => repliesById.get(childId))
+              .filter(Boolean)
+              .sort((a, b) => timestampOf(a.created_at || a.createdAt) - timestampOf(b.created_at || b.createdAt));
+            const childrenContent = orderedChildren.map((child) => renderReplyBlock(child, depth + 1)).join('');
+            if (allowToggle) {
+              const isChildrenOpen = topicOpenSet.has(replyId);
+              const toggleLabelBase = isChildrenOpen ? 'Réduire les réponses' : 'Afficher les réponses';
+              const toggleSuffix = childSet.size ? ` (${childSet.size})` : '';
+              nestedToggleHtml = `<button type="button" class="community-nested-toggle" data-toggle-nested="${escapeHtml(replyId)}" data-topic-id="${escapeHtml(tid)}" data-child-count="${childSet.size}">${escapeHtml(toggleLabelBase + toggleSuffix)}</button>`;
+              const hiddenAttr = isChildrenOpen ? '' : ' hidden';
+              const wrapperClass = `community-comment-children${isChildrenOpen ? ' is-open' : ''}`;
+              childrenHtml = `<div class="${wrapperClass}" data-nested-children="${escapeHtml(replyId)}"${hiddenAttr}>${childrenContent}</div>`;
+            } else {
+              const wrapperClass = 'community-comment-children is-open';
+              childrenHtml = `<div class="${wrapperClass}">${childrenContent}</div>`;
+            }
+          }
+          const controlItems = [];
+          if (replyButtonHtml) controlItems.push(replyButtonHtml);
+          if (nestedToggleHtml) controlItems.push(nestedToggleHtml);
+          if (deleteButtonHtml) controlItems.push(deleteButtonHtml);
+          const controlsHtml = controlItems.length ? `<div class="community-comment-controls">${controlItems.join('')}</div>` : '';
+          const inlineContainer = replyId ? `<div class="community-reply-inline" data-inline-reply="${escapeHtml(replyId)}" hidden></div>` : '';
+          const blockAttr = replyId ? ` data-reply-block="${escapeHtml(replyId)}"` : '';
+          return `
+            <div class="community-comment-block${depth ? ' community-comment-block--nested' : ''}"${blockAttr}>
+              ${replyEntryHtml}
+              ${controlsHtml}
+              ${inlineContainer}
+              ${childrenHtml}
+            </div>
+          `;
+        };
+
+        const topLevelReplies = rs.filter((reply) => {
+          const rid = reply?.id != null ? String(reply.id) : '';
+          return !nestedChildIds.has(rid);
+        });
+        const repliesHtml = topLevelReplies.map((reply) => renderReplyBlock(reply, 0)).join('');
+        const repliesBlock = repliesHtml
+          ? `<div class="community-topic-card__comments">${repliesHtml}</div>`
+          : '<p class="community-topic-card__empty">Aucune réponse pour le moment. Lancez la conversation !</p>';
+        const commentsTitle = repliesCount
+          ? `${repliesCount} ${repliesCount > 1 ? 'commentaires' : 'commentaire'}`
+          : 'Commentaires';
+        const commentsSection = `
+          <div class="community-topic-card__comments-wrapper">
+            <div class="community-topic-card__comments-header">${escapeHtml(commentsTitle)}</div>
             ${repliesBlock}
           </div>
         `;
-        const timeMeta = createdLabel ? `<time datetime="${createdIso}">${escapeHtml(createdLabel)}</time>` : '';
-        const pillText = repliesCount ? `${repliesCount} ${repliesCount>1?'réponses':'réponse'}` : 'Nouvelle discussion';
-        const pillClass = repliesCount ? 'topic-pill' : 'topic-pill topic-pill--empty';
+        const dividerHtml = (fullContentHtml || repliesCount)
+          ? '<div class="community-topic-card__divider" aria-hidden="true"></div>'
+          : '';
+        const previewText = buildTopicPreview(t.content);
         const deleteBtn = (activeId && String(t.user_id) === String(activeId)) ? `<div class="topic-manage"><button class="btn btn-danger" data-del-topic="${tid}">Supprimer le sujet</button></div>` : '';
-        const bodyStyle = isOpen ? '' : ' style="display:none"';
+        const bodyOpenClass = isOpen ? ' is-open' : '';
+        const bodyAria = isOpen ? 'false' : 'true';
         el.setAttribute('data-open', isOpen ? '1' : '0');
+        if (isOpen) el.classList.add('community-topic--open');
         el.innerHTML = `
-          <header class="topic-header">
-            <div class="topic-avatar" aria-hidden="true"${topicAvatarAttr}>${escapeHtml(initials)}</div>
-            <div class="topic-heading">
-              <div class="topic-meta">
-                <span class="topic-cat">${escapeHtml(cat)}</span>
-                ${topicAuthorBlock}
-                ${timeMeta}
+          <article class="community-topic-card">
+            <header class="community-topic-card__header">
+              <div class="community-topic-card__identity">
+                <div class="community-topic-card__avatar" aria-hidden="true"${topicAvatarAttr}>${escapeHtml(initials)}</div>
+                <div class="community-topic-card__user">
+                  <span class="community-topic-card__author"${topicAuthorPreviewAttr}>
+                    <span class="author-name-text">${escapeHtml(displayAuthor)}</span>
+                    ${topicAuthorBadgeHtml}
+                  </span>
+                  <div class="community-topic-card__meta">
+                    ${createdLabel ? `<time datetime="${createdIso}">${escapeHtml(createdLabel)}</time>` : ''}
+                    <span class="community-topic-card__category">${escapeHtml(cat)}</span>
+                  </div>
+                </div>
               </div>
-              <h3 class="topic-title">${escapeHtml(title)}</h3>
+              ${topicMessageBtn ? `<div class="community-topic-card__header-actions">${topicMessageBtn}</div>` : ''}
+            </header>
+            <div class="community-topic-card__content">
+              <h3 class="community-topic-card__title">${escapeHtml(title)}</h3>
+              ${previewText ? `<p class="community-topic-card__preview">${previewText}</p>` : ''}
             </div>
-            <div class="topic-actions">
-              <span class="${pillClass}">${escapeHtml(pillText)}</span>
-              ${topicMessageBtn}
-              <button class="btn btn-secondary topic-toggle" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}" data-label-open="Réduire la publication" data-label-closed="Afficher les commentaires" data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>
-            </div>
-          </header>
-          <div class="topic-body" data-body="${tid}"${bodyStyle}>
-            ${threadHtml}
-            <form data-id="${tid}" class="form-reply form-grid">
-              <label>Réponse<textarea name="content" rows="2" required></textarea></label>
-              <div class="topic-form-actions">
-                <button class="btn btn-secondary" type="submit">Répondre</button>
+            <footer class="community-topic-card__footer">
+              <div class="community-topic-card__footer-actions">
+                <button class="btn btn-secondary topic-toggle community-topic-card__toggle" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}" data-label-open="Réduire la publication" data-label-closed="Afficher les commentaires" data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>
               </div>
-            </form>
-            ${deleteBtn}
-          </div>
+            </footer>
+            <div class="topic-body community-topic-card__expanded${bodyOpenClass}" data-body="${tid}" aria-hidden="${bodyAria}">
+              ${storyBlock}
+              ${dividerHtml}
+              ${commentsSection}
+              <form data-id="${tid}" class="form-reply form-grid">
+                <label>Réponse<textarea name="content" rows="2" required></textarea></label>
+                <div class="topic-form-actions">
+                  <button class="btn btn-secondary" type="submit">Répondre</button>
+                </div>
+              </form>
+              ${deleteBtn}
+            </div>
+          </article>
         `;
         if (!isListActive()) return;
         list.appendChild(el);
@@ -8832,6 +9272,45 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     // Actions déléguées : pliage/dépliage et suppression (avec garde d’occupation)
     if (!list.dataset.delBound) {
       list.addEventListener('click', async (e)=>{
+        const replyTrigger = e.target.closest('[data-reply-trigger]');
+        if (replyTrigger) {
+          e.preventDefault();
+          openInlineReply(replyTrigger);
+          return;
+        }
+        const nestedToggle = e.target.closest('[data-toggle-nested]');
+        if (nestedToggle) {
+          e.preventDefault();
+          const parentId = nestedToggle.getAttribute('data-toggle-nested');
+          const topicId = nestedToggle.getAttribute('data-topic-id');
+          const childCount = Number(nestedToggle.getAttribute('data-child-count') || '0');
+          if (!parentId || !topicId) return;
+          const isOpen = toggleNestedOpen(topicId, parentId);
+          const selector = `[data-nested-children="${escapeSelectorValue(parentId)}"]`;
+          const container = list.querySelector(selector);
+          if (container) {
+            if (isOpen) {
+              container.hidden = false;
+              requestAnimationFrame(() => container.classList.add('is-open'));
+            } else {
+              container.classList.remove('is-open');
+              container.hidden = true;
+            }
+          }
+          const labelBase = isOpen ? 'Réduire les réponses' : 'Afficher les réponses';
+          const suffix = childCount ? ` (${childCount})` : '';
+          nestedToggle.textContent = labelBase + suffix;
+          if (!isOpen && renderCommunity._activeInline && renderCommunity._activeInline.parentId === parentId) {
+            closeActiveInlineReply();
+          }
+          return;
+        }
+        const deleteBtn = e.target.closest('[data-del-reply]');
+        if (deleteBtn) {
+          e.preventDefault();
+          await deleteReply(deleteBtn);
+          return;
+        }
         const likeBtn = e.target.closest('[data-like-reply]');
         if (likeBtn) {
           e.preventDefault();
@@ -8842,6 +9321,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const tgl = e.target.closest('[data-toggle-comments]');
         if (tgl) {
           e.preventDefault();
+          closeActiveInlineReply();
           const id = tgl.getAttribute('data-toggle-comments');
           const body = list.querySelector(`[data-body="${id}"]`);
           const openSet = (renderCommunity._open = renderCommunity._open || new Set());
@@ -8852,19 +9332,27 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const suffix = countAttr && countAttr !== '0' ? ` (${countAttr})` : '';
           const topic = tgl.closest('.topic');
           if (body) {
-            if (isOpen) {
-              body.style.display = 'none';
-              openSet.delete(id);
-              tgl.setAttribute('aria-expanded', 'false');
-              tgl.textContent = labelClosed + suffix;
-              if (topic) topic.setAttribute('data-open', '0');
-            } else {
-              body.style.display = '';
-              openSet.add(id);
-              tgl.setAttribute('aria-expanded', 'true');
-              tgl.textContent = labelOpen + suffix;
-              if (topic) topic.setAttribute('data-open', '1');
-            }
+            const toggles = Array.from(list.querySelectorAll(`[data-toggle-comments="${id}"]`));
+            const applyState = (open) => {
+              if (open) {
+                body.classList.add('is-open');
+                body.setAttribute('aria-hidden', 'false');
+                openSet.add(id);
+              } else {
+                body.classList.remove('is-open');
+                body.setAttribute('aria-hidden', 'true');
+                openSet.delete(id);
+              }
+              toggles.forEach((btn) => {
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                btn.textContent = (open ? labelOpen : labelClosed) + suffix;
+              });
+              if (topic) {
+                topic.setAttribute('data-open', open ? '1' : '0');
+                topic.classList.toggle('community-topic--open', open);
+              }
+            };
+            applyState(!isOpen);
           }
           return;
         }
@@ -8882,7 +9370,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             }
             const uid = getActiveProfileId();
             if (!uid) { console.warn('Aucun user_id disponible pour forum_topics (delete)'); throw new Error('Pas de user_id'); }
-            await supabase.from('forum_topics').delete().eq('id', id);
+            const { error } = await supabase
+              .from('forum_topics')
+              .delete()
+              .eq('id', id)
+              .eq('user_id', uid);
+            if (error) throw error;
             renderCommunity();
             return;
           } catch {}
