@@ -1382,6 +1382,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
   async function callEdgeFunction(endpoint, { method = 'POST', body, includeAuth = true, headers = {} } = {}) {
+    console.debug('[callEdgeFunction] →', endpoint, { method, body });
     const finalHeaders = { ...headers };
     if (body !== undefined && finalHeaders['Content-Type'] == null) {
       finalHeaders['Content-Type'] = 'application/json';
@@ -1405,10 +1406,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       return null;
     }
     const payload = await response.json().catch(() => ({}));
+    console.debug('[callEdgeFunction] ←', endpoint, { status: response.status, payload });
     if (!response.ok || !payload?.success) {
       const errorMessage = payload?.error || 'Service indisponible';
       const err = new Error(errorMessage);
       if (payload?.details != null) err.details = payload.details;
+      console.error('[callEdgeFunction] Error response', { endpoint, status: response.status, payload });
       throw err;
     }
     return payload.data ?? null;
@@ -8027,6 +8030,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           if (isAnonProfile()) {
             const anonCode = getActiveAnonCode() || getStoredAnonCode();
             if (!anonCode) throw new Error('Code unique manquant');
+            console.debug('[Delete Debug] Sending payload', { action: 'delete-reply', reply_id: replyId, anon_code: anonCode });
             const res = await anonCommunityRequest('delete-reply', { reply_id: replyId, anon_code: anonCode });
             if (res && res.reply_id) {
               deleted = true;

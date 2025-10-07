@@ -83,6 +83,7 @@ export async function processAnonCommunityRequest(body) {
     if (!action) throw new HttpError(400, 'action required');
     const code = normalizeCode(body?.code || body?.code_unique);
     if (!code) throw new HttpError(400, 'code required');
+    const payloadInput = body?.payload && typeof body.payload === 'object' ? body.payload : body;
 
     const { supaUrl, serviceKey } = getServiceConfig();
     const headers = { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` };
@@ -360,12 +361,12 @@ export async function processAnonCommunityRequest(body) {
     }
 
     if (action === 'delete-reply') {
-      const replyId = normalizeId(body?.reply_id ?? body?.replyId ?? body?.id);
-      const anonCode = normalizeCode(body?.anon_code ?? body?.code);
+      const replyId = normalizeId(payloadInput?.reply_id ?? payloadInput?.replyId ?? payloadInput?.id);
+      const anonCode = normalizeCode(payloadInput?.anon_code ?? body?.anon_code ?? body?.code);
       console.log('[delete-reply] Payload reçu :', { replyId, anonCode });
       if (!replyId || !anonCode) {
         console.error('[delete-reply] Paramètres manquants', { replyId, anonCode });
-        return { status: 400, body: { error: 'Missing parameters: reply_id and anon_code are required.' } };
+        return { status: 400, body: { error: 'Missing reply_id or anon_code in payload.' } };
       }
       const existingData = await supabaseRequest(
         `${supaUrl}/rest/v1/forum_replies?select=id,anon_code,user_id&limit=1&id=eq.${encodeURIComponent(replyId)}`,
