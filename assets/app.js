@@ -9069,12 +9069,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
                   </div>
                   ${timeHtml}
                 </div>
-                ${actionsHtml}
               </div>
               <div class="topic-initial">
                 ${shouldDisplayLabel ? `<span class="topic-initial__badge">${safeLabel}</span>` : ''}
                 <div class="topic-initial__content">${contentHtml}</div>
               </div>
+              ${actionsHtml}
             </article>
           `;
         }
@@ -9095,12 +9095,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
                 </div>
                 ${timeHtml}
               </div>
-              ${actionsHtml}
             </div>
             <div class="${noteClass}">
               ${shouldDisplayLabel ? `<span class="${labelClass}">${safeLabel}</span>` : ''}
               <div class="${textClass}">${contentHtml}</div>
             </div>
+            ${actionsHtml}
           </article>
         `;
       };
@@ -9206,9 +9206,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               communityLikes.set(replyId, { count: 0, liked: false });
             }
           }
+          const replyButtonHtml = replyId
+            ? `<button type="button" class="community-reply-button" data-reply-trigger="${escapeHtml(replyId)}" data-topic-id="${escapeHtml(tid)}" data-reply-author="${escapeHtml(replyAuthor)}">↩️ Répondre</button>`
+            : '';
           const likeButton = replyId ? buildLikeButton(replyId, communityLikes.get(replyId)) : '';
           const replyActions = [];
           if (likeButton) replyActions.push(likeButton);
+          if (replyButtonHtml) replyActions.push(replyButtonHtml);
           if (replyMessageBtn) replyActions.push(replyMessageBtn);
           const replyEntryHtml = renderThreadEntry({
             authorName: replyAuthor,
@@ -9225,9 +9229,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             isSelf: replyIsSelf,
             profileId: replyProfileId,
           });
-          const replyButtonHtml = replyId
-            ? `<button type="button" class="community-reply-button" data-reply-trigger="${escapeHtml(replyId)}" data-topic-id="${escapeHtml(tid)}" data-reply-author="${escapeHtml(replyAuthor)}">↩️ Répondre</button>`
-            : '';
           const deleteButtonHtml = (replyIsSelf && replyId)
             ? `<button type="button" class="btn btn-danger community-delete-reply" data-del-reply="${escapeHtml(replyId)}" data-topic-id="${escapeHtml(tid)}">Supprimer</button>`
             : '';
@@ -9255,7 +9256,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             }
           }
           const controlItems = [];
-          if (replyButtonHtml) controlItems.push(replyButtonHtml);
           if (nestedToggleHtml) controlItems.push(nestedToggleHtml);
           if (deleteButtonHtml) controlItems.push(deleteButtonHtml);
           const controlsHtml = controlItems.length ? `<div class="community-comment-controls">${controlItems.join('')}</div>` : '';
