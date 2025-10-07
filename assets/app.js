@@ -1505,7 +1505,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
       console.log('[AnonCommunity Debug] Final body sent to anon-community:', body);
 
-      const response = await callEdgeFunction('anon-community', body);
+      const response = await callEdgeFunction('anon-community', { body });
       return response;
     } catch (err) {
       console.error('[AnonCommunity Error]', err);
