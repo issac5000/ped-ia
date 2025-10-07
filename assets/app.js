@@ -9147,6 +9147,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const topicBadgeChip = topicBadgeLabel
           ? `<span class="community-topic-card__badge">${escapeHtml(topicBadgeLabel)}</span>`
           : '';
+        const buildToggleButton = (extraClass = '') => {
+          const classSuffix = extraClass ? ` ${extraClass}` : '';
+          return `<button class="btn btn-secondary topic-toggle community-topic-card__toggle${classSuffix}"
+            data-toggle-comments="${tid}"
+            aria-expanded="${isOpen ? 'true' : 'false'}"
+            data-label-open="Réduire la publication"
+            data-label-closed="Afficher les commentaires"
+            data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>`;
+        };
         const collapseButton = `<button type="button" class="topic-toggle community-topic-card__collapse" data-toggle-comments="${tid}" aria-expanded="${isOpen ? 'true' : 'false'}" data-label-open="Réduire la publication" data-label-closed="Afficher les commentaires" data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>`;
         const storyBlock = `
           <div class="community-topic-card__story">
@@ -9299,6 +9308,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const bodyAria = isOpen ? 'false' : 'true';
         el.setAttribute('data-open', isOpen ? '1' : '0');
         if (isOpen) el.classList.add('community-topic--open');
+        const headerActions = [];
+        if (topicMessageBtn) headerActions.push(topicMessageBtn);
+        if (!isOpen) headerActions.push(buildToggleButton('community-topic-card__toggle--header'));
+        const headerActionsHtml = headerActions.length
+          ? `<div class="community-topic-card__header-actions">${headerActions.join('')}</div>`
+          : '';
         el.innerHTML = `
           <article class="community-topic-card">
             <header class="community-topic-card__header">
@@ -9315,7 +9330,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
                   </div>
                 </div>
               </div>
-              ${topicMessageBtn ? `<div class="community-topic-card__header-actions">${topicMessageBtn}</div>` : ''}
+              ${headerActionsHtml}
             </header>
             <div class="community-topic-card__content">
               <h3 class="community-topic-card__title">${escapeHtml(title)}</h3>
@@ -9323,7 +9338,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             </div>
             <footer class="community-topic-card__footer">
               <div class="community-topic-card__footer-actions">
-                <button class="btn btn-secondary topic-toggle community-topic-card__toggle" data-toggle-comments="${tid}" aria-expanded="${isOpen?'true':'false'}" data-label-open="Réduire la publication" data-label-closed="Afficher les commentaires" data-count="${repliesCount}">${toggleLabel}${toggleCount}</button>
+                ${buildToggleButton('community-topic-card__toggle--footer')}
               </div>
             </footer>
             <div class="topic-body community-topic-card__expanded${bodyOpenClass}" data-body="${tid}" aria-hidden="${bodyAria}">
