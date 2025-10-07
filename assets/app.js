@@ -7601,7 +7601,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }, delay);
   };
 
-  const hideParentPreview = (immediate = false) => {
+  function hideParentPreview(immediate = false) {
     clearTimeout(parentPreviewHideTimer);
     parentPreviewHideTimer = null;
     parentPreviewRequestToken += 1;
@@ -7637,7 +7637,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         handle();
       }
     }, 220);
-  };
+  }
 
   const positionParentPreview = (anchor, card) => {
     if (!anchor || !card) return;
