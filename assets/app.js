@@ -8671,7 +8671,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             if (useRemote()) {
               try {
                 if (isAnonProfile()) {
-                  const res = await anonCommunityRequest('reply', { topicId: id, content });
+                  const anonCode = getActiveAnonCode() || getStoredAnonCode();
+                  const replyPayload = {
+                    topicId: id,
+                    content,
+                    anon_code: anonCode,
+                  };
+                  const res = await anonCommunityRequest('reply', { payload: replyPayload });
                   handleReplyInserted(id, res?.reply || null, parentReplyId);
                   return;
                 }
@@ -8695,6 +8701,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             const child = children.find(c=>c.id===user?.primaryChildId) || children[0];
             const whoAmI = user?.pseudo || (user ? `${user.role} de ${child? child.firstName : '—'}` : 'Anonyme');
             const uid = getActiveProfileId();
+            const anonCode = getActiveAnonCode() || getStoredAnonCode() || null;
             const localReply = {
               id: genId(),
               topic_id: id,
@@ -8702,6 +8709,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               content,
               created_at: new Date().toISOString(),
               author: whoAmI,
+              anon_code: anonCode,
             };
             topic.replies.push(localReply);
             store.set(K.forum, forum);

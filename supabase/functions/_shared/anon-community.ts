@@ -340,14 +340,16 @@ export async function processAnonCommunityRequest(body) {
     }
 
     if (action === 'reply') {
-      const topicId = normalizeId(body?.topicId ?? body?.topic_id ?? body?.id);
+      const topicId = normalizeId(payloadInput?.topicId ?? payloadInput?.topic_id ?? payloadInput?.id);
       if (!topicId) throw new HttpError(400, 'topic_id required');
-      const content = sanitizeContent(body?.content ?? '');
+      const content = sanitizeContent(payloadInput?.content ?? body?.content ?? '');
       if (!content) throw new HttpError(400, 'content required');
+      const anonCodeValue = normalizeCode(payloadInput?.anon_code) || code;
       const payload = {
         topic_id: topicId,
         user_id: profileId,
         content,
+        anon_code: anonCodeValue,
       };
       const insertData = await supabaseRequest(
         `${supaUrl}/rest/v1/forum_replies`,
