@@ -3748,20 +3748,307 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20)));
       } catch {}
     };
+    const autoSendChatSuggestions = true;
+    const welcomeBaseText = '👋 Comment va la petite famille ? Envie de faire un point ?';
+    const WELCOME_DELAY_MS = 800;
+    const WELCOME_TYPE_DELAY_MS = 26;
+    let welcomeTimeoutId = null;
+    let welcomeTypingTimeoutId = null;
+    const chatModes = { TEXT: 'text', IMAGE: 'image' };
+    const chatTextPlaceholders = ['Écris ici…', 'Pose ta question…', 'Dis-moi tout…'];
+    const chatImagePlaceholder = "Décris l'image que tu veux créer...";
+    let chatPlaceholderIndex = 0;
+    let chatPlaceholderIntervalId = null;
+    let currentChatMode = chatModes.TEXT;
+    let btnImageMode = null;
+    let txtChat = null;
+    const chatSuggestionPresets = [
+      { emoji: '🧠', label: 'Bilan de développement', template: 'Peux-tu me faire un bilan de développement pour {prenom_enfant} ?' },
+      { emoji: '🚶', label: 'Jalons moteurs', template: 'Où en est {prenom_enfant} dans ses jalons moteurs ?' },
+      { emoji: '🌙', label: 'Sommeil récent', template: 'As-tu remarqué une évolution du sommeil ces dernières semaines ?' }
+    ];
+    const isChatInImageMode = () => currentChatMode === chatModes.IMAGE;
+    const applyChatPlaceholder = () => {
+      if (!txtChat) return;
+      if (isChatInImageMode()) {
+        txtChat.placeholder = chatImagePlaceholder;
+      } else {
+        const count = chatTextPlaceholders.length;
+        const idx = count ? chatPlaceholderIndex % count : 0;
+        txtChat.placeholder = chatTextPlaceholders[idx] || chatImagePlaceholder;
+      }
+    };
+    function setChatMode(mode) {
+      const nextMode = mode === chatModes.IMAGE ? chatModes.IMAGE : chatModes.TEXT;
+      currentChatMode = nextMode;
+      if (fChat) fChat.dataset.mode = nextMode;
+      if (txtChat) {
+        txtChat.dataset.mode = nextMode;
+      }
+      if (btnImageMode) {
+        btnImageMode.setAttribute('aria-pressed', nextMode === chatModes.IMAGE ? 'true' : 'false');
+        btnImageMode.classList.toggle('active', nextMode === chatModes.IMAGE);
+      }
+      applyChatPlaceholder();
+    }
+    const getChatSuggestionsContainer = () => {
+      if (!isRouteAttached()) return null;
+      const container = document.getElementById('chat-suggestions');
+      if (!container) return null;
+      return container;
+    };
+    const getSuggestionChildName = () => {
+      const child = getCurrentChild();
+      const fromFirstName = child?.firstName || child?.first_name;
+      const fromName = child?.name;
+      const raw = (fromFirstName || fromName || '').toString().trim();
+      return raw || 'votre enfant';
+    };
+    const formatSuggestionText = (template) => {
+      const name = getSuggestionChildName();
+      return template.replace(/\{prenom_enfant\}/g, name);
+    };
+    const buildChatSuggestionCards = () => {
+      const container = getChatSuggestionsContainer();
+      if (!container) return;
+      container.innerHTML = '';
+      const form = document.getElementById('form-ai-chat');
+      const textarea = form?.querySelector('textarea[name="q"]');
+      chatSuggestionPresets.forEach((preset) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'suggestion-card';
+        const suggestionText = formatSuggestionText(preset.template);
+        btn.innerHTML = `
+          <span class="suggestion-emoji">${preset.emoji}</span>
+          <span class="suggestion-text"><strong>${escapeHtml(preset.label)}</strong><span>${escapeHtml(suggestionText)}</span></span>`;
+        btn.addEventListener('click', () => {
+          const currentForm = form || document.getElementById('form-ai-chat');
+          if (autoSendChatSuggestions && currentForm?.dataset.busy === '1') return;
+          if (isChatInImageMode()) {
+            setChatMode(chatModes.TEXT);
+          }
+          const currentTextarea = textarea || currentForm?.querySelector('textarea[name="q"]');
+          if (currentTextarea) {
+            currentTextarea.value = suggestionText;
+            currentTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+            try { currentTextarea.focus(); } catch {}
+          }
+          if (autoSendChatSuggestions && currentForm) {
+            hideChatSuggestions();
+            if (typeof currentForm.requestSubmit === 'function') currentForm.requestSubmit();
+            else currentForm.submit();
+          }
+        });
+        container.appendChild(btn);
+      });
+    };
+    const showChatSuggestions = () => {
+      const container = getChatSuggestionsContainer();
+      if (!container) return;
+      buildChatSuggestionCards();
+      if (!container.hidden) {
+        container.classList.remove('fade-in');
+        void container.offsetWidth;
+        container.classList.add('fade-in');
+        container.addEventListener('animationend', () => container.classList.remove('fade-in'), { once: true });
+        return;
+      }
+      container.hidden = false;
+      container.classList.remove('fade-in');
+      void container.offsetWidth;
+      container.classList.add('fade-in');
+      container.addEventListener('animationend', () => container.classList.remove('fade-in'), { once: true });
+    };
+    const hideChatSuggestions = () => {
+      const container = getChatSuggestionsContainer();
+      if (!container) return;
+      if (!container.hidden) {
+        container.hidden = true;
+      }
+      container.classList.remove('fade-in');
+    };
+    const updateChatSuggestions = (arr) => {
+      if (!isRouteAttached()) return;
+      const list = Array.isArray(arr) ? arr : [];
+      if (!list.length) showChatSuggestions();
+      else hideChatSuggestions();
+    };
+    const requestChatImage = async (prompt) => {
+      const res = await fetch('/api/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const raw = await res.text();
+      if (!res.ok) {
+        let message = 'Impossible de générer l’illustration pour le moment.';
+        try {
+          const payload = JSON.parse(raw || '{}');
+          const basic = payload?.error || payload?.message;
+          const detail = payload?.details || payload?.error?.message;
+          message = [basic || message, detail].filter(Boolean).join(' — ');
+        } catch {}
+        throw new Error(message);
+      }
+      let payload = {};
+      try {
+        payload = JSON.parse(raw || '{}');
+      } catch {
+        payload = { image: raw };
+      }
+      const candidates = [
+        payload?.imageUrl,
+        payload?.url,
+        payload?.image,
+        payload?.base64,
+        payload?.data,
+        payload?.result,
+      ];
+      let source = '';
+      candidates.forEach((candidate) => {
+        if (typeof candidate !== 'string') return;
+        const value = candidate.trim();
+        if (!value) return;
+        if (!source) source = value;
+        if (value.startsWith('http')) {
+          source = value;
+        }
+      });
+      if (!source) throw new Error('Réponse image invalide.');
+      if (!source.startsWith('http')) {
+        const mime = typeof payload?.mime === 'string' ? payload.mime : 'image/png';
+        const safeMime = mime.startsWith('image/') ? mime : 'image/png';
+        source = source.startsWith('data:') ? source : `data:${safeMime};base64,${source}`;
+      }
+      return { imageUrl: source };
+    };
+    const clearWelcomeTyping = () => {
+      if (welcomeTypingTimeoutId) {
+        clearTimeout(welcomeTypingTimeoutId);
+        welcomeTypingTimeoutId = null;
+      }
+    };
+    const removeWelcomeMessage = () => {
+      if (welcomeTimeoutId) {
+        clearTimeout(welcomeTimeoutId);
+        welcomeTimeoutId = null;
+      }
+      clearWelcomeTyping();
+      const existing = document.getElementById('ai-chat-welcome');
+      if (existing) existing.remove();
+    };
+    const getParentGreetingName = () => {
+      try {
+        const user = store.get(K.user) || {};
+        const raw = [user?.pseudo, user?.firstName, user?.first_name, user?.name]
+          .find((val) => typeof val === 'string' && val.trim());
+        return raw ? raw.trim() : '';
+      } catch {
+        return '';
+      }
+    };
+    const buildWelcomeMessageText = () => {
+      const parentName = getParentGreetingName();
+      if (!parentName) return welcomeBaseText;
+      return `👋 Hey ${parentName} Comment va la petite famille ? Envie de faire un point ?`;
+    };
+    const typeWelcomeText = (node, text, container) => {
+      const chars = Array.from(text);
+      let idx = 0;
+      const step = () => {
+        if (!isRouteAttached()) {
+          clearWelcomeTyping();
+          return;
+        }
+        if (!node || !node.isConnected) {
+          clearWelcomeTyping();
+          return;
+        }
+        node.textContent += chars[idx] ?? '';
+        idx += 1;
+        if (container && container.isConnected) {
+          safeScrollTo(container, { top: container.scrollHeight, behavior: 'smooth' });
+        }
+        if (idx < chars.length) {
+          const nextDelay = chars[idx - 1] === ' ' ? WELCOME_TYPE_DELAY_MS / 2 : WELCOME_TYPE_DELAY_MS;
+          welcomeTypingTimeoutId = setTimeout(step, nextDelay);
+        } else {
+          welcomeTypingTimeoutId = null;
+        }
+      };
+      step();
+    };
+    const showWelcomeMessage = () => {
+      if (!isRouteAttached()) return;
+      const container = document.getElementById('ai-chat-messages');
+      if (!container || !document.body.contains(container)) return;
+      const child = getCurrentChild();
+      const history = loadChat(child);
+      if (Array.isArray(history) && history.length) return;
+      if (document.getElementById('ai-chat-welcome')) return;
+      clearWelcomeTyping();
+      const line = document.createElement('div');
+      line.id = 'ai-chat-welcome';
+      line.className = 'chat-line assistant';
+      line.dataset.welcome = '1';
+      line.innerHTML = `
+        <div class="avatar">🤖</div>
+        <div class="message">
+          <div class="meta">Ped'IA</div>
+          <div class="bubble assistant"><span class="welcome-text"></span></div>
+        </div>`;
+      container.appendChild(line);
+      safeScrollTo(container, { top: container.scrollHeight, behavior: 'smooth' });
+      const span = line.querySelector('.welcome-text');
+      if (span) {
+        span.textContent = '';
+        const messageText = buildWelcomeMessageText();
+        typeWelcomeText(span, messageText, container);
+      }
+    };
+    const scheduleWelcomeMessage = () => {
+      if (!isRouteAttached()) return;
+      if (welcomeTimeoutId) return;
+      if (document.getElementById('ai-chat-welcome')) return;
+      const child = getCurrentChild();
+      const history = loadChat(child);
+      if (Array.isArray(history) && history.length) return;
+      welcomeTimeoutId = setTimeout(() => {
+        welcomeTimeoutId = null;
+        showWelcomeMessage();
+      }, WELCOME_DELAY_MS);
+    };
     const renderChat = (arr) => {
       if (!isRouteAttached()) return;
       const el = document.getElementById('ai-chat-messages');
       if (!el || !document.body.contains(el)) return;
+      const list = Array.isArray(arr) ? arr : [];
+      updateChatSuggestions(list);
+      if (list.length) removeWelcomeMessage();
       const userRole = store.get(K.user)?.role;
       const userAvatar = userRole === 'papa' ? '👨' : '👩';
-      el.innerHTML = arr
+      el.innerHTML = list
         .map((m) => {
-          const role = m.role === 'user' ? 'user' : 'assistant';
+          const role = m?.role === 'user' ? 'user' : 'assistant';
           const avatar = role === 'user' ? userAvatar : '🤖';
           const label = role === 'user' ? 'Vous' : "Ped'IA";
-          return `<div class=\"chat-line ${role}\"><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div><div class=\"bubble ${role}\">${escapeHtml(m.content).replace(/\\n/g,'<br/>')}</div></div></div>`;
+          const messageType = typeof m?.type === 'string' && m.type ? ` data-message-type=\"${escapeAttribute(m.type)}\"` : '';
+          let bubbleHtml;
+          if (m?.type === 'image-result' && m?.imageUrl) {
+            const safeContent = escapeHtml(m.content || "🎨 Voici l'image que j'ai générée pour toi :");
+            const safeAlt = escapeHtml(m.alt || "Illustration générée par Ped'IA");
+            const safeSrc = escapeAttribute(m.imageUrl);
+            const textBlock = safeContent ? `<p>${safeContent}</p>` : '';
+            bubbleHtml = `<div class=\"bubble ${role}\"><div class=\"chat-image-message\">${textBlock}<figure><img src=\"${safeSrc}\" alt=\"${safeAlt}\" loading=\"lazy\" decoding=\"async\" /></figure></div></div>`;
+          } else {
+            const safeContent = escapeHtml(m?.content ?? '').replace(/\\n/g,'<br/>');
+            bubbleHtml = `<div class=\"bubble ${role}\">${safeContent}</div>`;
+          }
+          return `<div class=\"chat-line ${role}\"${messageType}><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div>${bubbleHtml}</div></div>`;
         })
         .join('');
+      if (!list.length) scheduleWelcomeMessage();
       safeScrollTo(el, { top: el.scrollHeight, behavior: 'smooth' });
     };
 
@@ -4030,19 +4317,38 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const sChat = document.getElementById('ai-chat-status');
     const msgsEl = document.getElementById('ai-chat-messages');
     const btnReset = document.getElementById('ai-chat-reset');
-    const txtChat = fChat?.querySelector('textarea[name="q"]');
+    btnImageMode = document.getElementById('ai-chat-image-toggle');
+    txtChat = fChat?.querySelector('textarea[name="q"]');
+    if (btnImageMode) {
+      btnImageMode.addEventListener('click', () => {
+        if (fChat?.dataset.busy === '1') return;
+        const nextMode = isChatInImageMode() ? chatModes.TEXT : chatModes.IMAGE;
+        setChatMode(nextMode);
+        try {
+          txtChat?.focus();
+        } catch {}
+      });
+    }
+    setChatMode(currentChatMode);
     if (txtChat) {
       if (txtChat._aiPlaceholderInterval) {
         clearInterval(txtChat._aiPlaceholderInterval);
       }
-      const placeholders = ['Écris ici…', 'Pose ta question…', 'Dis-moi tout…'];
-      let idx = 0;
-      txtChat._aiPlaceholderInterval = setInterval(() => {
-        if (document.activeElement !== txtChat) {
-          idx = (idx + 1) % placeholders.length;
-          txtChat.placeholder = placeholders[idx];
-        }
+      if (chatPlaceholderIntervalId) {
+        clearInterval(chatPlaceholderIntervalId);
+        chatPlaceholderIntervalId = null;
+      }
+      applyChatPlaceholder();
+      chatPlaceholderIntervalId = setInterval(() => {
+        if (!txtChat) return;
+        if (document.activeElement === txtChat) return;
+        if (isChatInImageMode()) return;
+        const count = chatTextPlaceholders.length;
+        if (!count) return;
+        chatPlaceholderIndex = (chatPlaceholderIndex + 1) % count;
+        applyChatPlaceholder();
       }, 4000);
+      txtChat._aiPlaceholderInterval = chatPlaceholderIntervalId;
       if (!txtChat.dataset.enterSubmitBound) {
         txtChat.dataset.enterSubmitBound = '1';
         txtChat.addEventListener('keydown', (event) => {
@@ -4074,8 +4380,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         try {
           localStorage.removeItem(key);
         } catch {}
+        removeWelcomeMessage();
         renderChat([]);
         if (sChat) sChat.textContent = '';
+        setChatMode(chatModes.TEXT);
       };
       btnReset.addEventListener('click', handleReset);
       btnReset._aiClickHandler = handleReset;
@@ -4106,11 +4414,71 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         } else {
           fChat.reset();
         }
-        if (sChat) sChat.textContent = 'Réflexion en cours…';
+        const isImageModeSubmission = isChatInImageMode();
+        if (sChat) sChat.textContent = isImageModeSubmission ? 'Génération en cours…' : 'Réflexion en cours…';
         const history = loadChat(child);
-        history.push({ role: 'user', content: q });
+        history.push(
+          isImageModeSubmission
+            ? { role: 'user', content: q, type: 'image-prompt' }
+            : { role: 'user', content: q }
+        );
         saveChat(child, history);
         renderChat(history);
+
+        if (isImageModeSubmission) {
+          document.getElementById('ai-typing')?.remove();
+          const pendingEntry = { role: 'assistant', content: '🎨 Je prépare ton image, ça peut prendre quelques secondes...', type: 'image-status' };
+          history.push(pendingEntry);
+          saveChat(child, history);
+          renderChat(history);
+          if (btnImageMode) btnImageMode.disabled = true;
+          try {
+            const { imageUrl } = await requestChatImage(q);
+            const active = getCurrentChild();
+            const activeId = active && active.id != null ? String(active.id) : 'anon';
+            if (aiPageState.instance !== runId || activeId !== childId || !isRouteAttached()) return;
+            const updatedHistory = loadChat(child);
+            if (updatedHistory.length && updatedHistory[updatedHistory.length - 1]?.type === 'image-status') {
+              updatedHistory.pop();
+            }
+            updatedHistory.push({
+              role: 'assistant',
+              content: "🎨 Voici l'image que j'ai générée pour toi :",
+              type: 'image-result',
+              imageUrl,
+              alt: q,
+            });
+            saveChat(child, updatedHistory);
+            renderChat(updatedHistory);
+          } catch (err) {
+            const active = getCurrentChild();
+            const activeId = active && active.id != null ? String(active.id) : 'anon';
+            if (aiPageState.instance !== runId || activeId !== childId || !isRouteAttached()) return;
+            const message = err instanceof Error && err.message ? err.message : 'Illustration indisponible.';
+            const updatedHistory = loadChat(child);
+            if (updatedHistory.length && updatedHistory[updatedHistory.length - 1]?.type === 'image-status') {
+              updatedHistory[updatedHistory.length - 1] = {
+                role: 'assistant',
+                content: `❌ ${message}`,
+                type: 'image-error',
+              };
+            } else {
+              updatedHistory.push({ role: 'assistant', content: `❌ ${message}`, type: 'image-error' });
+            }
+            saveChat(child, updatedHistory);
+            renderChat(updatedHistory);
+          } finally {
+            if (aiPageState.instance === runId) {
+              if (sChat) sChat.textContent = '';
+              fChat.dataset.busy = '0';
+              if (submitBtn) submitBtn.disabled = false;
+              if (btnImageMode) btnImageMode.disabled = false;
+              setChatMode(chatModes.TEXT);
+            }
+          }
+          return;
+        }
+
         document.getElementById('ai-typing')?.remove();
         const typing = document.createElement('div');
         typing.id = 'ai-typing';
@@ -4121,7 +4489,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           safeScrollTo(msgsEl, { top: msgsEl.scrollHeight, behavior: 'smooth' });
         }
         try {
-          const resp = await askAI(q, child, history);
+          const sanitizedHistory = history
+            .filter((entry) => entry && !entry.type)
+            .map((entry) => ({ role: entry.role, content: entry.content }));
+          const resp = await askAI(q, child, sanitizedHistory);
           const active = getCurrentChild();
           const activeId = active && active.id != null ? String(active.id) : 'anon';
           if (aiPageState.instance !== runId || activeId !== childId || !isRouteAttached()) return;
@@ -9864,6 +10235,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (value == null) return '';
     const str = typeof value === 'string' ? value : String(value);
     return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+  }
+  function escapeAttribute(value){
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    return str.replace(/[&<>"'`]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;','`':'&#96;'}[c]));
   }
   function renderParentBadges(badges = []) {
     const list = Array.isArray(badges) ? badges : [];

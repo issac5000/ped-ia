@@ -147,6 +147,14 @@
                   <img src="pediasection.png" alt="Illustration Ped’IA accompagnant votre famille" class="flagship-image" loading="lazy" decoding="async" />
                 </div>
               </div>
+              <div class="flagship-connectors" aria-hidden="true">
+                <svg class="flagship-connectors-svg" xmlns="http://www.w3.org/2000/svg" role="presentation" focusable="false">
+                  <path class="flagship-connector-path" data-connector-index="0"></path>
+                  <path class="flagship-connector-path" data-connector-index="1"></path>
+                  <path class="flagship-connector-path" data-connector-index="2"></path>
+                  <path class="flagship-connector-path" data-connector-index="3"></path>
+                </svg>
+              </div>
               <div class="flagship-cards">
                 <article class="flagship-card">
                   <div class="flagship-card-head">
@@ -673,8 +681,10 @@
             <button id="ai-chat-reset" class="btn btn-secondary chat-reset" type="button">Réinitialiser la discussion</button>
             <div class="chat-window">
               <div id="ai-chat-messages" class="chat-messages"></div>
+              <div id="chat-suggestions" class="suggestion-cards" hidden></div>
               <form id="form-ai-chat" class="chat-input" autocomplete="off">
                 <div class="chat-row">
+                  <button type="button" id="ai-chat-image-toggle" class="chat-mode-btn" aria-pressed="false" aria-label="Activer la génération d’image" title="Activer la génération d’image">🖼️</button>
                   <textarea name="q" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
                   <button class="btn btn-primary chat-send" type="submit" aria-label="Envoyer">Envoyer</button>
                 </div>
@@ -1028,5 +1038,6 @@
 
     <script src="assets/loading.js"></script>
   <script type="module" src="assets/app.js?v=2"></script>
+  <script type="module" src="assets/flagship-connectors.js"></script>
   </body>
   </html>
