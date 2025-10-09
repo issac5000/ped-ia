@@ -3808,6 +3808,75 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let currentChatMode = chatModes.TEXT;
     let btnImageMode = null;
     let txtChat = null;
+    let cancelChatTypewriter = null;
+    const TYPEWRITER_DELAY_MS = 16;
+    const setChatBubbleText = (node, text) => {
+      if (!node) return;
+      node.innerHTML = '';
+      const str = typeof text === 'string' ? text : '';
+      const segments = str.split('\n');
+      segments.forEach((segment, idx) => {
+        node.appendChild(document.createTextNode(segment));
+        if (idx < segments.length - 1) {
+          node.appendChild(document.createElement('br'));
+        }
+      });
+    };
+    const stopActiveChatTypewriter = () => {
+      if (typeof cancelChatTypewriter === 'function') {
+        cancelChatTypewriter();
+        cancelChatTypewriter = null;
+      }
+    };
+    const applyChatTypewriter = (bubble, text, container) => {
+      stopActiveChatTypewriter();
+      if (!bubble || !bubble.isConnected) return;
+      const fullText = typeof text === 'string' ? text : '';
+      const chars = Array.from(fullText);
+      const total = chars.length;
+      if (!total) {
+        bubble.textContent = '';
+        return;
+      }
+      const chunkSize = (() => {
+        if (total > 900) return 12;
+        if (total > 600) return 9;
+        if (total > 400) return 7;
+        if (total > 250) return 5;
+        if (total > 120) return 3;
+        if (total > 60) return 2;
+        return 1;
+      })();
+      let index = 0;
+      let timerId = null;
+      const renderText = (value) => {
+        setChatBubbleText(bubble, value);
+        if (container && container.isConnected) {
+          safeScrollTo(container, { top: container.scrollHeight, behavior: 'auto' });
+        }
+      };
+      const cleanup = () => {
+        if (timerId) clearTimeout(timerId);
+        renderText(fullText);
+        cancelChatTypewriter = null;
+      };
+      const step = () => {
+        if (!bubble.isConnected) {
+          cleanup();
+          return;
+        }
+        index = Math.min(total, index + chunkSize);
+        renderText(chars.slice(0, index).join(''));
+        if (index < total) {
+          timerId = setTimeout(step, TYPEWRITER_DELAY_MS);
+        } else {
+          cleanup();
+        }
+      };
+      renderText('');
+      step();
+      cancelChatTypewriter = cleanup;
+    };
     const chatSuggestionPresets = [
       { emoji: '🧠', label: 'Bilan de développement', template: 'Peux-tu me faire un bilan de développement pour {prenom_enfant} ?' },
       { emoji: '🚶', label: 'Jalons moteurs', template: 'Où en est {prenom_enfant} dans ses jalons moteurs ?' },
@@ -4071,7 +4140,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         showWelcomeMessage();
       }, WELCOME_DELAY_MS);
     };
-    const renderChat = (arr) => {
+    const renderChat = (arr, options = {}) => {
       if (!isRouteAttached()) return;
       const el = document.getElementById('ai-chat-messages');
       if (!el || !document.body.contains(el)) return;
@@ -4080,28 +4149,87 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (list.length) removeWelcomeMessage();
       const userRole = store.get(K.user)?.role;
       const userAvatar = userRole === 'papa' ? '👨' : '👩';
-      el.innerHTML = list
-        .map((m) => {
-          const role = m?.role === 'user' ? 'user' : 'assistant';
-          const avatar = role === 'user' ? userAvatar : '🤖';
-          const label = role === 'user' ? 'Vous' : "Ped'IA";
-          const messageType = typeof m?.type === 'string' && m.type ? ` data-message-type=\"${escapeAttribute(m.type)}\"` : '';
-          let bubbleHtml;
-          if (m?.type === 'image-result' && m?.imageUrl) {
-            const safeContent = escapeHtml(m.content || "🎨 Voici l'image que j'ai générée pour toi :");
-            const safeAlt = escapeHtml(m.alt || "Illustration générée par Ped'IA");
-            const safeSrc = escapeAttribute(m.imageUrl);
-            const textBlock = safeContent ? `<p>${safeContent}</p>` : '';
-            bubbleHtml = `<div class=\"bubble ${role}\"><div class=\"chat-image-message\">${textBlock}<figure><img src=\"${safeSrc}\" alt=\"${safeAlt}\" loading=\"lazy\" decoding=\"async\" /></figure></div></div>`;
-          } else {
-            const safeContent = escapeHtml(m?.content ?? '').replace(/\\n/g,'<br/>');
-            bubbleHtml = `<div class=\"bubble ${role}\">${safeContent}</div>`;
+      stopActiveChatTypewriter();
+      el.innerHTML = '';
+      const { animateLatestAssistant = false } = options || {};
+      let animateIndex = -1;
+      if (animateLatestAssistant) {
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+          const candidate = list[i];
+          if (
+            candidate
+            && candidate.role === 'assistant'
+            && typeof candidate.content === 'string'
+            && candidate.type !== 'image-result'
+          ) {
+            animateIndex = i;
+            break;
           }
-          return `<div class=\"chat-line ${role}\"${messageType}><div class=\"avatar\">${avatar}</div><div class=\"message\"><div class=\"meta\">${label}</div>${bubbleHtml}</div></div>`;
-        })
-        .join('');
-      if (!list.length) scheduleWelcomeMessage();
-      safeScrollTo(el, { top: el.scrollHeight, behavior: 'smooth' });
+        }
+      }
+      let typewriterBubble = null;
+      let typewriterText = '';
+      list.forEach((m, idx) => {
+        const role = m?.role === 'user' ? 'user' : 'assistant';
+        const avatar = role === 'user' ? userAvatar : '🤖';
+        const label = role === 'user' ? 'Vous' : "Ped'IA";
+        const line = document.createElement('div');
+        line.className = `chat-line ${role}`;
+        if (typeof m?.type === 'string' && m.type) {
+          line.dataset.messageType = m.type;
+        }
+        const avatarEl = document.createElement('div');
+        avatarEl.className = 'avatar';
+        avatarEl.textContent = avatar;
+        const messageWrap = document.createElement('div');
+        messageWrap.className = 'message';
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = label;
+        messageWrap.appendChild(meta);
+        const bubble = document.createElement('div');
+        bubble.className = `bubble ${role}`;
+        if (m?.type === 'image-result' && m?.imageUrl) {
+          const imageMessage = document.createElement('div');
+          imageMessage.className = 'chat-image-message';
+          const introText = typeof m.content === 'string' && m.content ? m.content : "🎨 Voici l'image que j'ai générée pour toi :";
+          if (introText) {
+            const paragraph = document.createElement('p');
+            setChatBubbleText(paragraph, introText);
+            imageMessage.appendChild(paragraph);
+          }
+          const figure = document.createElement('figure');
+          const img = document.createElement('img');
+          img.src = m.imageUrl;
+          img.alt = typeof m.alt === 'string' && m.alt ? m.alt : "Illustration générée par Ped'IA";
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          figure.appendChild(img);
+          imageMessage.appendChild(figure);
+          bubble.appendChild(imageMessage);
+        } else {
+          const textContent = typeof m?.content === 'string' ? m.content : '';
+          if (role === 'assistant' && idx === animateIndex && textContent) {
+            setChatBubbleText(bubble, '');
+            typewriterBubble = bubble;
+            typewriterText = textContent;
+          } else {
+            setChatBubbleText(bubble, textContent);
+          }
+        }
+        messageWrap.appendChild(bubble);
+        line.appendChild(avatarEl);
+        line.appendChild(messageWrap);
+        el.appendChild(line);
+      });
+      if (!list.length) {
+        scheduleWelcomeMessage();
+      } else {
+        safeScrollTo(el, { top: el.scrollHeight, behavior: 'smooth' });
+      }
+      if (typewriterBubble && typewriterBubble.isConnected) {
+        applyChatTypewriter(typewriterBubble, typewriterText, el);
+      }
     };
 
     const fRecipes = document.getElementById('form-ai-recipes');
@@ -4557,7 +4685,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const newH = loadChat(child);
           newH.push({ role: 'assistant', content: resp });
           saveChat(child, newH);
-          renderChat(newH);
+          renderChat(newH, { animateLatestAssistant: true });
         } catch (err) {
           const active = getCurrentChild();
           const activeId = active && active.id != null ? String(active.id) : 'anon';
@@ -4566,7 +4694,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const newH = loadChat(child);
           newH.push({ role: 'assistant', content: `[Erreur IA] ${msg}` });
           saveChat(child, newH);
-          renderChat(newH);
+          renderChat(newH, { animateLatestAssistant: true });
         } finally {
           document.getElementById('ai-typing')?.remove();
           if (aiPageState.instance === runId) {
