@@ -1602,7 +1602,7 @@ input[type="checkbox"]{width:auto}
 
 body.ped-ia-chat-active{
   overflow:hidden;
-  background:#05070d;
+  background:var(--bg);
   height:100vh;
   padding-top:var(--header-height);
 }
@@ -1640,6 +1640,92 @@ body.ped-ia-chat-active .beta-ticker,
 body.ped-ia-chat-active .site-footer,
 body.ped-ia-chat-active #page-logo{
   display:none !important;
+}
+
+body.ped-ia-chat-active section.chat-route{
+  opacity:1 !important;
+}
+
+body.ped-ia-chat-active .chat-route--fullscreen,
+body.ped-ia-chat-active .chat-route--fullscreen :where(
+  .chat-fullscreen,
+  .chat-fullscreen-controls,
+  .chat-header-left,
+  .chat-fullscreen-stage,
+  [data-chat-card],
+  .chat-card--immersive,
+  .chat-window,
+  .chat-window--immersive,
+  .chat-messages,
+  .chat-input,
+  .chat-row,
+  .chat-actions,
+  .chat-send,
+  .chat-textarea,
+  .chat-reset,
+  .chat-child-switch,
+  .chat-child-button,
+  .chat-child-menu,
+  .chat-child-menu-item,
+  .chat-mode-btn,
+  .suggestion-card
+){
+  background:transparent !important;
+  opacity:1 !important;
+  filter:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  box-shadow:none !important;
+  transition:none !important;
+  animation:none !important;
+}
+
+body.ped-ia-chat-active .chat-route--fullscreen :is(
+  .chat-child-button:hover,
+  .chat-child-button:focus-visible,
+  .chat-child-button:focus,
+  .chat-child-button:active,
+  .chat-child-menu-item:hover,
+  .chat-child-menu-item:focus-visible,
+  .chat-child-menu-item:focus,
+  .chat-child-menu-item:active,
+  .chat-mode-btn:hover,
+  .chat-mode-btn:focus-visible,
+  .chat-mode-btn:focus,
+  .chat-mode-btn:active,
+  .chat-mode-btn[aria-pressed="true"],
+  .chat-reset:hover,
+  .chat-reset:focus-visible,
+  .chat-reset:focus,
+  .chat-reset:active,
+  .suggestion-card:hover,
+  .suggestion-card:focus-visible,
+  .suggestion-card:focus,
+  .suggestion-card:active,
+  .chat-textarea:hover,
+  .chat-textarea:focus,
+  .chat-textarea:active,
+  [data-chat-relocate-reset]:hover,
+  [data-chat-relocate-reset]:focus-visible,
+  [data-chat-relocate-reset]:focus,
+  [data-chat-relocate-reset]:active
+){
+  background:transparent !important;
+  opacity:1 !important;
+  box-shadow:none !important;
+  filter:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+}
+
+body.ped-ia-chat-active .chat-route--fullscreen [data-chat-relocate-reset]{
+  background:transparent !important;
+  box-shadow:none !important;
+  filter:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  opacity:1 !important;
+  transition:none !important;
 }
 
 
