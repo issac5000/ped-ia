@@ -4100,6 +4100,10 @@ section[data-route="/"] .steps .step:hover{
     gap:10px;
     border-radius:18px;
   }
+  .chat-route--fullscreen .chat-card--immersive .chat-window{
+    padding-top:10px;
+    margin-top:-14px;
+  }
   .chat-window .chat-messages{
     max-height:52vh;
     padding-right:2px;
