@@ -1725,18 +1725,18 @@ body.ped-ia-chat-active #page-logo{
   display:flex;
   flex-direction:column;
   position:relative;
-  border:1px solid rgba(214,222,255,.16);
+  border:none;
   border-radius:0;
-  background:linear-gradient(160deg, rgba(16,22,36,.92), rgba(7,10,20,.94));
-  box-shadow:0 28px 80px rgba(5,9,24,.62);
+  background:none;
+  box-shadow:none;
   padding:clamp(22px,4vw,36px) clamp(22px,5vw,52px) clamp(22px,4vw,40px);
   min-height:0;
   height:100%;
   width:100%;
   max-height:none;
   gap:clamp(18px,2.6vw,26px);
-  backdrop-filter:blur(28px);
-  -webkit-backdrop-filter:blur(28px);
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
   overflow:hidden;
 }
 .chat-card--immersive .chat-messages{
@@ -1747,37 +1747,37 @@ body.ped-ia-chat-active #page-logo{
   gap:clamp(16px,2.6vw,26px);
 }
 .chat-card--immersive .chat-input{
-  background:rgba(8,12,20,.78);
-  border:1px solid rgba(214,222,255,.16);
+  background:none;
+  border:none;
   border-radius:26px;
   padding:clamp(14px,2.4vw,20px);
-  box-shadow:0 20px 56px rgba(5,9,24,.48);
+  box-shadow:none;
   gap:clamp(12px,2vw,18px);
 }
 .chat-card--immersive .chat-row{gap:clamp(10px,2vw,18px);}
 .chat-card--immersive .chat-actions{margin:0; padding:0; align-items:center;}
 .chat-card--immersive .chat-textarea{
-  background:rgba(14,20,32,.92);
-  border:1px solid rgba(138,182,255,.28);
-  color:#f6f8ff;
+  background:var(--bg);
+  border:1px solid rgba(255,255,255,.15);
+  color:var(--text);
   border-radius:22px;
   padding:14px 18px;
-  box-shadow:0 16px 40px rgba(8,12,26,.5);
+  box-shadow:none;
 }
 .chat-card--immersive .chat-textarea:focus{
-  border-color:rgba(138,182,255,.55);
-  background:rgba(16,24,40,.95);
+  border-color:rgba(255,255,255,.3);
+  background:var(--bg);
 }
 .chat-card--immersive .chat-mode-btn{
-  background:rgba(16,24,40,.78);
-  border-color:rgba(138,182,255,.38);
-  color:#f0f4ff;
-  box-shadow:0 14px 34px rgba(8,12,26,.42);
+  background:rgba(255,255,255,.06);
+  border-color:rgba(255,255,255,.14);
+  color:rgba(255,255,255,.88);
+  box-shadow:0 6px 16px rgba(0,0,0,.28);
 }
 .chat-card--immersive .chat-mode-btn:hover,
 .chat-card--immersive .chat-mode-btn:focus-visible{
-  border-color:rgba(138,182,255,.6);
-  background:rgba(32,46,78,.88);
+  border-color:rgba(255,153,0,.5);
+  background:rgba(255,255,255,.12);
 }
 .chat-card--immersive .chat-send{
   min-width:110px;
@@ -1796,6 +1796,11 @@ body.ped-ia-chat-active #page-logo{
   gap:clamp(16px, 3vw, 26px);
   z-index:2;
   min-height:0;
+}
+body.ped-ia-chat-active .chat-card{
+  background:none;
+  border:none;
+  box-shadow:none;
 }
 .chat-card--immersive .card-header,
 .chat-card--immersive .chat-reset,
