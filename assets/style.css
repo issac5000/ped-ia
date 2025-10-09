@@ -3577,9 +3577,47 @@ section[data-route="/"] .steps .step:hover{
 .bubble.assistant{background:rgba(255,255,255,.08); border:none}
 .chat-window .chat-messages{max-height:100%}
 @media(max-width:600px){
-  .chat-window{height:60vh; min-height:60vh; max-height:60vh}
-  #conversation,
-  .chat-window .chat-messages{max-height:100%}
+  .chat-window{
+    height:auto;
+    min-height:0;
+    max-height:none;
+    padding:12px 10px;
+    gap:10px;
+    border-radius:18px;
+  }
+  .chat-window .chat-messages{
+    max-height:52vh;
+    padding-right:2px;
+  }
+  .suggestion-cards{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    gap:8px;
+    padding-bottom:4px;
+    margin-right:-6px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .suggestion-card{
+    flex:0 0 auto;
+    min-width:140px;
+    padding:8px 10px;
+    border-radius:12px;
+    box-shadow:0 6px 16px rgba(0,0,0,.26);
+  }
+  .suggestion-card .suggestion-text{
+    gap:4px;
+    font-size:0.8rem;
+  }
+  .suggestion-card .suggestion-text span{
+    font-size:0.82rem;
+    line-height:1.35;
+  }
+  .suggestion-card .suggestion-text strong{
+    display:none;
+  }
+  .suggestion-emoji{
+    display:none;
+  }
 }
 .bubble.user{background:linear-gradient(135deg,var(--orange-strong),var(--violet-strong)); border:none; color:#000}
 .chat-messages .meta{font-size:11px; color:var(--muted); margin-bottom:2px}
