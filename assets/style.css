@@ -3248,7 +3248,7 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
     gap:6px;
     border-radius:12px;
   }
-  .suggestion-emoji{ font-size:0.95rem; }
+  .suggestion-emoji{ display:none; }
   .suggestion-text{ font-size:0.8rem; }
 }
 @keyframes chat-suggestion-fade{
