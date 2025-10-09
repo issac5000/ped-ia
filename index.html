@@ -63,6 +63,7 @@
           <a href="#/community" class="nav-link"><span class="nav-ico">💬</span><span>Communauté</span></a>
           <a href="messages.html" class="nav-link"><span class="nav-ico">📨</span><span>Messages</span></a>
           <a href="#/ai" class="nav-link"><span class="nav-ico">🤖</span><span>Fonctionnalité IA</span></a>
+          <a href="#/ped-ia" class="nav-link"><span class="nav-ico">🗣️</span><span>Parler à Ped’IA</span></a>
           <a href="blog.html" class="nav-link"><span class="nav-ico">📝</span><span>Articles de blog</span></a>
           <a href="#/settings" class="nav-link"><span class="nav-ico">⚙️</span><span>Paramètres</span></a>
           <a href="#/about" class="nav-link"><span class="nav-ico">ℹ️</span><span>À propos</span></a>
@@ -674,26 +675,31 @@
           <p class="page-subtitle">Des outils personnalisés selon l’âge, les allergies et les infos de votre espace membre.</p>
         </div>
 
-          <div class="stack">
-          <div class="card stack chat-card">
-            <div class="card-header">
-              <h3>Chatbot personnalisé</h3>
-              <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
-            </div>
-            <button id="ai-chat-reset" class="btn btn-secondary chat-reset" type="button">Réinitialiser la discussion</button>
-            <div class="chat-window">
-              <div id="ai-chat-messages" class="chat-messages"></div>
-              <div id="chat-suggestions" class="suggestion-cards" hidden></div>
-              <form id="form-ai-chat" class="chat-input" autocomplete="off">
-                <div class="chat-row">
-                  <button type="button" id="ai-chat-image-toggle" class="chat-mode-btn" aria-pressed="false" aria-label="Activer la génération d’image" title="Activer la génération d’image">🖼️</button>
-                  <textarea name="q" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
-                  <button class="btn btn-primary chat-send" type="submit" aria-label="Envoyer">Envoyer</button>
-                </div>
-                <div class="chat-actions">
-                  <span id="ai-chat-status" class="muted"></span>
-                </div>
-              </form>
+        <div class="stack">
+          <div data-chat-card-slot="home">
+            <div class="card stack chat-card" data-chat-card>
+              <div class="card-header">
+                <h3>Chatbot personnalisé</h3>
+                <p class="muted">Un assistant qui tient compte de l’âge, des jalons et du contexte (garde, langues, antécédents) renseignés.</p>
+              </div>
+              <button id="ai-chat-reset" class="btn btn-secondary chat-reset" type="button">Réinitialiser la discussion</button>
+              <div class="chat-window">
+                <div id="ai-chat-messages" class="chat-messages"></div>
+                <div id="chat-suggestions" class="suggestion-cards" hidden></div>
+                <form id="form-ai-chat" class="chat-input" autocomplete="off">
+                  <div class="chat-row">
+                    <button type="button" id="ai-chat-image-toggle" class="chat-mode-btn" aria-pressed="false" aria-label="Activer la génération d’image" title="Activer la génération d’image">🖼️</button>
+                    <textarea name="q" class="chat-textarea" rows="1" placeholder="Écris ici…" required></textarea>
+                    <button class="btn btn-primary chat-send" type="submit" aria-label="Envoyer">Envoyer</button>
+                  </div>
+                  <div class="chat-actions">
+                    <span id="ai-chat-status" class="muted"></span>
+                  </div>
+                </form>
+              </div>
+              <div class="chat-cta-footer">
+                <p class="muted">Envie d’une expérience plein écran&nbsp;? <a href="#/ped-ia">Parlez à Ped’IA dans la fenêtre dédiée</a>.</p>
+              </div>
             </div>
           </div>
 
@@ -769,6 +775,29 @@
             </div>
           </div>
 
+        </div>
+      </section>
+
+      <section data-route="/ped-ia" class="route chat-route chat-route--fullscreen" data-chat-card-slot="dedicated">
+        <div class="footer-bg chat-footer-bg" aria-hidden="true">
+          <svg viewBox="0 0 1440 600" preserveAspectRatio="none">
+            <path class="layer rev" fill="rgba(255,255,255,.08)" d="M0,152 C240,130 500,160 760,136 C1040,110 1260,146 1440,132 L1440,600 L0,600 Z"></path>
+            <path class="layer" fill="rgba(32,38,50,.18)" d="M0,134 C220,110 460,140 740,112 C1020,86 1200,126 1440,104 L1440,600 L0,600 Z"></path>
+            <path class="layer rev" fill="rgba(26,32,42,.26)" d="M0,118 C200,80 460,130 760,92 C1060,54 1220,120 1440,86 L1440,600 L0,600 Z"></path>
+            <path class="layer" fill="rgba(18,22,29,.38)" d="M0,96 C240,20 420,150 720,64 C1020,-12 1240,150 1440,44 L1440,600 L0,600 Z"></path>
+          </svg>
+        </div>
+        <div class="chat-fullscreen-controls">
+          <div class="chat-header-left">
+            <div class="chat-child-switch" data-chat-child-indicator hidden>
+              <button type="button" class="chat-child-button" data-chat-child-toggle>
+                <span class="chat-child-label" data-chat-child-label></span>
+                <span class="chat-child-caret" aria-hidden="true">⌄</span>
+              </button>
+              <div class="chat-child-menu" data-chat-child-menu hidden></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary chat-reset" type="button" data-chat-relocate-reset hidden>Réinitialiser</button>
         </div>
       </section>
 

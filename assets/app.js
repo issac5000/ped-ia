@@ -177,12 +177,50 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     aiPageState.instance += 1;
     aiPageState.currentChild = null;
     try {
-      const chatInput = document.querySelector('section[data-route="/ai"] textarea[name="q"]');
+      const chatInput = document.querySelector('[data-chat-card] textarea[name="q"]');
       if (chatInput && chatInput._aiPlaceholderInterval) {
         clearInterval(chatInput._aiPlaceholderInterval);
         delete chatInput._aiPlaceholderInterval;
       }
     } catch {}
+    try {
+      const wrap = document.querySelector('[data-chat-child-indicator]');
+      if (wrap && wrap._chatOutsideClickHandler) {
+        document.removeEventListener('click', wrap._chatOutsideClickHandler);
+        delete wrap._chatOutsideClickHandler;
+      }
+    } catch {}
+  }
+
+  function relocateChatCardForRoute(path){
+    const card = document.querySelector('[data-chat-card]');
+    if (!card) return;
+    const homeSlot = document.querySelector('[data-chat-card-slot="home"]');
+    const dedicatedSlot = document.querySelector('[data-chat-card-slot="dedicated"]');
+    const targetSlot = path === '/ped-ia' ? dedicatedSlot : homeSlot;
+    if (targetSlot && !targetSlot.contains(card)) {
+      targetSlot.appendChild(card);
+    } else if (!targetSlot && homeSlot && !homeSlot.contains(card)) {
+      homeSlot.appendChild(card);
+    }
+    const isDedicated = path === '/ped-ia';
+    card.classList.toggle('chat-card--immersive', isDedicated);
+    const chatWindow = card.querySelector('.chat-window');
+    if (chatWindow) chatWindow.classList.toggle('chat-window--immersive', isDedicated);
+    const dedicatedResetBtn = document.querySelector('[data-chat-relocate-reset]');
+    if (dedicatedResetBtn) {
+      if (!dedicatedResetBtn._chatRelocateBound) {
+        dedicatedResetBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          try { document.getElementById('ai-chat-reset')?.click(); }
+          catch {}
+        });
+        dedicatedResetBtn._chatRelocateBound = true;
+      }
+      const mainReset = document.getElementById('ai-chat-reset');
+      dedicatedResetBtn.hidden = !isDedicated;
+      dedicatedResetBtn.disabled = !isDedicated || !mainReset || mainReset.disabled;
+    }
   }
   let pendingDashboardFocus = null;
   let dashboardFocusCleanupTimer = null;
@@ -1920,9 +1958,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const targetPath = navLinkTargets.get(href);
       link.classList.toggle('active', !!targetPath && targetPath === path);
     }
+    document.body.classList.toggle('ped-ia-chat-active', path === '/ped-ia');
+    relocateChatCardForRoute(path);
     try {
       const pl = document.getElementById('page-logo');
-      if (pl) pl.hidden = (path === '/' || path === '');
+      if (pl) pl.hidden = (path === '/' || path === '' || path === '/ped-ia');
     } catch {}
     updateHeaderAuth();
     const previousPath = (typeof __activePath === 'string' && __activePath.length > 0) ? __activePath : null;
@@ -1952,11 +1992,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
     if (path === '/community') { renderCommunity(); }
     if (path === '/settings') { renderSettings(); }
-    if (path === '/ai') {
-      setupAIPage();
+    const isAiRoute = path === '/ai';
+    const isAiChatRoute = path === '/ped-ia';
+    if (isAiRoute) {
+      setupAIPage(path);
       if (focusParam) {
         setTimeout(() => focusAIToolSection(focusParam), 60);
       }
+    } else if (isAiChatRoute) {
+      clearAiFocusHighlight();
+      setupAIPage(path);
     } else {
       clearAiFocusHighlight();
       disposeAIPage();
@@ -3564,11 +3609,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
   // --- Gestion de la page IA ---
-  function setupAIPage(){
-    const route = document.querySelector('section[data-route="/ai"]');
+  function setupAIPage(routePath = '/ai'){
+    const route = document.querySelector(`section[data-route="${routePath}"]`);
     if (!route) return;
     const instanceId = ++aiPageState.instance;
     aiPageState.currentChild = null;
+    const pedIaGreeting = "Bonjour ! Je suis Ped’IA. Comment puis-je vous aider aujourd’hui ?";
 
     const isActiveInstance = () => aiPageState.instance === instanceId;
     const isRouteAttached = () => isActiveInstance() && document.body.contains(route);
@@ -3871,7 +3917,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const updateChatSuggestions = (arr) => {
       if (!isRouteAttached()) return;
       const list = Array.isArray(arr) ? arr : [];
-      if (!list.length) showChatSuggestions();
+      const hasMeaningfulMessage = list.some((msg) => {
+        if (!msg || typeof msg !== 'object') return false;
+        if (msg.type === 'auto-greeting') return false;
+        if (typeof msg.content === 'string' && msg.content.trim()) return true;
+        return Boolean(msg.type && msg.type !== 'auto-greeting');
+      });
+      if (!hasMeaningfulMessage) showChatSuggestions();
       else hideChatSuggestions();
     };
     const requestChatImage = async (prompt) => {
@@ -4382,6 +4434,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         } catch {}
         removeWelcomeMessage();
         renderChat([]);
+        if (routePath === '/ped-ia') {
+          const history = [];
+          history.push({ role: 'assistant', content: pedIaGreeting, type: 'auto-greeting' });
+          saveChat(child, history);
+          renderChat(history);
+        }
         if (sChat) sChat.textContent = '';
         setChatMode(chatModes.TEXT);
       };
@@ -4522,8 +4580,118 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       fChat._aiSubmitHandler = handleChatSubmit;
     }
 
+    const applyChildSelection = async (id) => {
+      if (!id) return;
+      await setPrimaryChild(id);
+      const nextChild = await loadChildById(id);
+      if (!isActiveInstance()) return;
+      setCurrentChild(nextChild);
+      await renderIndicator(nextChild);
+      if (!isActiveInstance()) return;
+      if (routePath === '/ped-ia') {
+        const history = loadChat(nextChild);
+        if (!history.length) {
+          history.push({ role: 'assistant', content: pedIaGreeting, type: 'auto-greeting' });
+          saveChat(nextChild, history);
+        }
+      }
+      renderChat(loadChat(nextChild));
+      const outR = document.getElementById('ai-recipes-result');
+      if (outR) outR.innerHTML = '';
+      const outS = document.getElementById('ai-story-result');
+      if (outS) outS.innerHTML = '';
+    };
+
     const renderIndicator = async (child) => {
       if (!isRouteAttached()) return;
+      const slim = await listChildrenSlim();
+      if (!isActiveInstance()) return;
+
+      if (routePath === '/ped-ia') {
+        const wrap = route.querySelector('[data-chat-child-indicator]');
+        const toggle = wrap?.querySelector('[data-chat-child-toggle]');
+        const label = wrap?.querySelector('[data-chat-child-label]');
+        const menu = wrap?.querySelector('[data-chat-child-menu]');
+        if (!wrap || !toggle || !label || !menu) return;
+
+        if (!child || !slim.length || slim.length <= 1) {
+          wrap.hidden = true;
+          menu.hidden = true;
+          menu.innerHTML = '';
+          toggle.setAttribute('aria-expanded', 'false');
+          if (wrap._chatOutsideClickHandler) {
+            document.removeEventListener('click', wrap._chatOutsideClickHandler);
+            delete wrap._chatOutsideClickHandler;
+          }
+          return;
+        }
+
+        wrap.hidden = false;
+        const currentName = child.firstName || child.name || 'Enfant';
+        label.textContent = currentName;
+
+        menu.innerHTML = '';
+        menu.setAttribute('role', 'listbox');
+        slim.forEach((c) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'chat-child-menu-item';
+          btn.dataset.childId = c.id;
+          btn.setAttribute('role', 'option');
+          const txt = c.dob ? `${c.firstName} • ${formatAge(c.dob)}` : c.firstName;
+          btn.textContent = txt;
+          const isActive = String(c.id) === String(child.id);
+          if (isActive) btn.classList.add('is-active');
+          btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+          menu.appendChild(btn);
+        });
+
+        const closeMenu = () => {
+          menu.hidden = true;
+          wrap.classList.remove('is-open');
+          toggle.setAttribute('aria-expanded', 'false');
+        };
+        const openMenu = () => {
+          menu.hidden = false;
+          wrap.classList.add('is-open');
+          toggle.setAttribute('aria-expanded', 'true');
+        };
+
+        if (!wrap._chatMenuHandler) {
+          menu.addEventListener('click', (event) => {
+            const target = event.target.closest('.chat-child-menu-item');
+            if (!target) return;
+            event.preventDefault();
+            closeMenu();
+            applyChildSelection(target.dataset.childId);
+          });
+          wrap._chatMenuHandler = true;
+        }
+
+        if (!wrap._chatToggleHandler) {
+          toggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (menu.hidden) openMenu();
+            else closeMenu();
+          });
+          toggle.setAttribute('aria-haspopup', 'listbox');
+          toggle.setAttribute('aria-expanded', 'false');
+          toggle.setAttribute('aria-label', 'Sélectionner un enfant');
+          toggle.setAttribute('title', 'Sélectionner un enfant');
+          wrap._chatToggleHandler = true;
+        }
+
+        if (!wrap._chatOutsideClickHandler) {
+          const handler = (event) => {
+            if (!wrap.contains(event.target)) closeMenu();
+          };
+          document.addEventListener('click', handler);
+          wrap._chatOutsideClickHandler = handler;
+        }
+        closeMenu();
+        return;
+      }
+
       const container = route.querySelector('.stack');
       if (!container) return;
       let box = document.getElementById('ai-profile-indicator');
@@ -4533,8 +4701,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         box.className = 'card';
       }
       container.insertBefore(box, container.firstChild);
-      const slim = await listChildrenSlim();
-      if (!isActiveInstance()) return;
       if (!child || !slim.length) {
         box.innerHTML = '<div class="muted">Aucun profil enfant chargé pour l’IA. <a href="#/onboarding">Créer un profil</a>.</div>';
         return;
@@ -4542,7 +4708,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const ageTxt = formatAge(child.dob);
       const selectedId = child.id;
       const opts = slim
-        .map((c) => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.firstName)}${c.dob ? ` • ${formatAge(c.dob)}` : ''}</option>`)
+        .map((c) => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.firstName)}${c.dob ? ` • ${escapeHtml(formatAge(c.dob))}` : ''}</option>`)
         .join('');
       box.className = 'ai-child-selector';
       const ctx = child.context || {};
@@ -4574,19 +4740,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         if (sel._aiChangeHandler) {
           sel.removeEventListener('change', sel._aiChangeHandler);
         }
-        const handleChange = async (e) => {
+        const handleChange = (e) => {
           const id = e.currentTarget.value;
-          await setPrimaryChild(id);
-          const nextChild = await loadChildById(id);
-          if (!isActiveInstance()) return;
-          setCurrentChild(nextChild);
-          await renderIndicator(nextChild);
-          if (!isActiveInstance()) return;
-          renderChat(loadChat(nextChild));
-          const outR = document.getElementById('ai-recipes-result');
-          if (outR) outR.innerHTML = '';
-          const outS = document.getElementById('ai-story-result');
-          if (outS) outS.innerHTML = '';
+          applyChildSelection(id);
         };
         sel.addEventListener('change', handleChange);
         sel._aiChangeHandler = handleChange;
@@ -4597,9 +4753,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const child = await loadChild();
       if (!isActiveInstance()) return;
       setCurrentChild(child);
+      if (routePath === '/ped-ia') {
+        const history = loadChat(child);
+        if (!history.length) {
+          history.push({ role: 'assistant', content: pedIaGreeting, type: 'auto-greeting' });
+          saveChat(child, history);
+        }
+      }
       await renderIndicator(child);
       if (!isActiveInstance()) return;
-      renderChat(loadChat(child));
+      const history = loadChat(child);
+      renderChat(history);
       const m = document.getElementById('ai-chat-messages');
       if (m) safeScrollTo(m, { top: m.scrollHeight, behavior: 'smooth' });
     })();
