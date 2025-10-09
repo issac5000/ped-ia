@@ -145,6 +145,24 @@ function safeChildSummary(child) {
   };
 }
 
+function safeParentSummary(parent) {
+  if (!parent || typeof parent !== 'object') return null;
+  const pseudo = typeof parent.pseudo === 'string' ? parent.pseudo.trim() : '';
+  const firstName = (() => {
+    const direct = typeof parent.firstName === 'string' ? parent.firstName.trim() : '';
+    const alt = typeof parent.prenom === 'string' ? parent.prenom.trim() : '';
+    return direct || alt;
+  })();
+  const name = typeof parent.name === 'string' ? parent.name.trim() : '';
+  const displayName = typeof parent.displayName === 'string' ? parent.displayName.trim() : '';
+  const safe = {};
+  if (pseudo) safe.pseudo = pseudo;
+  if (firstName) safe.prenom = firstName;
+  if (displayName && displayName !== firstName) safe.prenom_affichage = displayName;
+  if (name) safe.nom = name;
+  return Object.keys(safe).length ? safe : null;
+}
+
 function extractGeminiImage(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const candidates = [];
@@ -181,6 +199,7 @@ async function aiAdvice(body) {
   if (!API_KEY) return AI_UNAVAILABLE_RESPONSE;
   const question = String(body.question || '').slice(0, 2000);
   const child = safeChildSummary(body.child);
+  const parent = safeParentSummary(body.parent);
   const history = Array.isArray(body.history) ? body.history.slice(-20) : [];
   const system = `Tu es Ped’IA, copilote parental pour les enfants de 0 à 7 ans.
 Tu tutoies toujours le parent et tu utilises son pseudo dès qu’il apparaît dans les données.
@@ -191,7 +210,8 @@ Adapte la longueur et la structure selon les besoins, sans listes automatiques.
 Ajoute ponctuellement un emoji pertinent si cela aide, sans en abuser.
 Mentionne simplement lorsqu’une information manque, sans t’excuser.
 Regroupe naturellement les réponses quand plusieurs questions sont posées et propose des conseils concrets en t’appuyant uniquement sur les informations fournies (profil, contexte, mesures, jalons).`;
-  const user = `Contexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
+  const parentContext = parent ? `Contexte parent: ${JSON.stringify(parent)}` : 'Contexte parent: {}';
+  const user = `${parentContext}\nContexte enfant: ${JSON.stringify(child)}\nQuestion du parent: ${question}`;
   const convo = [{ role:'system', content: system },
     ...history.filter(m=>m && (m.role==='user' || m.role==='assistant') && typeof m.content==='string').map(m=>({ role:m.role, content: m.content.slice(0,2000) })),
     { role:'user', content: user }
