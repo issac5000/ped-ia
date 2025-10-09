@@ -778,26 +778,21 @@
         </div>
       </section>
 
-      <section data-route="/ped-ia" class="route chat-route chat-route--fullscreen" data-chat-card-slot="dedicated">
-        <div class="footer-bg chat-footer-bg" aria-hidden="true">
-          <svg viewBox="0 0 1440 600" preserveAspectRatio="none">
-            <path class="layer rev" fill="rgba(255,255,255,.08)" d="M0,152 C240,130 500,160 760,136 C1040,110 1260,146 1440,132 L1440,600 L0,600 Z"></path>
-            <path class="layer" fill="rgba(32,38,50,.18)" d="M0,134 C220,110 460,140 740,112 C1020,86 1200,126 1440,104 L1440,600 L0,600 Z"></path>
-            <path class="layer rev" fill="rgba(26,32,42,.26)" d="M0,118 C200,80 460,130 760,92 C1060,54 1220,120 1440,86 L1440,600 L0,600 Z"></path>
-            <path class="layer" fill="rgba(18,22,29,.38)" d="M0,96 C240,20 420,150 720,64 C1020,-12 1240,150 1440,44 L1440,600 L0,600 Z"></path>
-          </svg>
-        </div>
-        <div class="chat-fullscreen-controls">
-          <div class="chat-header-left">
-            <div class="chat-child-switch" data-chat-child-indicator hidden>
-              <button type="button" class="chat-child-button" data-chat-child-toggle>
-                <span class="chat-child-label" data-chat-child-label></span>
-                <span class="chat-child-caret" aria-hidden="true">⌄</span>
-              </button>
-              <div class="chat-child-menu" data-chat-child-menu hidden></div>
+      <section data-route="/ped-ia" class="route chat-route chat-route--fullscreen">
+        <div class="chat-fullscreen">
+          <div class="chat-fullscreen-controls">
+            <div class="chat-header-left">
+              <div class="chat-child-switch" data-chat-child-indicator hidden>
+                <button type="button" class="chat-child-button" data-chat-child-toggle>
+                  <span class="chat-child-label" data-chat-child-label></span>
+                  <span class="chat-child-caret" aria-hidden="true">⌄</span>
+                </button>
+                <div class="chat-child-menu" data-chat-child-menu hidden></div>
+              </div>
             </div>
+            <button class="btn btn-secondary chat-reset" type="button" data-chat-relocate-reset hidden>Réinitialiser</button>
           </div>
-          <button class="btn btn-secondary chat-reset" type="button" data-chat-relocate-reset hidden>Réinitialiser</button>
+          <div class="chat-fullscreen-stage" data-chat-card-slot="dedicated"></div>
         </div>
       </section>
 
