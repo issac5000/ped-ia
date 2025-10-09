@@ -4930,7 +4930,6 @@ section[data-route="/community"] .topic-empty--thread{
   margin-top:auto;
   padding:clamp(16px,2.6vw,26px) 0 0;
   background:transparent;
-  border-top:1px solid rgba(255,255,255,.12);
 }
 .chat-window--immersive .chat-row{gap:12px}
 .chat-window--immersive .chat-textarea{
