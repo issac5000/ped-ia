@@ -1936,7 +1936,7 @@ body.ped-ia-chat-active .chat-card{
   padding:10px;
   border-radius:16px;
   border:1px solid rgba(138,182,255,.38);
-  background:linear-gradient(150deg, rgba(10,16,30,.92), rgba(4,8,18,.88));
+  background:linear-gradient(150deg, rgba(10,16,30,.97), rgba(4,8,18,.94));
   box-shadow:0 30px 64px rgba(0,0,0,.62), 0 0 0 1px rgba(10,14,24,.45);
   backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
