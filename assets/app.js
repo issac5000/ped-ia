@@ -332,7 +332,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     "/", "/signup", "/login", "/onboarding", "/dashboard",
     "/community", "/settings", "/about", "/ai", "/contact", "/legal"
   ];
-  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding']);
+  const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding','/ped-ia']);
   // Clés utilisées pour le stockage local du modèle de données
   const K = {
     user: 'pedia_user',
@@ -1959,6 +1959,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       link.classList.toggle('active', !!targetPath && targetPath === path);
     }
     document.body.classList.toggle('ped-ia-chat-active', path === '/ped-ia');
+    const chatFullscreenStage = document.querySelector('.chat-fullscreen-stage');
+    if (chatFullscreenStage) {
+      if (path === '/ped-ia') {
+        chatFullscreenStage.classList.remove('hidden');
+      } else {
+        chatFullscreenStage.classList.add('hidden');
+      }
+    }
     relocateChatCardForRoute(path);
     try {
       const pl = document.getElementById('page-logo');
@@ -3617,7 +3625,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
     function resolveParentProfile() {
       try {
-        const user = store.get(K.user) || {};
+        const storedUser = store.get(K.user) || {};
+        const fallbackUser = (typeof settingsState === 'object' && settingsState?.user)
+          ? settingsState.user
+          : {};
+        const user = { ...fallbackUser, ...storedUser };
         const pseudo = typeof user?.pseudo === 'string' ? user.pseudo.trim() : '';
         const firstNameRaw = typeof user?.firstName === 'string' ? user.firstName.trim() : '';
         const firstNameAlt = typeof user?.first_name === 'string' ? user.first_name.trim() : '';
@@ -3625,14 +3637,42 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const firstName = firstNameRaw || firstNameAlt;
         const displaySource = [firstName, pseudo, nameRaw].find((val) => val && val.length > 0) || '';
         const displayName = displaySource ? displaySource.split(/\s+/)[0] : '';
+        const roleRaw = typeof user?.role === 'string' ? user.role.trim() : '';
+        const parentRoleRaw = typeof user?.parent_role === 'string'
+          ? user.parent_role.trim()
+          : roleRaw;
+        const contextFields = {};
+        PARENT_FIELD_DEFS.forEach((def) => {
+          const camelValue = user?.[def.key];
+          const snakeValue = user?.[def.column];
+          const chosen = camelValue != null && camelValue !== '' ? camelValue : snakeValue;
+          if (chosen == null || chosen === '') return;
+          contextFields[def.key] = chosen;
+          contextFields[def.column] = chosen;
+        });
+        if (user && typeof user.context_parental === 'object') {
+          contextFields.context_parental = user.context_parental;
+        }
         return {
           pseudo,
           firstName,
           name: nameRaw,
           displayName,
+          role: roleRaw,
+          parent_role: parentRoleRaw,
+          full_name: pseudo,
+          ...contextFields,
         };
       } catch {
-        return { pseudo: '', firstName: '', name: '', displayName: '' };
+        return {
+          pseudo: '',
+          firstName: '',
+          name: '',
+          displayName: '',
+          role: '',
+          parent_role: '',
+          full_name: '',
+        };
       }
     }
 
@@ -12042,6 +12082,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const payload = { question, child, history, type: 'advice' };
     if (parent && typeof parent === 'object') {
       payload.parent = parent;
+      const parentContext = { ...parent };
+      if (!parentContext.full_name && parentContext.pseudo) {
+        parentContext.full_name = parentContext.pseudo;
+      }
+      if (!parentContext.parent_role && parentContext.role) {
+        parentContext.parent_role = parentContext.role;
+      }
+      if (!parentContext.role && parentContext.parent_role) {
+        parentContext.role = parentContext.parent_role;
+      }
+      payload.parentContext = parentContext;
     }
     if (activeProfile?.id != null) {
       const profileId = String(activeProfile.id).trim();

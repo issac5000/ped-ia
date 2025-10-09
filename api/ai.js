@@ -341,6 +341,7 @@ async function fetchParentContext(profileId, options = {}) {
   const { supaUrl, headers } = ensureSupabaseOptions(options);
   if (!supaUrl || !headers) return null;
   const columns = [
+    'full_name',
     'parental_emotion',
     'parental_stress',
     'parental_fatigue',
@@ -355,6 +356,7 @@ async function fetchParentContext(profileId, options = {}) {
     const row = Array.isArray(data) ? data[0] : data;
     if (!row || typeof row !== 'object') return null;
     return {
+      full_name: row?.full_name ?? null,
       parental_emotion: row?.parental_emotion ?? null,
       parental_stress: row?.parental_stress ?? null,
       parental_fatigue: row?.parental_fatigue ?? null,
@@ -488,6 +490,14 @@ function formatParentContextBlock(context) {
   };
   const values = [];
   if (context && typeof context === 'object') {
+    const pseudoRaw = typeof context.full_name === 'string' ? context.full_name.trim()
+      : typeof context.pseudo === 'string' ? context.pseudo.trim() : '';
+    if (pseudoRaw) {
+      const pseudoText = truncateForPrompt(pseudoRaw, 80);
+      if (pseudoText) {
+        values.push(`Pseudo: ${pseudoText}`);
+      }
+    }
     Object.entries(labelMap).forEach(([key, label]) => {
       const raw = context[key];
       if (raw == null || raw === '') return;
@@ -1259,6 +1269,28 @@ Regroupe naturellement les réponses quand plusieurs questions sont posées et p
             .filter(Boolean);
           const currentChildId = childIdCandidates[0] || '';
           siblingsForPrompt = await fetchOtherChildren(effectiveProfileId, currentChildId, supabaseOptions);
+        }
+
+        const fallbackParentContext = sanitizeParentContextInput(body.parentContext || body.parent || null);
+        if (hasMeaningfulParentContext(fallbackParentContext)) {
+          if (!hasMeaningfulParentContext(parentContextForPrompt)) {
+            parentContextForPrompt = fallbackParentContext;
+          } else {
+            Object.entries(fallbackParentContext).forEach(([key, value]) => {
+              if (value == null || value === '') return;
+              const existing = parentContextForPrompt[key];
+              const hasExisting = (() => {
+                if (existing == null) return false;
+                if (typeof existing === 'number') return true;
+                if (typeof existing === 'string') return existing.trim().length > 0;
+                if (typeof existing === 'object') return Object.keys(existing).length > 0;
+                return false;
+              })();
+              if (!hasExisting) {
+                parentContextForPrompt[key] = value;
+              }
+            });
+          }
         }
 
         const parentContextBlock = formatParentContextBlock(parentContextForPrompt);
@@ -2704,6 +2736,44 @@ function sanitizeParentContextInput(raw) {
     });
   }
   return ctx;
+}
+
+function hasMeaningfulParentContext(context) {
+  if (!context || typeof context !== 'object') return false;
+  const keys = [
+    'full_name',
+    'pseudo',
+    'parent_role',
+    'role',
+    'marital_status',
+    'number_of_children',
+    'parental_employment',
+    'parental_emotion',
+    'parental_stress',
+    'parental_fatigue',
+  ];
+  const directMatch = keys.some((key) => {
+    const value = context[key];
+    if (value == null) return false;
+    if (typeof value === 'number') return !Number.isNaN(value);
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return false;
+  });
+  if (directMatch) return true;
+  const nested = context.context_parental;
+  if (!nested) return false;
+  if (typeof nested === 'string') return nested.trim().length > 0;
+  if (typeof nested === 'object') {
+    return Object.values(nested).some((value) => {
+      if (value == null) return false;
+      if (typeof value === 'number') return !Number.isNaN(value);
+      if (typeof value === 'string') return value.trim().length > 0;
+      if (typeof value === 'object') return Object.keys(value).length > 0;
+      return false;
+    });
+  }
+  return false;
 }
 
 function formatParentContextValue(field, value) {

@@ -1586,9 +1586,9 @@ input[type="checkbox"]{width:auto}
 .chat-route{padding:0; opacity:1; position:relative}
 .chat-route.active{display:flex; width:100%}
 .chat-route--fullscreen{
+  display:none;
   width:100vw;
   height:100vh;
-  display:flex;
   flex-direction:column;
   padding:0;
   box-sizing:border-box;
@@ -1598,6 +1598,10 @@ input[type="checkbox"]{width:auto}
     #05070d;
   overflow:hidden;
   position:relative;
+}
+
+.chat-route--fullscreen.active{
+  display:flex;
 }
 
 body.ped-ia-chat-active{
@@ -3629,6 +3633,89 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
   .suggestion-cards{ flex-direction:column; }
   .suggestion-card{ flex:1 1 auto; min-width:0; }
 }
+@media(max-width:720px){
+  body.ped-ia-chat-active .suggestion-card{
+    background:linear-gradient(152deg, rgba(94,80,166,.36), rgba(38,64,126,.3));
+    border:1px solid rgba(162,188,255,.32);
+    box-shadow:0 14px 32px rgba(26,30,74,.32);
+  }
+  body.ped-ia-chat-active .suggestion-card:hover,
+  body.ped-ia-chat-active .suggestion-card:focus-visible{
+    border-color:rgba(188,210,255,.42);
+    box-shadow:0 18px 38px rgba(24,30,78,.36);
+  }
+}
+@media(min-width:960px){
+  body.ped-ia-chat-active .suggestion-cards{
+    gap:clamp(14px, 1.6vw, 22px);
+    padding:clamp(6px, 1vw, 12px) 0 0;
+  }
+  body.ped-ia-chat-active .suggestion-card{
+    position:relative;
+    display:grid;
+    grid-template-columns:clamp(50px, 5vw, 64px) 1fr;
+    align-items:center;
+    padding:clamp(18px, 2.4vw, 26px) clamp(18px, 2.6vw, 32px);
+    border-radius:22px;
+    background:linear-gradient(140deg, rgba(34,42,72,.24), rgba(20,24,42,.1));
+    border:1px solid rgba(125,186,255,.22);
+    box-shadow:0 22px 46px rgba(8,12,32,.24);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    isolation:isolate;
+    transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease, background .22s ease;
+  }
+  body.ped-ia-chat-active .suggestion-card::before{
+    content:"";
+    position:absolute;
+    inset:1px;
+    border-radius:inherit;
+    background:radial-gradient(circle at top left, rgba(124,185,255,.18), rgba(124,185,255,0) 56%),
+      radial-gradient(circle at bottom right, rgba(224,132,255,.16), rgba(84,62,142,0) 52%);
+    opacity:.88;
+    transition:opacity .22s ease;
+    pointer-events:none;
+    z-index:0;
+  }
+  body.ped-ia-chat-active .suggestion-card > *{ position:relative; z-index:1; }
+  body.ped-ia-chat-active .suggestion-card .suggestion-emoji{
+    width:clamp(50px, 5vw, 64px);
+    height:clamp(50px, 5vw, 64px);
+    border-radius:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:clamp(1.9rem, 2.3vw, 2.4rem);
+    background:linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.14), 0 12px 28px rgba(8,10,28,.35);
+  }
+  body.ped-ia-chat-active .suggestion-card .suggestion-text{
+    gap:clamp(6px, 0.9vw, 9px);
+    font-size:clamp(0.92rem, 1vw, 1.05rem);
+    line-height:1.45;
+    color:rgba(246,249,255,.9);
+  }
+  body.ped-ia-chat-active .suggestion-card .suggestion-text strong{
+    font-size:clamp(1.02rem, 1.2vw, 1.22rem);
+    font-weight:650;
+    letter-spacing:.015em;
+    color:#fff;
+  }
+  body.ped-ia-chat-active .suggestion-card .suggestion-text span{
+    font-size:clamp(0.88rem, .98vw, 1rem);
+    color:rgba(230,236,255,.82);
+  }
+  body.ped-ia-chat-active .suggestion-card:hover,
+  body.ped-ia-chat-active .suggestion-card:focus-visible{
+    transform:translateY(-6px) scale(1.01);
+    border-color:rgba(135,206,255,.62);
+    box-shadow:0 36px 90px rgba(6,12,30,.5);
+  }
+  body.ped-ia-chat-active .suggestion-card:hover::before,
+  body.ped-ia-chat-active .suggestion-card:focus-visible::before{
+    opacity:1;
+  }
+}
 @keyframes chat-suggestion-fade{
   from{ opacity:0; transform:translateY(6px); }
   to{ opacity:1; transform:translateY(0); }
@@ -4965,16 +5052,16 @@ section[data-route="/community"] .topic-empty--thread{
   color:#fff;
 }
 .chat-window--immersive .suggestion-card{
-  background:rgba(12,19,33,.72);
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:none;
+  background:linear-gradient(148deg, rgba(96,84,160,.68), rgba(46,86,142,.52));
+  border:1px solid rgba(154,140,248,.36);
+  box-shadow:0 16px 44px rgba(26,22,66,.38);
 }
 .chat-window--immersive .suggestion-card:hover,
 .chat-window--immersive .suggestion-card:focus-visible{
   transform:none;
-  border-color:rgba(255,255,255,.12);
-  box-shadow:none;
-  background:rgba(12,19,33,.72);
+  border-color:rgba(176,162,255,.46);
+  box-shadow:0 18px 50px rgba(24,20,62,.42);
+  background:linear-gradient(148deg, rgba(110,92,180,.74), rgba(54,102,170,.56));
 }
 .chat-route--fullscreen .route-canvas{
   z-index:0;
