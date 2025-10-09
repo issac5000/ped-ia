@@ -1584,7 +1584,7 @@ input[type="checkbox"]{width:auto}
 .chat-route.active{display:flex; width:100%}
 .chat-route--fullscreen{
   width:100vw;
-  min-height:calc(100vh - 64px);
+  height:100vh;
   display:flex;
   flex-direction:column;
   padding:0;
@@ -1600,6 +1600,7 @@ input[type="checkbox"]{width:auto}
 body.ped-ia-chat-active{
   overflow:hidden;
   background:#05070d;
+  height:100vh;
 }
 body.ped-ia-chat-active #app{
   width:100vw;
@@ -1607,7 +1608,7 @@ body.ped-ia-chat-active #app{
   margin:0;
   padding:0;
   display:flex;
-  min-height:calc(100vh - 64px);
+  height:100vh;
 }
 body.ped-ia-chat-active main.hero-container{
   width:100vw;
@@ -1616,13 +1617,16 @@ body.ped-ia-chat-active main.hero-container{
   margin:0;
   display:flex;
   flex:1 1 auto;
-  min-height:calc(100vh - 64px);
+  height:100vh;
 }
 body.ped-ia-chat-active .container{
   width:100vw;
   max-width:none;
   margin:0;
   padding:0;
+}
+body.ped-ia-chat-active .site-header{
+  display:none;
 }
 body.ped-ia-chat-active .site-header .container{
   width:min(1100px,92%);
@@ -1641,9 +1645,9 @@ body.ped-ia-chat-active #page-logo{
   display:flex;
   flex-direction:column;
   width:100%;
-  min-height:calc(100vh - 64px);
-  padding:clamp(18px,4vw,32px) clamp(20px,6vw,64px) clamp(24px,6vw,48px);
-  gap:clamp(16px,3vw,28px);
+  height:100vh;
+  padding:0;
+  gap:0;
   position:relative;
   box-sizing:border-box;
 }
@@ -1666,6 +1670,7 @@ body.ped-ia-chat-active #page-logo{
   min-height:0;
   width:100%;
   position:relative;
+  overflow:hidden;
 }
 .chat-header-left{display:flex; align-items:center; gap:14px; min-width:0;}
 .chat-header-title{font-size:1rem; font-weight:600; letter-spacing:.01em; white-space:nowrap;}
@@ -1693,8 +1698,8 @@ body.ped-ia-chat-active #page-logo{
   background:none !important;
   border:none !important;
   box-shadow:none !important;
-  width:min(1220px, 100%);
-  margin-inline:auto;
+  width:100%;
+  margin:0;
   align-items:stretch;
   height:100%;
 }
@@ -1716,16 +1721,18 @@ body.ped-ia-chat-active #page-logo{
   flex-direction:column;
   position:relative;
   border:1px solid rgba(214,222,255,.16);
-  border-radius:32px;
+  border-radius:0;
   background:linear-gradient(160deg, rgba(16,22,36,.92), rgba(7,10,20,.94));
   box-shadow:0 28px 80px rgba(5,9,24,.62);
   padding:clamp(22px,4vw,36px) clamp(22px,5vw,52px) clamp(22px,4vw,40px);
   min-height:0;
   height:100%;
+  width:100%;
   max-height:none;
   gap:clamp(18px,2.6vw,26px);
   backdrop-filter:blur(28px);
   -webkit-backdrop-filter:blur(28px);
+  overflow:hidden;
 }
 .chat-card--immersive .chat-messages{
   flex:1 1 auto;
