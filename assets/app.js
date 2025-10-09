@@ -3614,7 +3614,24 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (!route) return;
     const instanceId = ++aiPageState.instance;
     aiPageState.currentChild = null;
-    const pedIaGreeting = "Bonjour ! Je suis Ped’IA. Comment puis-je vous aider aujourd’hui ?";
+    function resolveParentGreetingName() {
+      try {
+        const user = store.get(K.user) || {};
+        const raw = [user?.pseudo, user?.firstName, user?.first_name, user?.name]
+          .find((val) => typeof val === 'string' && val.trim());
+        return raw ? raw.trim() : '';
+      } catch {
+        return '';
+      }
+    }
+
+    function buildPedIaGreeting() {
+      const name = resolveParentGreetingName();
+      if (name) {
+        return `Contente de te retrouver ${name} ! On regarde quoi ensemble ?`;
+      }
+      return 'Contente de te retrouver. On regarde quoi ensemble ?';
+    }
 
     const isActiveInstance = () => aiPageState.instance === instanceId;
     const isRouteAttached = () => isActiveInstance() && document.body.contains(route);
@@ -4059,18 +4076,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const existing = document.getElementById('ai-chat-welcome');
       if (existing) existing.remove();
     };
-    const getParentGreetingName = () => {
-      try {
-        const user = store.get(K.user) || {};
-        const raw = [user?.pseudo, user?.firstName, user?.first_name, user?.name]
-          .find((val) => typeof val === 'string' && val.trim());
-        return raw ? raw.trim() : '';
-      } catch {
-        return '';
-      }
-    };
     const buildWelcomeMessageText = () => {
-      const parentName = getParentGreetingName();
+      const parentName = resolveParentGreetingName();
       if (!parentName) return welcomeBaseText;
       return `👋 Hey ${parentName} Comment va la petite famille ? Envie de faire un point ?`;
     };
@@ -4564,7 +4571,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         renderChat([]);
         if (routePath === '/ped-ia') {
           const history = [];
-          history.push({ role: 'assistant', content: pedIaGreeting, type: 'auto-greeting' });
+          history.push({ role: 'assistant', content: buildPedIaGreeting(), type: 'auto-greeting' });
           saveChat(child, history);
           renderChat(history);
         }
@@ -4719,7 +4726,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (routePath === '/ped-ia') {
         const history = loadChat(nextChild);
         if (!history.length) {
-          history.push({ role: 'assistant', content: pedIaGreeting, type: 'auto-greeting' });
+          history.push({ role: 'assistant', content: buildPedIaGreeting(), type: 'auto-greeting' });
           saveChat(nextChild, history);
         }
       }
@@ -4884,7 +4891,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (routePath === '/ped-ia') {
         const history = loadChat(child);
         if (!history.length) {
-          history.push({ role: 'assistant', content: pedIaGreeting, type: 'auto-greeting' });
+          history.push({ role: 'assistant', content: buildPedIaGreeting(), type: 'auto-greeting' });
           saveChat(child, history);
         }
       }
