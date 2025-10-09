@@ -1916,9 +1916,14 @@ section[data-route="/community"] .community-topic-card{
 section[data-route="/community"] .community-topic:hover .community-topic-card,
 section[data-route="/community"] .community-topic.community-topic--open .community-topic-card{
   transform:translateY(-3px);
-  background:rgba(41,47,66,.94);
   border-color:rgba(182,198,255,.32);
   box-shadow:0 28px 58px rgba(6,10,24,.62);
+}
+section[data-route="/community"] .community-topic:hover .community-topic-card{
+  background:rgba(41,47,66,.94);
+}
+section[data-route="/community"] .community-topic.community-topic--open .community-topic-card{
+  background:rgba(36,41,58,.9);
 }
 section[data-route="/community"] .community-topic-card__header{display:flex; justify-content:space-between; align-items:flex-start; gap:18px; flex-wrap:wrap}
 section[data-route="/community"] .community-topic-card__identity{display:flex; align-items:center; gap:15px; min-width:0}
@@ -2016,6 +2021,7 @@ section[data-route="/community"] .community-topic-card__expanded{
   transform:translateY(-6px);
   transition:max-height .38s ease, opacity .3s ease, transform .3s ease;
   padding-top:0;
+  margin-top:-18px;
   pointer-events:none;
 }
 section[data-route="/community"] .community-topic-card__expanded.is-open{
@@ -2024,6 +2030,7 @@ section[data-route="/community"] .community-topic-card__expanded.is-open{
   transform:translateY(0);
   padding-top:20px;
   border-top:1px solid rgba(214,222,255,.12);
+  margin-top:0;
   pointer-events:auto;
 }
 section[data-route="/community"] .community-topic-card__story{display:grid; gap:12px; text-align:center}
@@ -2134,8 +2141,8 @@ section[data-route="/community"] .community-comment-block--nested .topic-entry{
 }
 section[data-route="/community"] .community-comment-block--nested .timeline-parent-note,
 section[data-route="/community"] .community-comment-block--nested .timeline-ai-note{
-  background:rgba(48,54,78,.82);
-  border:1px solid rgba(214,222,255,.14);
+  background:transparent;
+  border:none;
   color:#f5f7ff;
 }
 section[data-route="/community"] .community-comment-block--nested .timeline-parent-note__label,
@@ -2180,10 +2187,10 @@ section[data-route="/community"] #forum-cats .btn-secondary.active{background:li
 
 @media (max-width:640px){
   section[data-route="/community"] .community-topic-card__story{
-    background:rgba(18,24,40,.78);
-    border:1px solid rgba(214,222,255,.14);
-    border-radius:18px;
-    padding:16px 18px;
+    background:transparent;
+    border:none;
+    border-radius:0;
+    padding:0;
     gap:14px;
     text-align:left;
   }
@@ -2205,20 +2212,19 @@ section[data-route="/community"] #forum-cats .btn-secondary.active{background:li
     margin:0;
   }
   section[data-route="/community"] .community-topic-card__expanded{
-    background:rgba(10,16,30,.72);
-    border:1px solid rgba(214,222,255,.12);
-    border-radius:20px;
-    padding:18px 16px 20px;
-    margin-top:16px;
+    background:transparent;
+    border:none;
+    border-radius:0;
+    padding:0;
   }
   section[data-route="/community"] .community-comment-block{
     gap:10px;
   }
   section[data-route="/community"] .community-comment-block .topic-entry{
-    background:rgba(255,255,255,.04);
-    border:1px solid rgba(214,222,255,.12);
-    border-radius:18px;
-    padding:12px 14px;
+    background:transparent;
+    border:none;
+    border-radius:0;
+    padding:0;
     gap:10px;
   }
   section[data-route="/community"] .community-comment-block .topic-entry__head{
@@ -2232,10 +2238,10 @@ section[data-route="/community"] #forum-cats .btn-secondary.active{background:li
   section[data-route="/community"] .community-comment-block .topic-initial,
   section[data-route="/community"] .community-comment-block .timeline-parent-note,
   section[data-route="/community"] .community-comment-block .timeline-ai-note{
-    background:rgba(13,22,38,.85);
-    border:1px solid rgba(214,222,255,.18);
-    border-radius:16px;
-    padding:12px 14px;
+    background:transparent;
+    border:none;
+    border-radius:0;
+    padding:0;
   }
   section[data-route="/community"] .community-comment-block .topic-entry__actions{
     justify-content:flex-end;
@@ -4301,16 +4307,14 @@ section[data-route="/community"] .btn-like[disabled]{
 section[data-route="/community"] .topic-entry .timeline-parent-note,
 section[data-route="/community"] .topic-entry .timeline-ai-note{
   margin:0;
-  padding:12px 14px;
-  border-radius:14px;
+  padding:0;
+  border-radius:0;
   font-size:13px;
   line-height:1.55;
   word-break:break-word;
-}
-section[data-route="/community"] .topic-entry .timeline-parent-note{
-  background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.16);
-  color:#ffffff;
+  background:transparent;
+  border:none;
+  color:#f2f5ff;
 }
 section[data-route="/community"] .topic-entry .timeline-parent-note__label{
   display:block;
@@ -4324,11 +4328,6 @@ section[data-route="/community"] .topic-entry .timeline-parent-note__label{
 section[data-route="/community"] .topic-entry .timeline-parent-note__text{
   font-size:13px;
   color:#f4f7ff;
-}
-section[data-route="/community"] .topic-entry .timeline-ai-note{
-  background:rgba(110,163,255,.16);
-  border:1px solid rgba(110,163,255,.32);
-  color:#ffffff;
 }
 section[data-route="/community"] .topic-entry .timeline-ai-note__label{
   display:block;
