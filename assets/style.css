@@ -1604,7 +1604,11 @@ body.ped-ia-chat-active{
   overflow:hidden;
   background:var(--bg);
   height:100vh;
+  min-height:100vh;
+  height:100dvh;
+  min-height:100dvh;
   padding-top:var(--header-height);
+  padding-bottom:env(safe-area-inset-bottom, 0px);
 }
 body.ped-ia-chat-active #app{
   width:100vw;
@@ -1614,6 +1618,10 @@ body.ped-ia-chat-active #app{
   display:flex;
   height:calc(100vh - var(--header-height));
   min-height:calc(100vh - var(--header-height));
+  max-height:calc(100vh - var(--header-height));
+  height:calc(100dvh - var(--header-height));
+  min-height:calc(100dvh - var(--header-height));
+  max-height:calc(100dvh - var(--header-height));
 }
 body.ped-ia-chat-active main.hero-container{
   width:100vw;
@@ -1624,6 +1632,10 @@ body.ped-ia-chat-active main.hero-container{
   flex:1 1 auto;
   height:calc(100vh - var(--header-height));
   min-height:calc(100vh - var(--header-height));
+  max-height:calc(100vh - var(--header-height));
+  height:calc(100dvh - var(--header-height));
+  min-height:calc(100dvh - var(--header-height));
+  max-height:calc(100dvh - var(--header-height));
 }
 body.ped-ia-chat-active main.hero-container .container{
   width:100vw;
@@ -1737,6 +1749,9 @@ body.ped-ia-chat-active .chat-route--fullscreen [data-chat-relocate-reset]{
   height:calc(100vh - var(--header-height));
   max-height:calc(100vh - var(--header-height));
   min-height:calc(100vh - var(--header-height));
+  height:calc(100dvh - var(--header-height));
+  max-height:calc(100dvh - var(--header-height));
+  min-height:calc(100dvh - var(--header-height));
   padding:0;
   gap:0;
   position:relative;
@@ -4039,6 +4054,19 @@ section[data-route="/"] .steps .step:hover{
   }
   .suggestion-emoji{
     display:none;
+  }
+  body.ped-ia-chat-active .chat-window{
+    height:100%;
+    min-height:0;
+    max-height:none;
+  }
+  body.ped-ia-chat-active .chat-window--immersive .chat-messages{
+    max-height:none;
+    padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px));
+    scroll-padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  body.ped-ia-chat-active .chat-window--immersive .chat-input{
+    padding-bottom:calc(clamp(14px,2.4vw,20px) + env(safe-area-inset-bottom, 0px));
   }
 }
 .bubble.user{background:linear-gradient(140deg, rgba(255,150,64,.94), rgba(255,179,209,.86)); border:none; color:#1f1a12; box-shadow:0 20px 48px rgba(255,150,64,.45);}
