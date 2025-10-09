@@ -3614,23 +3614,35 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (!route) return;
     const instanceId = ++aiPageState.instance;
     aiPageState.currentChild = null;
-    function resolveParentGreetingName() {
+
+    function resolveParentProfile() {
       try {
         const user = store.get(K.user) || {};
-        const raw = [user?.pseudo, user?.firstName, user?.first_name, user?.name]
-          .find((val) => typeof val === 'string' && val.trim());
-        return raw ? raw.trim() : '';
+        const pseudo = typeof user?.pseudo === 'string' ? user.pseudo.trim() : '';
+        const firstNameRaw = typeof user?.firstName === 'string' ? user.firstName.trim() : '';
+        const firstNameAlt = typeof user?.first_name === 'string' ? user.first_name.trim() : '';
+        const nameRaw = typeof user?.name === 'string' ? user.name.trim() : '';
+        const firstName = firstNameRaw || firstNameAlt;
+        const displaySource = [firstName, pseudo, nameRaw].find((val) => val && val.length > 0) || '';
+        const displayName = displaySource ? displaySource.split(/\s+/)[0] : '';
+        return {
+          pseudo,
+          firstName,
+          name: nameRaw,
+          displayName,
+        };
       } catch {
-        return '';
+        return { pseudo: '', firstName: '', name: '', displayName: '' };
       }
     }
 
-    function buildPedIaGreeting() {
-      const name = resolveParentGreetingName();
-      if (name) {
-        return `Contente de te retrouver ${name} ! On regarde quoi ensemble ?`;
-      }
-      return 'Contente de te retrouver. On regarde quoi ensemble ?';
+    function resolveParentGreetingName() {
+      const profile = resolveParentProfile();
+      const candidates = [profile.displayName, profile.pseudo, profile.firstName, profile.name].filter(
+        (val) => typeof val === 'string' && val.trim().length > 0,
+      );
+      const selected = candidates[0] || '';
+      return selected.trim();
     }
 
     const isActiveInstance = () => aiPageState.instance === instanceId;
@@ -4569,12 +4581,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         } catch {}
         removeWelcomeMessage();
         renderChat([]);
-        if (routePath === '/ped-ia') {
-          const history = [];
-          history.push({ role: 'assistant', content: buildPedIaGreeting(), type: 'auto-greeting' });
-          saveChat(child, history);
-          renderChat(history);
-        }
         if (sChat) sChat.textContent = '';
         setChatMode(chatModes.TEXT);
       };
@@ -4685,7 +4691,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const sanitizedHistory = history
             .filter((entry) => entry && !entry.type)
             .map((entry) => ({ role: entry.role, content: entry.content }));
-          const resp = await askAI(q, child, sanitizedHistory);
+          const parentProfile = resolveParentProfile();
+          const resp = await askAI(q, child, sanitizedHistory, parentProfile);
           const active = getCurrentChild();
           const activeId = active && active.id != null ? String(active.id) : 'anon';
           if (aiPageState.instance !== runId || activeId !== childId || !isRouteAttached()) return;
@@ -4723,13 +4730,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       setCurrentChild(nextChild);
       await renderIndicator(nextChild);
       if (!isActiveInstance()) return;
-      if (routePath === '/ped-ia') {
-        const history = loadChat(nextChild);
-        if (!history.length) {
-          history.push({ role: 'assistant', content: buildPedIaGreeting(), type: 'auto-greeting' });
-          saveChat(nextChild, history);
-        }
-      }
       renderChat(loadChat(nextChild));
       const outR = document.getElementById('ai-recipes-result');
       if (outR) outR.innerHTML = '';
@@ -4888,13 +4888,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const child = await loadChild();
       if (!isActiveInstance()) return;
       setCurrentChild(child);
-      if (routePath === '/ped-ia') {
-        const history = loadChat(child);
-        if (!history.length) {
-          history.push({ role: 'assistant', content: buildPedIaGreeting(), type: 'auto-greeting' });
-          saveChat(child, history);
-        }
-      }
       await renderIndicator(child);
       if (!isActiveInstance()) return;
       const history = loadChat(child);
@@ -12045,8 +12038,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   } catch {}
 
   // --- Helpers d’appels IA ---
-  async function askAI(question, child, history){
+  async function askAI(question, child, history, parent){
     const payload = { question, child, history, type: 'advice' };
+    if (parent && typeof parent === 'object') {
+      payload.parent = parent;
+    }
     if (activeProfile?.id != null) {
       const profileId = String(activeProfile.id).trim();
       if (profileId) {
