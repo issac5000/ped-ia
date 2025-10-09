@@ -9412,14 +9412,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const timeHtml = timeLabel
           ? `<time datetime="${escapeHtml(timeIso || '')}">${escapeHtml(timeLabel)}</time>`
           : '';
-        const actionItems = [];
-        if (messageBtn) actionItems.push(messageBtn);
-        if (Array.isArray(actions) && actions.length) {
-          actions.forEach((item) => { if (item) actionItems.push(item); });
+        let actionsHtml = '';
+        if (isInitial) {
+          const actionItems = [];
+          if (messageBtn) actionItems.push(messageBtn);
+          if (Array.isArray(actions) && actions.length) {
+            actions.forEach((item) => { if (item) actionItems.push(item); });
+          }
+          actionsHtml = actionItems.length
+            ? `<div class="topic-entry__actions">${actionItems.join('')}</div>`
+            : '';
         }
-        const actionsHtml = actionItems.length
-          ? `<div class="topic-entry__actions">${actionItems.join('')}</div>`
-          : '';
         let entryClass = 'topic-entry';
         if (highlight) entryClass += ' topic-entry--highlight';
         if (isAi) entryClass += ' topic-entry--ai';
@@ -9449,29 +9452,21 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             </article>
           `;
         }
-        const noteClass = highlight ? 'timeline-ai-note' : 'timeline-parent-note';
-        const labelClass = highlight ? 'timeline-ai-note__label' : 'timeline-parent-note__label';
-        const textClass = highlight ? 'timeline-ai-note__text' : 'timeline-parent-note__text';
+        entryClass += ' topic-entry--minimal';
+        const containerClasses = ['topic-entry__comment-container'];
+        if (highlight) containerClasses.push('topic-entry__comment-container--highlight');
+        const labelHtml = shouldDisplayLabel
+          ? `<p class="topic-entry__comment-label">${safeLabel}</p>`
+          : '';
+        const commentPreviewAttr = profileIdRaw
+          ? ` data-parent-profile="${escapeHtml(profileIdRaw)}"`
+          : '';
         return `
           <article class="${entryClass}">
-            <div class="topic-entry__head">
-              <div class="topic-entry__avatar" aria-hidden="true"${avatarAttr}>${safeInitials}</div>
-              <div class="topic-entry__meta">
-                <div class="topic-entry__author">
-                  <span class="topic-entry__author-name"${previewAttr}>
-                    <span class="author-name-text">${safeAuthor}</span>
-                    ${badgeInline}
-                  </span>
-                  ${authorMetaHtml || ''}
-                </div>
-                ${timeHtml}
-              </div>
+            <div class="${containerClasses.join(' ')}"${commentPreviewAttr}>
+              ${labelHtml}
+              <div class="topic-entry__comment-text">${contentHtml}</div>
             </div>
-            <div class="${noteClass}">
-              ${shouldDisplayLabel ? `<span class="${labelClass}">${safeLabel}</span>` : ''}
-              <div class="${textClass}">${contentHtml}</div>
-            </div>
-            ${actionsHtml}
           </article>
         `;
       };
@@ -9591,9 +9586,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             : '';
           const likeButton = replyId ? buildLikeButton(replyId, communityLikes.get(replyId)) : '';
           const replyActions = [];
-          if (likeButton) replyActions.push(likeButton);
-          if (replyButtonHtml) replyActions.push(replyButtonHtml);
-          if (replyMessageBtn) replyActions.push(replyMessageBtn);
           const replyEntryHtml = renderThreadEntry({
             authorName: replyAuthor,
             authorMetaHtml: replyAuthorMetaHtml,
