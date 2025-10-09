@@ -2715,6 +2715,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   function startRouteParticles(){
     try {
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+        // Sur mobile, le canvas plein écran crée un bloc coloré indésirable.
+        // On désactive donc les particules de route pour les petits écrans.
+        return;
+      }
       const route = document.querySelector('.route.active');
       if (!route) return;
       const routePath = route.getAttribute('data-route') || '';
