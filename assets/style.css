@@ -3241,7 +3241,15 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
 }
 @media(max-width:720px){
   .suggestion-cards{ flex-direction:column; }
-  .suggestion-card{ flex:1 1 auto; min-width:0; }
+  .suggestion-card{
+    flex:1 1 auto;
+    min-width:0;
+    padding:8px 10px;
+    gap:6px;
+    border-radius:12px;
+  }
+  .suggestion-emoji{ font-size:0.95rem; }
+  .suggestion-text{ font-size:0.8rem; }
 }
 @keyframes chat-suggestion-fade{
   from{ opacity:0; transform:translateY(6px); }

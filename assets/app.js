@@ -3821,7 +3821,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const suggestionText = formatSuggestionText(preset.template);
         btn.innerHTML = `
           <span class="suggestion-emoji">${preset.emoji}</span>
-          <span class="suggestion-text"><strong>${escapeHtml(preset.label)}</strong><span>${escapeHtml(suggestionText)}</span></span>`;
+          <span class="suggestion-text">${escapeHtml(suggestionText)}</span>`;
         btn.addEventListener('click', () => {
           const currentForm = form || document.getElementById('form-ai-chat');
           if (autoSendChatSuggestions && currentForm?.dataset.busy === '1') return;
