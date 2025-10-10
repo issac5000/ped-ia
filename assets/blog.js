@@ -1,5 +1,6 @@
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
+import { startViewportBubbles, startLogoBubbles, stopBubbles } from './canvas-bubbles.js';
 
 document.body.classList.remove('no-js');
 try {
@@ -201,128 +202,30 @@ window.addEventListener('storage', evt=>{
 });
 
 // Particules pastel douces sur toute la page
-let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
+let routeBubbles = null;
 function startRouteParticles(){
-  try{
-    const cvs = document.createElement('canvas');
-    cvs.className = 'route-canvas route-canvas-fixed';
-    cvs.style.pointerEvents = 'none';
-    document.body.prepend(cvs);
-    const ctx = cvs.getContext('2d');
-    const state = routeParticles;
-    state.cvs = cvs; state.ctx = ctx; state.parts = [];
-    function resize(){
-      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio||1));
-      state.W = window.innerWidth; state.H = window.innerHeight;
-      cvs.width = Math.floor(state.W*dpr); cvs.height = Math.floor(state.H*dpr);
-      ctx.setTransform(dpr,0,0,dpr,0,0);
-    }
-    resize();
-    state.resize = resize;
-    window.addEventListener('resize', resize);
-    const cs = getComputedStyle(document.documentElement);
-    const palette = [
-      cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
-      cs.getPropertyValue('--orange').trim()||'#ffcba4',
-      cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
-      '#ffd9e6'
-    ];
-    const area = Math.max(1, state.W*state.H);
-    const N = Math.max(14, Math.min(40, Math.round(area/52000)));
-    for(let i=0;i<N;i++){
-      const u=Math.random();
-      const r = u<.5 ? (4+Math.random()*7) : (u<.85 ? (10+Math.random()*10) : (20+Math.random()*18));
-      state.parts.push({
-        x:Math.random()*state.W,
-        y:Math.random()*state.H,
-        r,
-        vx:(Math.random()*.28-.14),
-        vy:(Math.random()*.28-.14),
-        hue:palette[Math.floor(Math.random()*palette.length)],
-        alpha:.10+Math.random()*.20,
-        drift:Math.random()*Math.PI*2,
-        spin:.001+Math.random()*.003
-      });
-    }
-    const step=()=>{
-      ctx.clearRect(0,0,state.W,state.H);
-      for(const p of state.parts){
-        p.drift += p.spin;
-        p.x += p.vx + Math.cos(p.drift)*.04;
-        p.y += p.vy + Math.sin(p.drift)*.04;
-        if(p.x<-20) p.x=state.W+20; if(p.x>state.W+20) p.x=-20;
-        if(p.y<-20) p.y=state.H+20; if(p.y>state.H+20) p.y=-20;
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.hue;
-        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
-      }
-      state.raf = requestAnimationFrame(step);
-    };
-    step();
-  }catch(e){}
+  if (routeBubbles) return;
+  routeBubbles = startViewportBubbles();
+}
+function stopRouteParticles(){
+  if (!routeBubbles) return;
+  stopBubbles(routeBubbles);
+  routeBubbles = null;
 }
 
 // Particules autour du logo de page
-let logoParticles = { cvs:null, ctx:null, parts:[], raf:0, resize:null, W:0, H:0 };
+let logoBubbles = null;
 function startLogoParticles(){
-  try{
-    const wrap = document.querySelector('#page-logo .container');
-    if(!wrap) return;
-    const cvs = document.createElement('canvas');
-    cvs.className='logo-canvas';
-    cvs.style.pointerEvents = 'none';
-    wrap.prepend(cvs);
-    const ctx = cvs.getContext('2d');
-    const state = logoParticles;
-    state.cvs=cvs; state.ctx=ctx; state.parts=[];
-    function resize(){
-      const dpr=Math.max(1, Math.min(2, window.devicePixelRatio||1));
-      state.W=wrap.clientWidth; state.H=wrap.clientHeight;
-      cvs.width=Math.floor(state.W*dpr); cvs.height=Math.floor(state.H*dpr);
-      ctx.setTransform(dpr,0,0,dpr,0,0);
-    }
-    resize();
-    state.resize=resize;
-    window.addEventListener('resize', resize);
-    const cs = getComputedStyle(document.documentElement);
-    const palette=[
-      cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
-      cs.getPropertyValue('--orange').trim()||'#ffcba4',
-      cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
-      '#ffd9e6'
-    ];
-    const area=Math.max(1,state.W*state.H);
-    const N=Math.max(6, Math.min(16, Math.round(area/20000)));
-    for(let i=0;i<N;i++){
-      const u=Math.random();
-      const r=u<.5?(3+Math.random()*5):(u<.85?(8+Math.random()*8):(16+Math.random()*12));
-      state.parts.push({
-        x:Math.random()*state.W,
-        y:Math.random()*state.H,
-        r,
-        vx:(Math.random()*.25-.125),
-        vy:(Math.random()*.25-.125),
-        hue:palette[Math.floor(Math.random()*palette.length)],
-        alpha:.10+Math.random()*.20,
-        drift:Math.random()*Math.PI*2,
-        spin:.001+Math.random()*.003
-      });
-    }
-    const step=()=>{
-      ctx.clearRect(0,0,state.W,state.H);
-      for(const p of state.parts){
-        p.drift+=p.spin;
-        p.x+=p.vx+Math.cos(p.drift)*.03;
-        p.y+=p.vy+Math.sin(p.drift)*.03;
-        if(p.x<-20) p.x=state.W+20; if(p.x>state.W+20) p.x=-20;
-        if(p.y<-20) p.y=state.H+20; if(p.y>state.H+20) p.y=-20;
-        ctx.globalAlpha=p.alpha; ctx.fillStyle=p.hue;
-        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
-      }
-      state.raf=requestAnimationFrame(step);
-    };
-    step();
-  }catch(e){}
+  const wrap = document.querySelector('#page-logo .container');
+  if (!wrap) return;
+  if (logoBubbles && logoBubbles.target === wrap) return;
+  stopBubbles(logoBubbles);
+  logoBubbles = startLogoBubbles(wrap);
+}
+function stopLogoParticles(){
+  if (!logoBubbles) return;
+  stopBubbles(logoBubbles);
+  logoBubbles = null;
 }
 
 async function init(){
