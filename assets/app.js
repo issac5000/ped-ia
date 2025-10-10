@@ -5721,12 +5721,33 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
     const idStr = String(childId);
     const { skipRemote = false } = options || {};
-    let child = settingsState.childrenMap.get(idStr);
-    const shouldFetchRemote = useRemote() && (!skipRemote || !child);
+    let child = null;
+    let usedCachedChild = false;
+    if (typeof window !== 'undefined') {
+      const cachedChild = window.activeChildData;
+      if (cachedChild && String(cachedChild.id ?? '') === idStr) {
+        const nameForLog = cachedChild.full_name || cachedChild.prenom || cachedChild.firstName || '';
+        console.log('[ChildEditor] using cached child data:', nameForLog);
+        const normalizedCached = cachedChild.firstName ? cachedChild : mapRowToChild(cachedChild);
+        if (normalizedCached) {
+          child = cloneChildForSettings(normalizedCached);
+          usedCachedChild = true;
+        }
+      }
+    }
+    if (!child) {
+      child = settingsState.childrenMap.get(idStr) || null;
+    }
+    const shouldFetchRemote = useRemote() && (!skipRemote || !child) && !usedCachedChild;
     if (shouldFetchRemote) {
       try {
         const remoteChild = await loadChildById(idStr);
-        if (remoteChild) child = remoteChild;
+        if (remoteChild) {
+          child = remoteChild;
+          if (typeof window !== 'undefined') {
+            window.activeChildData = remoteChild;
+          }
+        }
       } catch (err) {
         console.warn('Chargement du profil enfant impossible', err);
       }
