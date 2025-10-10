@@ -272,6 +272,30 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const key = normalizeRoutePath(section.dataset.route || '/');
     if (!routeSections.has(key)) routeSections.set(key, section);
   });
+  const cleanupAuthCallbackRoute = (() => {
+    let removed = false;
+    return () => {
+      if (removed) return;
+      const section = routeSections.get('/auth-callback');
+      if (!section) {
+        removed = true;
+        return;
+      }
+      if (section.childElementCount > 0) return;
+      try {
+        if (normalizeRoutePath(window?.location?.hash || '') === '/auth-callback') {
+          return;
+        }
+      } catch {}
+      routeSections.delete('/auth-callback');
+      removed = true;
+      try {
+        section.remove();
+      } catch {
+        try { section.parentNode?.removeChild(section); } catch {}
+      }
+    };
+  })();
   let activeRouteEl = document.querySelector('section.route.active') || null;
   const navLinks = new Map();
   const navLinkTargets = new Map();
@@ -2179,6 +2203,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       startLogoParticles();
     }
     __activePath = path;
+    if (path !== '/auth-callback') cleanupAuthCallbackRoute();
   }
 
   window.addEventListener('hashchange', () => {

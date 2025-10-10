@@ -3014,6 +3014,7 @@ section[data-route="/"] .section-canvas,
 .site-footer{position:relative; z-index:1}
 .route.active{ display:block !important }
 .auth-callback-route{display:grid; place-items:center; text-align:center; gap:16px; min-height:50vh;}
+.auth-callback-route:empty{min-height:0; padding:0; display:none;}
 .auth-callback-route .page-header{margin-bottom:0;}
 .auth-callback-route .page-subtitle{max-width:460px;}
 .section.alt{background:transparent; border-top:none; border-bottom:none}
