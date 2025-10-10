@@ -267,6 +267,14 @@ export function createDataProxy({
         if (expectsCode && typeof basePayload.code === 'string') {
           basePayload.code = basePayload.code.trim().toUpperCase();
         }
+        if (anonHandler === anonChildrenRequest) {
+          const childIdRaw = basePayload.child_id ?? basePayload.childId ?? (basePayload.child && basePayload.child.id);
+          const childId = typeof childIdRaw === 'string' ? childIdRaw.trim() : '';
+          if (action === 'latest-growth' && (!childId || childId.startsWith('demo-'))) {
+            console.warn('[Anon skip] latest-growth sans child_id valide');
+            return null;
+          }
+        }
         const logPayload = basePayload && typeof basePayload === 'object' ? { action, ...basePayload } : { action };
         console.log('Anon request:', endpoint, logPayload);
         return anonHandler(action, basePayload);
