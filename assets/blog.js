@@ -204,7 +204,6 @@ window.addEventListener('storage', evt=>{
 let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, resize: null, W: 0, H: 0 };
 function startRouteParticles(){
   try{
-    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const cvs = document.createElement('canvas');
     cvs.className = 'route-canvas route-canvas-fixed';
     cvs.style.pointerEvents = 'none';
@@ -267,7 +266,6 @@ function startRouteParticles(){
 let logoParticles = { cvs:null, ctx:null, parts:[], raf:0, resize:null, W:0, H:0 };
 function startLogoParticles(){
   try{
-    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const wrap = document.querySelector('#page-logo .container');
     if(!wrap) return;
     const cvs = document.createElement('canvas');

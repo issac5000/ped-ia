@@ -2560,7 +2560,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let heroParticlesState = { raf: 0, canvas: null, ctx: null, parts: [], lastT: 0, resize: null, observer: null, extra: 0, route: null, hero: null };
   function startHeroParticles(){
     try {
-      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       const route = document.querySelector('section[data-route="/"]');
       if (!route) return;
       const hero = route.querySelector('.hero-v2') || route.querySelector('.hero');
@@ -2727,7 +2726,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
   function startRouteParticles(){
     try {
-      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       const route = document.querySelector('.route.active');
       if (!route) return;
       const routePath = route.getAttribute('data-route') || '';
@@ -2837,7 +2835,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let logoParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, el: null, dpr: 1 };
     function startLogoParticles(){
       try {
-        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
         const wrap = document.querySelector('#page-logo .container');
         if (!wrap || wrap.offsetParent === null) return;
         const cvs = document.createElement('canvas');
@@ -2925,7 +2922,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let sectionParticlesStates = [];
     function startSectionParticles(){
       try {
-        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
         if (!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches)) return;
         stopSectionParticles();
         const root = document.querySelector('section[data-route="/"]');
@@ -3021,7 +3017,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let cardParticlesStates = [];
   function startCardParticles(){
     try {
-      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       if (!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches)) return;
       stopCardParticles();
       const root = document.querySelector('section[data-route="/"]');
