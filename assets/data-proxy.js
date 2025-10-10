@@ -337,6 +337,14 @@ async function loadChildById(id) {
       .select('*')
       .eq('id', uuid)
       .single();
+    if (error && error.code === 'PGRST116') {
+      console.warn('[Anon skip] Aucun enfant trouvé pour', id);
+      return null;
+    }
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      console.warn('[Anon skip] Résultat vide pour', id);
+      return null;
+    }
     if (error) throw error;
     return data;
   } catch (err) {
