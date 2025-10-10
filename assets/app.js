@@ -395,6 +395,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       return true;
     }
     const current = location.hash;
+    const currentPath = normalizeRoutePath(current);
+    if (currentPath === '/auth-callback') {
+      if (current !== fallback) {
+        location.hash = fallback;
+      } else {
+        setActiveRoute(fallback);
+      }
+      return true;
+    }
     if (!current || current === '#' || current === '#/login' || current === '#/signup') {
       if (current !== fallback) {
         location.hash = fallback;
