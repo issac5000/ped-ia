@@ -157,14 +157,6 @@ function mountBubbleField(options = {}) {
       if (p.x > state.W + wrapMargin) p.x = -wrapMargin;
       if (p.y < -wrapMargin) p.y = state.H + wrapMargin;
       if (p.y > state.H + wrapMargin) p.y = -wrapMargin;
-      const haloAlpha = Math.max(0, Math.min(0.55, p.alpha * 0.6));
-      if (haloAlpha > 0.01) {
-        ctx.globalAlpha = haloAlpha;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r * 1.75, 0, Math.PI * 2);
-        ctx.fill();
-      }
       ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
       ctx.fillStyle = p.hue;
       ctx.beginPath();
