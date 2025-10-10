@@ -32,3 +32,46 @@
     }
   }, 5000);
 })();
+
+(function(){
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const schemePattern = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+  function resolveBasePath(){
+    const path = window.location?.pathname || '/';
+    if (path.endsWith('/')) return path;
+    if (/\.[^/]+$/.test(path)) {
+      return path.replace(/[^/]*$/, '');
+    }
+    return `${path}/`;
+  }
+
+  function normalizeLocalLink(link, basePath){
+    if (!link) return;
+    const raw = link.getAttribute('href');
+    if (!raw || raw.startsWith('#') || raw.startsWith('?') || raw.startsWith('/') || schemePattern.test(raw) || raw.startsWith('//')) {
+      return;
+    }
+    try {
+      const origin = window.location?.origin || '';
+      const base = `${origin}${basePath}`;
+      const resolved = new URL(raw, base);
+      const next = `${resolved.pathname}${resolved.search}${resolved.hash}`;
+      if (next && next !== raw) {
+        link.setAttribute('href', next);
+      }
+    } catch {}
+  }
+
+  function fixRelativeLinks(){
+    const basePath = resolveBasePath();
+    const anchors = document.querySelectorAll('a[href]');
+    anchors.forEach(anchor => normalizeLocalLink(anchor, basePath));
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fixRelativeLinks, { once: true });
+  } else {
+    fixRelativeLinks();
+  }
+})();
