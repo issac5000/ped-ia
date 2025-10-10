@@ -264,11 +264,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const key = normalizeRoutePath(section.dataset.route || '/');
     if (!routeSections.has(key)) routeSections.set(key, section);
   });
-  const ROUTE_CANVAS_EXCLUSIONS = new Set(['/login', '/signup']);
-  function shouldDisplayRouteCanvas(path) {
-    if (!path) return true;
-    return !ROUTE_CANVAS_EXCLUSIONS.has(path);
-  }
   let activeRouteEl = document.querySelector('section.route.active') || null;
   const navLinks = new Map();
   const navLinkTargets = new Map();
@@ -2035,35 +2030,26 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } else {
       setTimeout(setupScrollAnimations, 0);
     }
-    const shouldShowRouteCanvas = shouldDisplayRouteCanvas(path);
     if (path === '/') {
       try { setupNewsletter(); } catch {}
-      stopRouteParticles();
       stopSectionParticles();
       startHeroParticles();
       stopLogoParticles();
       if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
-        if (shouldShowRouteCanvas) {
-          startRouteParticles();
-        }
+        startRouteParticles();
         startSectionParticles();
         startCardParticles();
       } else {
-        if (shouldShowRouteCanvas) {
-          startRouteParticles();
-        }
+        startRouteParticles();
         stopCardParticles();
       }
     } else {
       stopHeroParticles();
       stopSectionParticles();
-      stopRouteParticles();
       stopLogoParticles();
       stopCardParticles();
-      if (shouldShowRouteCanvas) {
-        startRouteParticles();
-        startLogoParticles();
-      }
+      startRouteParticles();
+      startLogoParticles();
     }
     __activePath = path;
   }
@@ -2075,12 +2061,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   // Ensure the ambient canvas is present even before the first route activation completes
   try {
-    const shouldStart = shouldDisplayRouteCanvas(normalizeRoutePath(location.hash || '#/ai'));
-    if (shouldStart) {
-      startRouteParticles();
-    } else {
-      stopRouteParticles();
-    }
+    stopRouteParticles();
+    startRouteParticles();
   } catch {
     startRouteParticles();
   }
@@ -2757,20 +2739,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       try {
         const target = document.body;
         if (!target) return;
-        if (routeBubbles.ctrl && routeBubbles.target === target) return;
-        const existing = target.querySelectorAll('.route-canvas-fixed');
-        if (existing.length > 1) {
-          existing.forEach((canvas, index) => {
-            if (index > 0) canvas.remove();
-          });
-        }
-        if (existing.length === 1 && !routeBubbles.ctrl) {
-          const canvas = existing[0];
-          if (!canvas.dataset.managedBySpa) {
-            canvas.remove();
-          }
-        }
         stopRouteParticles();
+        try {
+          const duplicates = Array.from(target.querySelectorAll('canvas.route-canvas.route-canvas-fixed'));
+          duplicates.forEach(canvas => {
+            if (canvas.isConnected) canvas.remove();
+          });
+        } catch {}
         routeBubbles.ctrl = startViewportBubbles({ target });
         if (routeBubbles.ctrl?.canvas) {
           try {
