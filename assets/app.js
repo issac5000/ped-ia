@@ -2238,7 +2238,28 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     relocateChatCardForRoute(path);
     try {
       const pl = document.getElementById('page-logo');
-      if (pl) pl.hidden = (path === '/' || path === '' || path === '/ped-ia' || path === '/auth-callback');
+      const shouldHideLogo = (path === '/' || path === '' || path === '/ped-ia' || path === '/auth-callback');
+      if (pl) pl.hidden = shouldHideLogo;
+      if (document.body) {
+        const isInteriorRoute = !shouldHideLogo;
+        document.body.classList.toggle('interior-page', isInteriorRoute);
+        const hasBetaTicker = (path === '/' || path === '');
+        document.body.classList.toggle('has-beta-ticker', hasBetaTicker);
+        const ticker = document.querySelector('.beta-ticker');
+        if (ticker) {
+          if (hasBetaTicker) {
+            ticker.hidden = false;
+            ticker.removeAttribute('hidden');
+            ticker.classList.remove('beta-ticker--hidden');
+            ticker.removeAttribute('aria-hidden');
+          } else {
+            ticker.hidden = true;
+            ticker.setAttribute('hidden', '');
+            ticker.classList.add('beta-ticker--hidden');
+            ticker.setAttribute('aria-hidden', 'true');
+          }
+        }
+      }
     } catch {}
     updateHeaderAuth();
     const previousPath = (typeof __activePath === 'string' && __activePath.length > 0) ? __activePath : null;
