@@ -4632,6 +4632,10 @@ body.has-beta-ticker{
   margin:0;
   z-index:95;
 }
+.beta-ticker--hidden,
+.beta-ticker[hidden]{
+  display:none;
+}
 .beta-ticker__track{
   display: flex;
   width: max-content;
