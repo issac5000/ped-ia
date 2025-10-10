@@ -4703,7 +4703,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       } else if (options.forceScroll || chatShouldAutoScroll) {
         const behavior = options.forceScroll ? 'auto' : 'smooth';
         safeScrollTo(el, { top: el.scrollHeight, behavior });
-        schedulePageScrollToBottom(behavior);
+        requestAiPageScrollToBottom(behavior);
       }
       if (typewriterBubble && typewriterBubble.isConnected) {
         applyChatTypewriter(typewriterBubble, typewriterText, el);
