@@ -76,10 +76,15 @@ body{
   inset:0;
   pointer-events:none;
   z-index:6;
-  opacity:.42;
+  opacity:.5;
   transition:opacity .3s ease;
 }
-[data-active-route="/"] #ambient-bubbles-root{opacity:.58;}
+[data-active-route="/"] #ambient-bubbles-root{opacity:.72;}
+[data-active-route="/dashboard"] #ambient-bubbles-root{opacity:.8;}
+[data-active-route="/ai"] #ambient-bubbles-root{opacity:.76;}
+[data-active-route="/ped-ia"] #ambient-bubbles-root{opacity:.82;}
+[data-active-route="/community"] #ambient-bubbles-root{opacity:.8;}
+[data-active-route="/settings"] #ambient-bubbles-root{opacity:.78;}
 /* Ensure images never overflow containers on small screens */
 img{max-width:100%; height:auto}
 section{opacity:.8}
@@ -2985,7 +2990,7 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 
 section[data-route="/"] .section-canvas,
 [data-active-route="/"] .route-canvas-fixed{
-  opacity:.62;
+  opacity:.78;
 }
 /* On mobile, reduce canvas opacity and disable blend to avoid brightening under glass */
 @media(max-width:900px){
@@ -2997,11 +3002,11 @@ section[data-route="/"] .section-canvas,
       mix-blend-mode: normal !important;
     }
   [data-active-route="/"] .route-canvas-fixed{
-    opacity:.08 !important;
+    opacity:.16 !important;
   }
   section[data-route="/"] .section-canvas,
   section[data-route="/"] .card-canvas{
-    opacity:.35 !important;
+    opacity:.5 !important;
   }
 }
 
@@ -3214,7 +3219,7 @@ section[data-route="/ai"] .card{
 }
 [data-active-route="/ai"] .route-canvas-fixed{
   z-index: 1;
-  opacity: .45;
+  opacity: .68;
 }
 /* Exception: keep a frame for the profile indicator empty state */
 section[data-route="/ai"] #ai-profile-indicator{
