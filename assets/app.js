@@ -126,6 +126,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     try { return new URLSearchParams(query); }
     catch { return null; }
   };
+  const domReady = new Promise((resolve) => {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', resolve, { once: true });
+    } else {
+      resolve();
+    }
+  });
   async function withRetry(fn, { retries = 3, timeout = 3000 } = {}) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       let timerId = null;
@@ -396,12 +403,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   // Chargement des informations Supabase et du client JS
   let supabase = null;
+  let supabaseInitPromise = null;
+  const SUPABASE_INIT_TIMEOUT_MS = 5000;
   async function ensureSupabaseReady() {
     if (supabase) return supabase;
-    while (!supabase) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return supabase;
+    const loader = startSupabaseBootstrap?.() || null;
+    if (!loader) return null;
+    const result = await Promise.race([
+      loader,
+      new Promise((resolve) => setTimeout(() => resolve(null), SUPABASE_INIT_TIMEOUT_MS)),
+    ]);
+    return result || null;
   }
   if (typeof window !== 'undefined') {
     window.ensureSupabaseReady = ensureSupabaseReady;
@@ -1693,21 +1705,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     };
   }
 
-  try {
-    supabase = await getSupabaseClient();
-    if (!supabase) throw new Error('Supabase client unavailable');
+  async function completeSupabaseBootstrap(client) {
+    supabase = client;
 
     // Cas robuste : si Google renvoie ?code dans l’URL, on échange immédiatement contre une session
     try {
       const urlNow = new URL(window.location.href);
       if (urlNow.searchParams.get('code')) {
-        // Supabase veut l’URL sans hash (#/dashboard), donc on nettoie
         const cleanUrl = window.location.origin + urlNow.pathname + urlNow.search;
         const { error: xErr } = await supabase.auth.exchangeCodeForSession(cleanUrl);
         if (xErr) {
           console.warn('exchangeCodeForSession error', xErr);
         }
-        // On enlève juste le ?code de l’URL, mais on garde le hash
         urlNow.search = '';
         history.replaceState({}, '', urlNow.toString());
       }
@@ -1715,33 +1724,40 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       console.warn('exchangeCodeForSession failed', e);
     }
 
-    // Vérifier si un utilisateur est déjà connecté après redirection OAuth
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      authSession = { user };
-      await ensureProfile(user);
-      await syncUserFromSupabase();
-      updateHeaderAuth();
-      // Si l'utilisateur est déjà connecté et qu'aucun hash n'est fourni ou qu'on se trouve sur
-      // les pages de connexion/inscription, on redirige vers le dashboard. Sinon, on reste sur la
-      // page actuelle (ex: rafraîchissement sur l'accueil doit rester sur l'accueil).
-      if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
-        location.hash = '#/dashboard';
-      } else {
-        setActiveRoute(location.hash);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        authSession = { user };
+        await ensureProfile(user);
+        await syncUserFromSupabase();
+        await domReady;
+        updateHeaderAuth();
+        if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
+          location.hash = '#/dashboard';
+        } else {
+          setActiveRoute(location.hash);
+        }
       }
+    } catch (err) {
+      console.warn('Initial supabase auth.getUser failed', err);
     }
 
-    // Récupérer la session en cours (utile si pas d'user direct)
-    const { data: { session } } = await supabase.auth.getSession();
-    authSession = session || authSession;
-    if (authSession?.user && !isProfileLoggedIn()) {
-      await ensureProfile(authSession.user);
-      await syncUserFromSupabase();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      authSession = session || authSession;
+      if (authSession?.user && !isProfileLoggedIn()) {
+        await ensureProfile(authSession.user);
+        await syncUserFromSupabase();
+      }
+    } catch (err) {
+      console.warn('Initial supabase getSession failed', err);
     }
+
+    await domReady;
     if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
       location.hash = '#/dashboard';
     }
+
     supabase.auth.onAuthStateChange(async (_event, session) => {
       authSession = session || null;
       if (session?.user) {
@@ -1752,44 +1768,65 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           setActiveProfile(null);
         }
       }
+      await domReady;
       updateHeaderAuth();
       if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       } else {
         setActiveRoute(location.hash);
       }
-      // Ré-attache les notifications temps réel à chaque changement d’authentification
       if (authSession?.user) {
         setupRealtimeNotifications();
         updateBadgeFromStore();
-        // Récupère systématiquement les notifications manquées après connexion (lacunes possibles après OAuth)
         fetchMissedNotifications();
-        // Ne rejoue les toasts qu’une seule fois par session
         if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
       } else {
-        // Nettoie les canaux lors de la déconnexion
         try { for (const ch of notifChannels) await supabase.removeChannel(ch); } catch {}
         notifChannels = [];
       }
     });
-    // Routage initial une fois l’état d’authentification déterminé
+
+    await domReady;
     if (location.hash) {
       setActiveRoute(location.hash);
     } else {
       location.hash = isProfileLoggedIn() ? '#/dashboard' : '#/';
     }
-    // Abonne les notifications pour une session déjà active et rejoue les toasts une fois
+
     if (authSession?.user) {
       setupRealtimeNotifications();
       updateBadgeFromStore();
-      // Récupère systématiquement les notifications manquées à l’ouverture si déjà connecté
       fetchMissedNotifications();
-      // Ne rejoue les toasts qu’une fois par session
       if (!hasBootedNotifs()) { replayUnseenNotifs(); markBootedNotifs(); }
     }
-  } catch (e) {
-    console.warn('Supabase init failed (env or import)', e);
+
+    return supabase;
   }
+
+  function startSupabaseBootstrap() {
+    if (supabase) return Promise.resolve(supabase);
+    if (!supabaseInitPromise) {
+      const loader = (async () => {
+        try {
+          const client = await getSupabaseClient();
+          if (!client) throw new Error('Supabase client unavailable');
+          return await completeSupabaseBootstrap(client);
+        } catch (error) {
+          console.warn('Supabase init failed (env or import)', error);
+          return null;
+        }
+      })();
+      supabaseInitPromise = loader.then((result) => {
+        if (!result) {
+          supabaseInitPromise = null;
+        }
+        return result;
+      });
+    }
+    return supabaseInitPromise;
+  }
+
+  startSupabaseBootstrap();
 
  
 
@@ -3215,13 +3252,18 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
     async function ensureSupabaseClient() {
       if (supabase) return true;
+      const loader = startSupabaseBootstrap();
+      if (!loader) return false;
       try {
-        supabase = await getSupabaseClient();
-        return !!supabase;
+        const result = await Promise.race([
+          loader,
+          new Promise((resolve) => setTimeout(() => resolve(null), SUPABASE_INIT_TIMEOUT_MS)),
+        ]);
+        if (result) return true;
       } catch (e) {
         console.warn('ensureSupabaseClient failed', e);
-        return false;
       }
+      return false;
     }
 
   async function signInGoogle(){
@@ -12028,16 +12070,19 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
   // Initialisation
-  bootstrap();
-  if (!location.hash) location.hash = '#/';
-  setActiveRoute(location.hash);
-  // Vérifier l’adaptation de l’en-tête au chargement
-  evaluateHeaderFit();
-  // Année du pied de page (remplace un script inline pour respecter la CSP)
-  try {
-    const yEl = document.getElementById('y');
-    if (yEl) yEl.textContent = String(new Date().getFullYear());
-  } catch {}
+  function runInitialSpaInitialization() {
+    bootstrap();
+    if (!location.hash) location.hash = '#/';
+    setActiveRoute(location.hash);
+    // Vérifier l’adaptation de l’en-tête au chargement
+    evaluateHeaderFit();
+    // Année du pied de page (remplace un script inline pour respecter la CSP)
+    try {
+      const yEl = document.getElementById('y');
+      if (yEl) yEl.textContent = String(new Date().getFullYear());
+    } catch {}
+  }
+  domReady.then(runInitialSpaInitialization);
 
   // --- Helpers d’appels IA ---
   async function askAI(question, child, history, parent){
