@@ -106,6 +106,8 @@
 
     <div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
 
+    <div id="ambient-bubbles-root" aria-hidden="true"></div>
+
     <main id="app" class="container hero-container">
       <!-- Accueil -->
       <section data-route="/" class="route">
@@ -506,6 +508,14 @@
             <div id="anon-login-status" class="form-status" aria-live="polite"></div>
           </article>
         </div>
+      </section>
+
+      <section data-route="/auth-callback" class="route auth-callback-route">
+        <div class="page-header">
+          <h2>Connexion en cours…</h2>
+          <p class="page-subtitle">Merci de patienter, nous sécurisons votre compte.</p>
+        </div>
+        <p class="muted">Vous serez redirigé automatiquement vers votre espace dès que la connexion sera prête.</p>
       </section>
 
       <!-- Onboarding enfant -->
