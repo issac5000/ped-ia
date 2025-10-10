@@ -2990,7 +2990,7 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 
 section[data-route="/"] .section-canvas,
 [data-active-route="/"] .route-canvas-fixed{
-  opacity:.78;
+  opacity:.95;
 }
 /* On mobile, reduce canvas opacity and disable blend to avoid brightening under glass */
 @media(max-width:900px){
@@ -3002,11 +3002,11 @@ section[data-route="/"] .section-canvas,
       mix-blend-mode: normal !important;
     }
   [data-active-route="/"] .route-canvas-fixed{
-    opacity:.16 !important;
+    opacity:.7 !important;
   }
   section[data-route="/"] .section-canvas,
   section[data-route="/"] .card-canvas{
-    opacity:.5 !important;
+    opacity:.7 !important;
   }
 }
 
