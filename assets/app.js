@@ -5,6 +5,7 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
+import { startViewportBubbles, startElementBubbles, startLogoBubbles, stopBubbles } from './canvas-bubbles.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
 
@@ -2722,202 +2723,51 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } catch {}
   }
 
-    // Particules plein écran pour les routes (dashboard utilise un canvas fixe couvrant tout l’écran)
-    let routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
-  function startRouteParticles(){
-    try {
-      const route = document.querySelector('.route.active');
-      if (!route) return;
-      const routePath = route.getAttribute('data-route') || '';
-      const isDashboard = routePath === '/dashboard';
-      const isHome = routePath === '/';
-      const cvs = document.createElement('canvas');
-      // Dashboard : canvas fixe plein écran pour recouvrir toute la page
-      if (isDashboard || isHome) {
-        cvs.className = 'route-canvas route-canvas-fixed';
-        // Empêche le canvas de bloquer les éléments d’interface
-        cvs.style.pointerEvents = 'none';
-        document.body.prepend(cvs);
-      } else {
-        cvs.className = 'route-canvas';
-        cvs.style.pointerEvents = 'none';
-        route.prepend(cvs);
-      }
-      const width = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
-      const height = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
-      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-      cvs.width = Math.floor(width * dpr);
-      cvs.height = Math.floor(height * dpr);
-      const ctx = cvs.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-        // Palette dérivée des variables CSS
-        const cs = getComputedStyle(document.documentElement);
-        const palette = [
-          cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
-          cs.getPropertyValue('--orange').trim()||'#ffcba4',
-          cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
-          '#ffd9e6'
-        ];
-        const W = width, H = height;
-        const area = Math.max(1, W*H);
-        const N = Math.max(14, Math.min(40, Math.round(area/52000)));
-        const parts = [];
-        const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
-        for (let i=0;i<N;i++){
-          const u = Math.random();
-          const r = u < .5 ? (4 + Math.random()*7) : (u < .85 ? (10 + Math.random()*10) : (20 + Math.random()*18));
-          parts.push({
-            x: Math.random()*W,
-            y: Math.random()*H,
-            r,
-            vx:(Math.random()*.28 - .14),
-            vy:(Math.random()*.28 - .14),
-            hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha:(isSmallScreen ? .08 : .12) + Math.random()*(isSmallScreen ? .22 : .24),
-            drift: Math.random()*Math.PI*2,
-            spin:.001 + Math.random()*.003
-          });
-        }
-        routeParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, route, dpr, observer: null };
-      const step = (t)=>{
-        const now = t || performance.now();
-        const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
-        routeParticles.lastT = now;
-        const W = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
-        const H = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
-        const dpr = routeParticles.dpr;
-        ctx.setTransform(dpr,0,0,dpr,0,0);
-        ctx.clearRect(0,0,W,H);
-        for (const p of routeParticles.parts){
-          p.drift += p.spin*dt;
-            p.x += p.vx + Math.cos(p.drift)*.04;
-            p.y += p.vy + Math.sin(p.drift)*.04;
-            if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
-            if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
-            ctx.globalAlpha = p.alpha;
-            ctx.fillStyle = p.hue;
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
-          }
-          routeParticles.raf = requestAnimationFrame(step);
-        };
-        routeParticles.raf = requestAnimationFrame(step);
-      const onR = ()=>{
-        const width = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
-        const height = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
-        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        cvs.width = Math.floor(width * dpr);
-        cvs.height = Math.floor(height * dpr);
-        routeParticles.dpr = dpr;
-        routeParticles.ctx?.setTransform(dpr,0,0,dpr,0,0);
-      };
-        window.addEventListener('resize', onR);
-        routeParticles.resize = onR;
-        if (!isDashboard && window.ResizeObserver) {
-          const ro = new ResizeObserver(onR);
-          ro.observe(route);
-          routeParticles.observer = ro;
+    // Particules pastel pour les routes SPA
+    let routeBubbles = { ctrl: null, route: null, fixed: false };
+    function startRouteParticles(){
+      try {
+        const route = document.querySelector('.route.active');
+        if (!route) return;
+        const path = route.getAttribute('data-route') || '';
+        const shouldBeFixed = path === '/dashboard' || path === '/';
+        const sameTarget = shouldBeFixed ? routeBubbles.fixed : routeBubbles.route === route;
+        if (routeBubbles.ctrl && sameTarget) return;
+        stopRouteParticles();
+        if (shouldBeFixed) {
+          routeBubbles.ctrl = startViewportBubbles();
+          routeBubbles.fixed = true;
+          routeBubbles.route = null;
+        } else {
+          routeBubbles.ctrl = startElementBubbles(route, { className: 'route-canvas' });
+          routeBubbles.fixed = false;
+          routeBubbles.route = route;
         }
       } catch {}
     }
     function stopRouteParticles(){
-      try {
-        cancelAnimationFrame(routeParticles.raf);
-        routeParticles.raf = 0;
-        if (routeParticles.resize) window.removeEventListener('resize', routeParticles.resize);
-        routeParticles.resize = null;
-        routeParticles.observer?.disconnect();
-        routeParticles.observer = null;
-        routeParticles.cvs?.remove();
-        routeParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, route: null, dpr: 1, observer: null };
-      } catch {}
+      if (routeBubbles.ctrl) {
+        stopBubbles(routeBubbles.ctrl);
+      }
+      routeBubbles = { ctrl: null, route: null, fixed: false };
     }
 
     // Particules autour du logo supérieur (affiché sur les routes hors accueil)
-    let logoParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, el: null, dpr: 1 };
+    let logoBubbles = null;
     function startLogoParticles(){
       try {
         const wrap = document.querySelector('#page-logo .container');
         if (!wrap || wrap.offsetParent === null) return;
-        const cvs = document.createElement('canvas');
-        cvs.className = 'logo-canvas';
-        wrap.prepend(cvs);
-        const width = wrap.clientWidth;
-        const height = wrap.clientHeight;
-        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        cvs.width = Math.floor(width * dpr);
-        cvs.height = Math.floor(height * dpr);
-        const ctx = cvs.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-        const cs = getComputedStyle(document.documentElement);
-        const palette = [
-          cs.getPropertyValue('--orange-soft').trim()||'#ffe1c8',
-          cs.getPropertyValue('--orange').trim()||'#ffcba4',
-          cs.getPropertyValue('--blue-pastel').trim()||'#b7d3ff',
-          '#ffd9e6'
-        ];
-        const W = width, H = height;
-        const area = Math.max(1, W*H);
-        const N = Math.max(6, Math.min(16, Math.round(area/20000)));
-        const parts = [];
-        for (let i=0;i<N;i++){
-          const u = Math.random();
-          const r = u < .5 ? (3 + Math.random()*5) : (u < .85 ? (8 + Math.random()*8) : (16 + Math.random()*12));
-          parts.push({
-            x: Math.random()*W,
-            y: Math.random()*H,
-            r,
-            vx:(Math.random()*.25 - .125),
-            vy:(Math.random()*.25 - .125),
-            hue: palette[Math.floor(Math.random()*palette.length)],
-            alpha:.10 + Math.random()*.20,
-            drift: Math.random()*Math.PI*2,
-            spin:.001 + Math.random()*.003
-          });
-        }
-        logoParticles = { cvs, ctx, parts, raf: 0, lastT: 0, resize: null, el: wrap, dpr };
-        const step = (t)=>{
-          const now = t || performance.now();
-          const dt = logoParticles.lastT ? Math.min(40, now - logoParticles.lastT) : 16;
-          logoParticles.lastT = now;
-          const W = wrap.clientWidth, H = wrap.clientHeight;
-          const dpr = logoParticles.dpr;
-          ctx.setTransform(dpr,0,0,dpr,0,0);
-          ctx.clearRect(0,0,W,H);
-          for (const p of logoParticles.parts){
-            p.drift += p.spin*dt;
-            p.x += p.vx + Math.cos(p.drift)*.04;
-            p.y += p.vy + Math.sin(p.drift)*.04;
-            if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
-            if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
-            ctx.globalAlpha = p.alpha;
-            ctx.fillStyle = p.hue;
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
-          }
-          logoParticles.raf = requestAnimationFrame(step);
-        };
-        logoParticles.raf = requestAnimationFrame(step);
-        const onR = ()=>{
-          const width = wrap.clientWidth;
-          const height = wrap.clientHeight;
-          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-          cvs.width = Math.floor(width * dpr);
-          cvs.height = Math.floor(height * dpr);
-          logoParticles.dpr = dpr;
-          logoParticles.ctx?.setTransform(dpr,0,0,dpr,0,0);
-        };
-        window.addEventListener('resize', onR);
-        logoParticles.resize = onR;
+        if (logoBubbles && logoBubbles.target === wrap) return;
+        stopLogoParticles();
+        logoBubbles = startLogoBubbles(wrap);
       } catch {}
     }
     function stopLogoParticles(){
-      try {
-        cancelAnimationFrame(logoParticles.raf);
-        logoParticles.raf = 0;
-        if (logoParticles.resize) window.removeEventListener('resize', logoParticles.resize);
-        logoParticles.resize = null;
-        logoParticles.cvs?.remove();
-        logoParticles = { cvs: null, ctx: null, parts: [], raf: 0, lastT: 0, resize: null, el: null, dpr: 1 };
-      } catch {}
+      if (!logoBubbles) return;
+      stopBubbles(logoBubbles);
+      logoBubbles = null;
     }
-
     // Particules pour certaines sections de l’accueil (mobile uniquement)
     let sectionParticlesStates = [];
     function startSectionParticles(){
