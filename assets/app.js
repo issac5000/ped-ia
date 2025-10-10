@@ -3962,6 +3962,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         txtChat.placeholder = chatTextPlaceholders[idx] || chatImagePlaceholder;
       }
     };
+    let imageTogglePopTimer = null;
     function setChatMode(mode) {
       const nextMode = mode === chatModes.IMAGE ? chatModes.IMAGE : chatModes.TEXT;
       currentChatMode = nextMode;
@@ -3972,6 +3973,19 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (btnImageMode) {
         btnImageMode.setAttribute('aria-pressed', nextMode === chatModes.IMAGE ? 'true' : 'false');
         btnImageMode.classList.toggle('active', nextMode === chatModes.IMAGE);
+        btnImageMode.classList.toggle('chat-mode-btn--glow', nextMode === chatModes.IMAGE);
+        if (imageTogglePopTimer) {
+          clearTimeout(imageTogglePopTimer);
+          imageTogglePopTimer = null;
+        }
+        if (nextMode === chatModes.IMAGE) {
+          btnImageMode.classList.add('chat-mode-btn--pop');
+          imageTogglePopTimer = setTimeout(() => {
+            btnImageMode?.classList.remove('chat-mode-btn--pop');
+          }, 420);
+        } else {
+          btnImageMode.classList.remove('chat-mode-btn--pop');
+        }
       }
       applyChatPlaceholder();
     }
@@ -4442,22 +4456,22 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         };
         const startStatusSequence = () => {
           statusActive = true;
-          setStatusText('✨ Ton image est en préparation…');
+          setStatusText('🖌️ Votre image est en cours de génération…');
           statusTimers.push(
             setTimeout(() => {
-              if (statusActive) setStatusText('⌛ Ça prend quelques secondes, merci de ta patience 🙏');
+              if (statusActive) setStatusText('⏳ Encore un peu de patience…');
             }, 4000),
           );
           statusTimers.push(
             setTimeout(() => {
-              if (statusActive) setStatusText('🎨 L’IA met les dernières touches à ton illustration…');
+              if (statusActive) setStatusText('🎨 Je rajoute les dernières couches de couleur…');
             }, 8000),
           );
         };
         const showSuccessStatus = () => {
           statusActive = false;
           clearStatusTimers();
-          setStatusText('✅ Ton image est prête !');
+          setStatusText('✨ Voici votre image !');
           hideStatusTimeout = setTimeout(() => {
             if (!statusMessage) return;
             const activeToken = fImage.dataset.runToken;

@@ -3587,6 +3587,49 @@ section[data-route="/ai"] .card-header p{ text-align:center; }
   opacity:.95;
   transform:translate(-1px,-1px) scale(1.25);
 }
+#ai-chat-image-toggle.chat-mode-btn--glow::after{
+  opacity:1;
+  transform:translate(-1px,-1px) scale(1.28);
+  animation:chatModeShimmer 2.1s linear infinite;
+}
+.chat-mode-btn--glow{
+  border-color:rgba(176,200,255,.42) !important;
+  box-shadow:0 18px 42px rgba(58,88,196,.45);
+  animation:chatModeGlowPulse 2.4s ease-in-out infinite;
+}
+.chat-mode-btn--glow::before{
+  opacity:1;
+  transform:scale(1.04);
+}
+.chat-mode-btn--pop{
+  animation:chatModePop .42s ease;
+}
+.chat-mode-btn--glow:disabled{
+  animation:none;
+}
+.chat-mode-btn--glow:disabled::before{
+  opacity:.4;
+}
+.chat-mode-btn--glow.chat-mode-btn--pop{
+  animation:chatModePop .42s ease, chatModeGlowPulse 2.4s ease-in-out infinite;
+}
+@keyframes chatModeGlowPulse{
+  0%,100%{ box-shadow:0 18px 42px rgba(58,88,196,.45); }
+  50%{ box-shadow:0 24px 56px rgba(96,140,255,.6); }
+}
+@keyframes chatModeShimmer{
+  0%{ transform:translate(-3px,-2px) scale(1.1) rotate(0deg); opacity:.9; }
+  25%{ opacity:1; }
+  50%{ transform:translate(-6px,-6px) scale(1.32) rotate(16deg); opacity:.8; }
+  75%{ opacity:1; }
+  100%{ transform:translate(-3px,-2px) scale(1.1) rotate(0deg); opacity:.9; }
+}
+@keyframes chatModePop{
+  0%{ transform:scale(0.88); }
+  40%{ transform:scale(1.08); }
+  70%{ transform:scale(0.97); }
+  100%{ transform:scale(1); }
+}
 .suggestion-cards{
   display:flex;
   gap:10px;
