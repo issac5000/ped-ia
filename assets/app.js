@@ -521,6 +521,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     return isSafari;
   })();
   let authSession = null;
+  let initialAuthResolved = false;
+  let pendingProtectedHash = null;
   let activeProfile = null;
   let dataProxy = null;
   // Conserver la liste des canaux de notifications pour les nettoyer à la déconnexion
@@ -530,6 +532,33 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   let __activePath = null;
   // Observateur d’animations de révélation (initialisé plus tard dans setupScrollAnimations)
   let revealObserver = null;
+  function markInitialAuthResolved() {
+    if (initialAuthResolved) return;
+    initialAuthResolved = true;
+    if (isProfileLoggedIn()) {
+      pendingProtectedHash = null;
+      return;
+    }
+    const currentHash = typeof window !== 'undefined' ? (window.location.hash || '') : '';
+    const currentPath = normalizeRoutePath(currentHash);
+    const pendingPath = pendingProtectedHash ? normalizeRoutePath(pendingProtectedHash) : '';
+    let targetHash = '';
+    if (currentHash && protectedRoutes.has(currentPath)) {
+      targetHash = currentHash;
+    } else if (pendingProtectedHash && protectedRoutes.has(pendingPath)) {
+      targetHash = pendingProtectedHash;
+    }
+    pendingProtectedHash = null;
+    if (!targetHash) return;
+    setTimeout(() => {
+      try {
+        setActiveRoute(targetHash);
+      } catch (err) {
+        console.warn('Failed to re-evaluate route after auth resolution', err);
+      }
+    }, 0);
+  }
+
   const settingsState = {
     user: {},
     privacy: { showStats: true },
@@ -1860,6 +1889,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       }
     } catch (err) {
       console.warn('Initial supabase getSession failed', err);
+    } finally {
+      markInitialAuthResolved();
     }
 
     await domReady;
@@ -1868,6 +1899,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
 
     supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESH_FAILED') {
+        markInitialAuthResolved();
+      }
       authSession = session || null;
       if (session?.user) {
         await ensureProfile(session.user);
@@ -2138,9 +2172,23 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       window.scrollTo(0, 0);
     }
     const authed = isProfileLoggedIn();
+    const fallbackHash = path ? `#${path.startsWith('/') ? path : `/${path}`}` : '#/';
+    const originalHash = typeof hash === 'string' && hash.trim() ? hash : fallbackHash;
+    if (authed) {
+      pendingProtectedHash = null;
+    }
     if (protectedRoutes.has(path) && !authed) {
-      location.hash = '#/login';
-      return;
+      if (!initialAuthResolved) {
+        pendingProtectedHash = originalHash;
+      } else {
+        pendingProtectedHash = null;
+        if ((window?.location?.hash || '') !== '#/login') {
+          location.hash = '#/login';
+        }
+      }
+      if (initialAuthResolved) {
+        return;
+      }
     }
     if ((path === '/login' || path === '/signup') && authed) {
       location.hash = '#/dashboard';
