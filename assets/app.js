@@ -4258,7 +4258,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       container.appendChild(line);
       if (chatShouldAutoScroll) {
         safeScrollTo(container, { top: container.scrollHeight, behavior: 'smooth' });
-        schedulePageScrollToBottom('smooth');
       }
       const span = line.querySelector('.welcome-text');
       if (span) {
@@ -4370,9 +4369,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       });
       if (!list.length) {
         scheduleWelcomeMessage();
-        if (chatShouldAutoScroll || options.forceScroll) {
-          schedulePageScrollToBottom('auto');
-        }
       } else if (options.forceScroll || chatShouldAutoScroll) {
         const behavior = options.forceScroll ? 'auto' : 'smooth';
         safeScrollTo(el, { top: el.scrollHeight, behavior });
