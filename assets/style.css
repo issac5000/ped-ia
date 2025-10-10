@@ -1678,6 +1678,14 @@ body.ped-ia-chat-active .chat-route--fullscreen :where(
   animation:none !important;
 }
 
+body.ped-ia-chat-active .route-canvas-fixed{
+  z-index:0;
+}
+
+body.ped-ia-chat-active .chat-route--fullscreen{
+  z-index:1;
+}
+
 body.ped-ia-chat-active .chat-route--fullscreen :is(
   .chat-child-button:hover,
   .chat-child-button:focus-visible,
