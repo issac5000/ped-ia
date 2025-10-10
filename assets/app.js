@@ -2187,11 +2187,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       startHeroParticles();
       stopLogoParticles();
       if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
-        startRouteParticles();
+        startRouteParticles(path);
         startSectionParticles();
         startCardParticles();
       } else {
-        startRouteParticles();
+        startRouteParticles(path);
         stopCardParticles();
       }
     } else {
@@ -2199,7 +2199,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       stopSectionParticles();
       stopLogoParticles();
       stopCardParticles();
-      startRouteParticles();
+      startRouteParticles(path);
       startLogoParticles();
     }
     __activePath = path;
@@ -2879,12 +2879,76 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
     // Particules pastel pour les routes SPA
     let routeBubbles = { ctrl: null, target: null };
+    const ROUTE_BUBBLE_PRESETS = {
+      '/': {
+        density: 34000,
+        minCount: 28,
+        maxCount: 88,
+        alpha: [0.18, 0.5],
+        smallScreenAlpha: [0.14, 0.42],
+      },
+      '/dashboard': {
+        density: 36000,
+        minCount: 24,
+        maxCount: 80,
+        alpha: [0.16, 0.46],
+        smallScreenAlpha: [0.12, 0.38],
+      },
+      '/ai': {
+        density: 32000,
+        minCount: 28,
+        maxCount: 88,
+        alpha: [0.18, 0.52],
+        smallScreenAlpha: [0.15, 0.44],
+      },
+      '/ped-ia': {
+        density: 30000,
+        minCount: 30,
+        maxCount: 92,
+        alpha: [0.2, 0.54],
+        smallScreenAlpha: [0.16, 0.46],
+      },
+      '/community': {
+        density: 34000,
+        minCount: 26,
+        maxCount: 86,
+        alpha: [0.18, 0.5],
+        smallScreenAlpha: [0.14, 0.42],
+      },
+      '/settings': {
+        density: 38000,
+        minCount: 22,
+        maxCount: 74,
+        alpha: [0.15, 0.44],
+        smallScreenAlpha: [0.12, 0.36],
+      },
+    };
+    const getRouteBubbleOptions = (pathHint) => {
+      let normalized = '/';
+      if (typeof pathHint === 'string' && pathHint.length) {
+        normalized = normalizeRoutePath(pathHint);
+      } else if (typeof __activePath === 'string' && __activePath.length) {
+        normalized = __activePath;
+      } else {
+        try {
+          normalized = normalizeRoutePath(location.hash || '#/');
+        } catch {}
+      }
+      let preset = ROUTE_BUBBLE_PRESETS[normalized] || null;
+      if (!preset && normalized.startsWith('/ai')) {
+        preset = ROUTE_BUBBLE_PRESETS['/ai'];
+      }
+      if (!preset && normalized.startsWith('/ped-ia')) {
+        preset = ROUTE_BUBBLE_PRESETS['/ped-ia'];
+      }
+      return preset ? { ...preset } : null;
+    };
     const getRouteCanvasTarget = () => {
       const host = document.getElementById('ambient-bubbles-root');
       if (host && host.isConnected) return host;
       return document.body;
     };
-    function startRouteParticles(){
+    function startRouteParticles(currentPath){
       try {
         const target = getRouteCanvasTarget();
         if (!target) return;
@@ -2902,7 +2966,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           catch {}
         }
         routeBubbles = { ctrl: null, target };
-        const immediate = startViewportBubbles({ target, onReady: assign });
+        const bubbleOptions = getRouteBubbleOptions(currentPath);
+        const immediate = startViewportBubbles({
+          target,
+          onReady: assign,
+          ...(bubbleOptions || {}),
+        });
         if (immediate) assign(immediate);
       } catch (err) {
         console.warn('Unable to start background bubbles', err);
@@ -2922,11 +2991,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     // Ensure the ambient canvas is present once everything is ready
     (function initializeGlobalRouteParticles(){
       const run = () => {
+        const nextPath = (() => {
+          try { return normalizeRoutePath(location.hash || '#/'); }
+          catch { return '/'; }
+        })();
         try { stopRouteParticles(); } catch {}
         if (typeof requestAnimationFrame === 'function') {
-          requestAnimationFrame(() => startRouteParticles());
+          requestAnimationFrame(() => startRouteParticles(nextPath));
         } else {
-          setTimeout(() => startRouteParticles(), 0);
+          setTimeout(() => startRouteParticles(nextPath), 0);
         }
       };
       if (document.readyState === 'loading') {
@@ -2939,7 +3012,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const ensureHomeRouteParticles = () => {
       const current = normalizeRoutePath(location.hash || '#/');
       if (current === '/') {
-        startRouteParticles();
+        startRouteParticles(current);
       }
     };
     if (document.readyState === 'loading') {
