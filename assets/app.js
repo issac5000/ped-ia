@@ -4694,7 +4694,6 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           fChat.reset();
         }
         const isImageModeSubmission = isChatInImageMode();
-        if (sChat) sChat.textContent = isImageModeSubmission ? 'Génération en cours…' : 'Réflexion en cours…';
         const history = loadChat(child);
         history.push(
           isImageModeSubmission
