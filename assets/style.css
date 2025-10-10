@@ -1655,6 +1655,9 @@ body.ped-ia-chat-active .site-header .container{
   margin-inline:auto;
   padding:0;
 }
+body[data-active-route="/login"] .site-footer{
+  display:none;
+}
 body.ped-ia-chat-active .beta-ticker,
 body.ped-ia-chat-active .site-footer,
 body.ped-ia-chat-active #page-logo{
