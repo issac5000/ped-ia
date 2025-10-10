@@ -3454,6 +3454,24 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const currentUser = store.get(K.user) || {};
       const fullNameRaw = typeof currentUser?.pseudo === 'string' ? currentUser.pseudo.trim() : '';
       const requestBody = fullNameRaw ? { fullName: fullNameRaw } : {};
+      let retries = 0;
+      let hasSession = false;
+      while (retries < 10) {
+        try {
+          const { data } = await supabase.auth.getSession();
+          if (data?.session?.access_token) {
+            hasSession = true;
+            break;
+          }
+        } catch (e) {
+          if (DEBUG_AUTH) console.warn('getSession failed', e);
+        }
+        await new Promise((res) => setTimeout(res, 200));
+        retries++;
+      }
+      if (!hasSession) {
+        console.warn('Anon session not ready after retries');
+      }
       const payload = await callEdgeFunction('profiles-create-anon', { body: requestBody });
       const data = payload?.profile;
       if (!data) {
