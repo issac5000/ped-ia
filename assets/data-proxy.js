@@ -1,6 +1,18 @@
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CHILD_ACTIONS_REQUIRING_ID = new Set(['get', 'growth-status', 'update', 'delete', 'set-primary', 'log-update', 'list-updates', 'add-growth']);
 
+let ensureSupabaseClientRef = null;
+let getSupabaseClientRef = null;
+
+function rememberSupabaseAccessors({ ensureSupabaseClient, getSupabaseClient } = {}) {
+  if (typeof ensureSupabaseClient === 'function') {
+    ensureSupabaseClientRef = ensureSupabaseClient;
+  }
+  if (typeof getSupabaseClient === 'function') {
+    getSupabaseClientRef = getSupabaseClient;
+  }
+}
+
 function normalizeSexValue(raw) {
   if (raw == null || raw === '') return null;
   if (typeof raw === 'number' && Number.isInteger(raw)) {
@@ -47,6 +59,12 @@ function normalizeChildIdValue(value) {
   }
   if (value == null) return '';
   return normalizeChildIdValue(String(value));
+}
+
+function toTrimmedString(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  return String(value).trim();
 }
 
 export function assertValidChildId(value) {
@@ -103,37 +121,42 @@ export function normalizeChildPayloadForSupabase(child = {}) {
 
 export function normalizeAnonChildPayload(action, payload = {}) {
   const base = payload && typeof payload === 'object' ? { ...payload } : {};
+  const requiresId = CHILD_ACTIONS_REQUIRING_ID.has(action);
+  const originalChild = base.child && typeof base.child === 'object' ? { ...base.child } : null;
   if (base.child && typeof base.child === 'object') {
     base.child = normalizeChildPayloadForSupabase(base.child);
   }
-  let candidate = base.child_id ?? base.childId ?? base.id ?? (base.child && base.child.id);
-  if (candidate != null) {
-    const normalized = normalizeChildIdValue(candidate);
-    if (normalized) {
-      base.child_id = normalized;
-    } else if (CHILD_ACTIONS_REQUIRING_ID.has(action)) {
-      throw new Error('child_id manquant ou invalide');
-    } else {
-      delete base.child_id;
-    }
-  } else if (CHILD_ACTIONS_REQUIRING_ID.has(action)) {
-    throw new Error('child_id manquant ou invalide');
+  let candidate = base.child_id ?? base.childId ?? base.id;
+  if (!candidate && originalChild && Object.prototype.hasOwnProperty.call(originalChild, 'id')) {
+    candidate = originalChild.id;
   }
-  if (base.child && typeof base.child === 'object' && Object.prototype.hasOwnProperty.call(base.child, 'id')) {
-    const normalizedChildId = normalizeChildIdValue(base.child.id);
-    if (normalizedChildId) {
-      base.child.id = normalizedChildId;
+  const trimmedCandidate = toTrimmedString(candidate);
+  if (trimmedCandidate) {
+    if (UUID_REGEX.test(trimmedCandidate)) {
+      base.child_id = trimmedCandidate;
     } else {
-      delete base.child.id;
+      base.child_id = trimmedCandidate;
+    }
+  } else if (requiresId) {
+    throw new Error('child_id manquant ou invalide');
+  } else {
+    delete base.child_id;
+  }
+  if (base.child && typeof base.child === 'object') {
+    const normalizedChildId = toTrimmedString(base.child.id);
+    if (!normalizedChildId && base.child_id) {
+      base.child.id = base.child_id;
+    } else if (normalizedChildId && !UUID_REGEX.test(normalizedChildId)) {
+      base.child.id = normalizedChildId;
     }
   }
   if ('childId' in base) delete base.childId;
-  if ('id' in base && (base.id === candidate || typeof base.id === 'string')) {
-    const normalizedInlineId = normalizeChildIdValue(base.id);
-    if (normalizedInlineId) {
-      base.id = normalizedInlineId;
-    } else {
+  if ('id' in base) {
+    const inline = toTrimmedString(base.id);
+    if (!inline) {
       delete base.id;
+    } else {
+      base.id = inline;
     }
   }
   return base;
@@ -152,6 +175,8 @@ export function createDataProxy({
   anonParentRequest,
   anonFamilyRequest,
 } = {}) {
+  rememberSupabaseAccessors({ ensureSupabaseClient, getSupabaseClient });
+
   const getProfile = () => {
     try {
       return typeof getActiveProfile === 'function' ? (getActiveProfile() || null) : null;
@@ -261,16 +286,35 @@ export function createDataProxy({
 // --- Utility shared across Synap’Kids ---
 // Handles fetching a child profile by ID from Supabase
 async function loadChildById(id) {
-  if (!id) return null;
-  if (typeof supabase === 'undefined' || !supabase) {
+  const trimmedId = toTrimmedString(id);
+  if (!trimmedId) return null;
+  const uuid = normalizeChildIdValue(trimmedId);
+  if (!uuid) {
+    console.warn('[loadChildById] Ignoring non-UUID identifier', trimmedId);
+    return null;
+  }
+  try {
+    if (typeof ensureSupabaseClientRef === 'function') {
+      const ok = await ensureSupabaseClientRef();
+      if (!ok) {
+        console.warn('[loadChildById] Supabase client not ready yet');
+        return null;
+      }
+    }
+  } catch (err) {
+    console.warn('[loadChildById] ensureSupabaseClient failed', err);
+    return null;
+  }
+  const client = typeof getSupabaseClientRef === 'function' ? getSupabaseClientRef() : null;
+  if (!client) {
     console.warn('[loadChildById] Supabase client not ready yet');
     return null;
   }
   try {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('children')
       .select('*')
-      .eq('id', id)
+      .eq('id', uuid)
       .single();
     if (error) throw error;
     return data;

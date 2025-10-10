@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const outPath = path.join(__dirname, "../public/assets/supabase-env.json");
+const outPath = path.join(__dirname, "../assets/supabase-env.json");
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";

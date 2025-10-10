@@ -158,24 +158,40 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
   }
   async function withRetry(fn, { retries = 3, timeout = 3000 } = {}) {
+    if (typeof fn !== 'function') {
+      throw new TypeError('withRetry expects a function');
+    }
+    let lastError = null;
     for (let attempt = 1; attempt <= retries; attempt++) {
-      let timerId = null;
+      const supportsAbort = typeof AbortController !== 'undefined';
+      const controller = supportsAbort ? new AbortController() : null;
+      const signal = controller ? controller.signal : null;
+      let timeoutId = null;
+      let timedOut = false;
       try {
-        const result = await Promise.race([
-          Promise.resolve().then(() => fn()),
-          new Promise((_, reject) => {
-            timerId = setTimeout(() => reject(new Error('Timeout')), timeout);
-          }),
-        ]);
-        if (timerId != null) clearTimeout(timerId);
+        if (timeout > 0) {
+          timeoutId = setTimeout(() => {
+            timedOut = true;
+            if (controller) controller.abort();
+          }, timeout);
+        }
+        const result = await Promise.resolve().then(() => fn({ attempt, signal }));
+        if (timeoutId != null) clearTimeout(timeoutId);
         return result;
       } catch (err) {
-        if (timerId != null) clearTimeout(timerId);
-        console.warn(`Retry ${attempt}/${retries} failed`, err);
-        if (attempt === retries) throw err;
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (timeoutId != null) clearTimeout(timeoutId);
+        const error = err instanceof Error ? err : new Error(String(err || 'Unknown error'));
+        if (timedOut && error.name === 'AbortError') {
+          error.name = 'TimeoutError';
+          error.message = error.message || 'Operation timed out';
+        }
+        lastError = error;
+        console.warn(`Retry ${attempt}/${retries} failed`, error);
+        if (attempt === retries) throw lastError;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, timeout || 500)));
       }
     }
+    if (lastError) throw lastError;
     throw new Error('withRetry exhausted without executing function');
   }
   let aiFocusCleanupTimer = null;
@@ -204,10 +220,22 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       aiFocusCleanupTimer = null;
     }, 1600);
   }
-  const aiPageState = { currentChild: null, instance: 0 };
+  const aiPageState = { currentChild: null, instance: 0, scheduleScroll: null };
+
+  function requestAiPageScrollToBottom(behavior = 'auto') {
+    const fn = aiPageState.scheduleScroll;
+    if (typeof fn !== 'function') return;
+    try {
+      fn(behavior);
+    } catch (err) {
+      console.warn('requestAiPageScrollToBottom failed', err);
+    }
+  }
+
   function disposeAIPage(){
     aiPageState.instance += 1;
     aiPageState.currentChild = null;
+    aiPageState.scheduleScroll = null;
     if (typeof pedIAPageScrollTimer !== 'undefined' && pedIAPageScrollTimer) {
       clearInterval(pedIAPageScrollTimer);
       pedIAPageScrollTimer = null;
@@ -526,11 +554,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (supabase) return supabase;
     const loader = startSupabaseBootstrap?.() || null;
     if (!loader) return null;
-    const result = await Promise.race([
-      loader,
-      new Promise((resolve) => setTimeout(() => resolve(null), SUPABASE_INIT_TIMEOUT_MS)),
-    ]);
-    return result || null;
+    try {
+      const result = await Promise.race([
+        loader,
+        new Promise((resolve) => setTimeout(() => resolve(null), SUPABASE_INIT_TIMEOUT_MS)),
+      ]);
+      if (result && supabase) return supabase;
+    } catch (err) {
+      console.warn('ensureSupabaseReady failed', err);
+    }
+    return null;
   }
   if (typeof window !== 'undefined') {
     window.ensureSupabaseReady = ensureSupabaseReady;
@@ -1587,18 +1620,26 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   const EDGE_FUNCTION_BASE_URL = '/api/edge';
 
+  function appendFunctionsSuffix(base) {
+    if (!base) return EDGE_FUNCTION_BASE_URL;
+    const normalized = base.replace(/\/+$/, '');
+    if (/\/functions\/v1$/i.test(normalized)) {
+      return normalized;
+    }
+    return `${normalized}/functions/v1`;
+  }
+
   function resolveEdgeFunctionBase() {
     if (typeof window !== 'undefined') {
       const envUrl = window.__SUPABASE_ENV__?.url;
       if (typeof envUrl === 'string' && envUrl.trim()) {
-        const trimmed = envUrl.trim().replace(/\/+$/, '');
-        if (/\/functions\/v1$/i.test(trimmed)) {
-          return trimmed;
+        const raw = envUrl.trim();
+        if (raw === EDGE_FUNCTION_BASE_URL) {
+          return EDGE_FUNCTION_BASE_URL;
         }
-        if (trimmed === '/api/edge') {
-          return trimmed;
+        if (/^https?:/i.test(raw) || raw.startsWith('/')) {
+          return appendFunctionsSuffix(raw);
         }
-        return `/api/edge`;
       }
     }
     return EDGE_FUNCTION_BASE_URL;
@@ -1649,8 +1690,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
     if (code) {
       normalizedBody.code = code;
+    } else if (typeof normalizedBody.code === 'string' && normalizedBody.code.trim()) {
+      normalizedBody.code = normalizedBody.code.trim().toUpperCase();
+      code = normalizedBody.code;
     }
-    console.log('[Anon Debug] Sending anon code', code || '(none)', 'to', slug);
+    if (!code) {
+      console.warn('[Anon Debug] Missing anon code, aborting request to', slug, normalizedBody);
+      throw new Error('Code unique manquant');
+    }
+    console.log('[Anon Debug] Sending anon code', code, 'to', slug);
     return callEdgeFunction(slug, { ...rest, body: normalizedBody });
   }
 
@@ -1977,24 +2025,27 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   function startSupabaseBootstrap() {
     if (supabase) return Promise.resolve(supabase);
     if (!supabaseInitPromise) {
-      const loader = (async () => {
+      supabaseInitPromise = (async () => {
         try {
           const client = await getSupabaseClient();
-          if (!client) throw new Error('Supabase client unavailable');
-          return await completeSupabaseBootstrap(client);
+          if (!client) {
+            throw new Error('Supabase client unavailable');
+          }
+          await completeSupabaseBootstrap(client);
+          return supabase;
         } catch (error) {
+          supabase = null;
+          supabaseInitPromise = null;
           console.warn('Supabase init failed (env or import)', error);
-          return null;
+          throw error;
         }
       })();
-      supabaseInitPromise = loader.then((result) => {
-        if (!result) {
-          supabaseInitPromise = null;
-        }
-        return result;
-      });
     }
-    return supabaseInitPromise;
+    return supabaseInitPromise.catch((err) => {
+      // Garantit que les appels suivants retenteront l’amorçage
+      supabaseInitPromise = null;
+      throw err;
+    });
   }
 
   startSupabaseBootstrap();
@@ -2241,7 +2292,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } else if (isAiChatRoute) {
       clearAiFocusHighlight();
       setupAIPage(path);
-      schedulePageScrollToBottom('auto');
+      requestAiPageScrollToBottom('auto');
     } else {
       clearAiFocusHighlight();
       disposeAIPage();
@@ -3575,7 +3626,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           loader,
           new Promise((resolve) => setTimeout(() => resolve(null), SUPABASE_INIT_TIMEOUT_MS)),
         ]);
-        if (result) return true;
+        if (result && supabase && typeof supabase.auth === 'object') return true;
       } catch (e) {
         console.warn('ensureSupabaseClient failed', e);
       }
@@ -4216,6 +4267,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           scrollPageToBottom(behavior);
         }
       }, 50);
+    };
+    aiPageState.scheduleScroll = (behavior = 'auto') => {
+      if (!isActiveInstance()) return;
+      schedulePageScrollToBottom(behavior);
     };
     const setChatBubbleText = (node, text) => {
       if (!node) return;
