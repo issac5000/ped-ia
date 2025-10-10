@@ -2061,6 +2061,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     closeMobileNav();
   });
 
+  // Ensure the ambient canvas is present even before the first route activation completes
+  startRouteParticles();
+
   // Forcer en permanence le menu hamburger, quelle que soit la largeur d’écran
   function evaluateHeaderFit(){
     document.body.classList.add('force-mobile');
@@ -2731,18 +2734,23 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let routeBubbles = { ctrl: null, target: null };
     function startRouteParticles(){
       try {
-        const route = document.querySelector('.route.active');
-        if (!route) return;
         const target = document.body;
+        if (!target) return;
         if (routeBubbles.ctrl && routeBubbles.target === target) return;
         stopRouteParticles();
-        routeBubbles.ctrl = startViewportBubbles();
+        routeBubbles.ctrl = startViewportBubbles({ target });
         routeBubbles.target = target;
-      } catch {}
+      } catch (err) {
+        console.warn('Unable to start background bubbles', err);
+      }
     }
     function stopRouteParticles(){
-      if (routeBubbles.ctrl) {
-        stopBubbles(routeBubbles.ctrl);
+      try {
+        if (routeBubbles.ctrl) {
+          stopBubbles(routeBubbles.ctrl);
+        }
+      } catch (err) {
+        console.warn('Unable to stop background bubbles', err);
       }
       routeBubbles = { ctrl: null, target: null };
     }
