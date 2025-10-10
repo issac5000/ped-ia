@@ -7,6 +7,10 @@ try {
   await ensureReactGlobals();
 } catch (err) {
   console.warn('Optional React globals failed to load', err);
+  setTimeout(() => {
+    try { startRouteParticles(); }
+    catch (fallbackErr) { console.warn('Fallback route particles start failed', fallbackErr); }
+  }, 0);
 }
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -749,15 +753,41 @@ async function fetchMissedMessages(){
 
 // Particules pastel sur l’ensemble de la page
 let routeBubbles = null;
-function startRouteParticles(){
-  if (routeBubbles) return;
-  routeBubbles = startViewportBubbles();
+function startRouteParticles(force = false){
+  const assign = (ctrl) => {
+    if (!ctrl) return;
+    routeBubbles = ctrl;
+  };
+  if (routeBubbles && !force) {
+    const canvas = routeBubbles.canvas;
+    if (canvas && canvas.isConnected) return;
+  }
+  if (routeBubbles) {
+    try { stopBubbles(routeBubbles); }
+    catch {}
+    routeBubbles = null;
+  }
+  const immediate = startViewportBubbles({ onReady: assign });
+  if (immediate) assign(immediate);
 }
 function stopRouteParticles(){
   if (!routeBubbles) return;
   stopBubbles(routeBubbles);
   routeBubbles = null;
 }
+
+const ensureRouteParticlesAfterLoad = () => {
+  startRouteParticles(true);
+};
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', ensureRouteParticlesAfterLoad, { once: true });
+} else {
+  queueMicrotask?.(ensureRouteParticlesAfterLoad) ?? setTimeout(ensureRouteParticlesAfterLoad, 0);
+}
+window.addEventListener('load', () => {
+  ensureRouteParticlesAfterLoad();
+  setTimeout(() => startRouteParticles(true), 0);
+});
 
 // Particules autour du logo en haut de page
 let logoBubbles = null;
@@ -788,6 +818,8 @@ function preparePageChrome(){
 
 async function init(){
   try {
+    startRouteParticles();
+    startLogoParticles();
     const ok = await ensureSupabase();
     if (!ok) throw new Error('Supabase indisponible');
     try {
