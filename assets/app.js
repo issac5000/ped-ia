@@ -134,6 +134,29 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       resolve();
     }
   });
+  function setupBetaTickerAutoHide() {
+    const ticker = document.querySelector('.beta-ticker');
+    if (!ticker) return;
+    let hidden = false;
+    function hideTicker() {
+      if (hidden) return;
+      hidden = true;
+      ticker.setAttribute('hidden', '');
+      ticker.classList.add('beta-ticker--hidden');
+      ticker.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('has-beta-ticker');
+      window.removeEventListener('scroll', onScroll);
+    }
+    function onScroll() {
+      if (!hidden && window.scrollY > 0) {
+        hideTicker();
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    if (window.scrollY > 0) {
+      hideTicker();
+    }
+  }
   async function withRetry(fn, { retries = 3, timeout = 3000 } = {}) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       let timerId = null;
@@ -12412,6 +12435,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
   // Initialisation
   function runInitialSpaInitialization() {
+    setupBetaTickerAutoHide();
     bootstrap();
     if (!location.hash) location.hash = '#/';
     setActiveRoute(location.hash);
