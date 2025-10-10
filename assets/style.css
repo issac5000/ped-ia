@@ -59,6 +59,7 @@ html, body{ -ms-overflow-style:none; scrollbar-width:none }
 ::-webkit-scrollbar{ display:none }
 :root{
   --header-height:64px;
+  --beta-ticker-height:28px;
 }
 body{
   margin:0;
@@ -4592,24 +4593,30 @@ section[data-route="/community"] .btn-danger:hover{
   to { transform: rotate(360deg); }
 }
 
+body.has-beta-ticker{
+  padding-top:calc(var(--header-height) + var(--beta-ticker-height));
+}
 /* Beta ticker under hero */
 .beta-ticker{
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100vw;
-  margin-left: calc(50% - 50vw); /* full-bleed */
-  background: #000000;
-  -webkit-backdrop-filter: saturate(140%) blur(6px);
-  backdrop-filter: saturate(140%) blur(6px);
-  color: #ffffff;
-  border: 1px solid rgba(255,255,255,.18);
-  border-top: 0;
-  border-bottom: 0;
-  border-radius: 0; /* coins inférieurs non arrondis */
-  height: 28px;
-  overflow: hidden;
-  margin: 0;
+  position:fixed;
+  top:var(--header-height);
+  left:0;
+  right:0;
+  display:flex;
+  align-items:center;
+  width:100%;
+  background:#000000;
+  -webkit-backdrop-filter:saturate(140%) blur(6px);
+  backdrop-filter:saturate(140%) blur(6px);
+  color:#ffffff;
+  border:1px solid rgba(255,255,255,.18);
+  border-top:0;
+  border-bottom:0;
+  border-radius:0; /* coins inférieurs non arrondis */
+  height:var(--beta-ticker-height);
+  overflow:hidden;
+  margin:0;
+  z-index:95;
 }
 .beta-ticker__track{
   display: flex;
