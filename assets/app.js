@@ -1730,6 +1730,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         authSession = { user };
         await ensureProfile(user);
         await syncUserFromSupabase();
+        ensureLocalProfileFromUser(user);
         await domReady;
         updateHeaderAuth();
         if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
@@ -1748,6 +1749,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (authSession?.user && !isProfileLoggedIn()) {
         await ensureProfile(authSession.user);
         await syncUserFromSupabase();
+        ensureLocalProfileFromUser(authSession.user);
       }
     } catch (err) {
       console.warn('Initial supabase getSession failed', err);
@@ -1758,11 +1760,12 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       location.hash = '#/dashboard';
     }
 
-    supabase.auth.onAuthStateChange(async (_event, session) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
       authSession = session || null;
       if (session?.user) {
         await ensureProfile(session.user);
         await syncUserFromSupabase();
+        ensureLocalProfileFromUser(session.user);
       } else {
         if (!isAnonProfile()) {
           setActiveProfile(null);
@@ -1770,7 +1773,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       }
       await domReady;
       updateHeaderAuth();
-      if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
+      if (event === 'SIGNED_IN' && session?.user) {
+        if (location.hash !== '#/') {
+          location.hash = '#/';
+        } else {
+          setActiveRoute('#/');
+        }
+      } else if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
         location.hash = '#/dashboard';
       } else {
         setActiveRoute(location.hash);
@@ -2768,20 +2777,22 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       try {
         const target = document.body;
         if (!target) return;
-        stopRouteParticles();
-        try {
-          const duplicates = Array.from(target.querySelectorAll('canvas.route-canvas.route-canvas-fixed'));
-          duplicates.forEach(canvas => {
-            if (canvas.isConnected) canvas.remove();
-          });
-        } catch {}
-        routeBubbles.ctrl = startViewportBubbles({ target });
-        if (routeBubbles.ctrl?.canvas) {
-          try {
-            routeBubbles.ctrl.canvas.dataset.managedBySpa = 'true';
-          } catch {}
+        const assign = (ctrl) => {
+          if (!ctrl) return;
+          routeBubbles.ctrl = ctrl;
+          routeBubbles.target = target;
+          if (ctrl.canvas) {
+            try { ctrl.canvas.dataset.managedBySpa = 'true'; }
+            catch {}
+          }
+        };
+        if (routeBubbles.ctrl) {
+          try { stopBubbles(routeBubbles.ctrl); }
+          catch {}
         }
-        routeBubbles.target = target;
+        routeBubbles = { ctrl: null, target };
+        const immediate = startViewportBubbles({ target, onReady: assign });
+        if (immediate) assign(immediate);
       } catch (err) {
         console.warn('Unable to start background bubbles', err);
       }
@@ -2813,6 +2824,22 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         run();
       }
     })();
+
+    const ensureHomeRouteParticles = () => {
+      const current = normalizeRoutePath(location.hash || '#/');
+      if (current === '/') {
+        startRouteParticles();
+      }
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', ensureHomeRouteParticles, { once: true });
+    } else {
+      queueMicrotask?.(ensureHomeRouteParticles) ?? setTimeout(ensureHomeRouteParticles, 0);
+    }
+    window.addEventListener('load', () => {
+      ensureHomeRouteParticles();
+      setTimeout(ensureHomeRouteParticles, 0);
+    }, { once: false });
 
     // Particules autour du logo supérieur (affiché sur les routes hors accueil)
     let logoBubbles = null;
@@ -3150,6 +3177,39 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
   // Garantir l’existence d’une ligne profil pour l’utilisateur authentifié sans écraser son pseudo
+  function buildMinimalProfileFromUser(user) {
+    if (!user || !user.id) return null;
+    const uid = user.id;
+    const fullNameRaw = typeof user.user_metadata?.full_name === 'string'
+      ? user.user_metadata.full_name
+      : '';
+    const email = typeof user.email === 'string' ? user.email : '';
+    const provider = user.app_metadata?.provider
+      || (Array.isArray(user.identities) && user.identities[0]?.provider)
+      || 'google';
+    const fullName = (fullNameRaw || email || '').trim();
+    return {
+      id: uid,
+      user_id: uid,
+      full_name: fullName,
+      email,
+      provider,
+      isAnonymous: false,
+    };
+  }
+
+  function ensureLocalProfileFromUser(user) {
+    const minimal = buildMinimalProfileFromUser(user);
+    if (!minimal) return;
+    const currentId = getActiveProfileId();
+    if (currentId && currentId === minimal.id && isProfileLoggedIn()) return;
+    try {
+      setActiveProfile(minimal);
+    } catch (err) {
+      if (DEBUG_AUTH) console.warn('setActiveProfile fallback failed', err);
+    }
+  }
+
   async function ensureProfile(user){
     try {
       if (!supabase || !user?.id) return null;
@@ -3200,7 +3260,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         .insert(insertPayload)
         .select('*')
         .maybeSingle();
-      if (insertErr) throw insertErr;
+      if (insertErr) {
+        if (insertErr.code === '23505' || /duplicate/i.test(insertErr.message || '')) {
+          console.warn('[Auth Debug] Profile already exists, reusing minimal payload');
+          return { id: uid, user_id: uid, full_name: insertPayload.full_name ?? metaName };
+        }
+        throw insertErr;
+      }
       console.log('[Auth Debug] Profile created', { id: createdProfile?.id, user_id: createdProfile?.user_id });
       return createdProfile;
     } catch (e) {

@@ -203,15 +203,41 @@ window.addEventListener('storage', evt=>{
 
 // Particules pastel douces sur toute la page
 let routeBubbles = null;
-function startRouteParticles(){
-  if (routeBubbles) return;
-  routeBubbles = startViewportBubbles();
+function startRouteParticles(force = false){
+  const assign = (ctrl) => {
+    if (!ctrl) return;
+    routeBubbles = ctrl;
+  };
+  if (routeBubbles && !force) {
+    const canvas = routeBubbles.canvas;
+    if (canvas && canvas.isConnected) return;
+  }
+  if (routeBubbles) {
+    try { stopBubbles(routeBubbles); }
+    catch {}
+    routeBubbles = null;
+  }
+  const immediate = startViewportBubbles({ onReady: assign });
+  if (immediate) assign(immediate);
 }
 function stopRouteParticles(){
   if (!routeBubbles) return;
   stopBubbles(routeBubbles);
   routeBubbles = null;
 }
+
+const ensureRouteParticlesAfterLoad = () => {
+  startRouteParticles(true);
+};
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', ensureRouteParticlesAfterLoad, { once: true });
+} else {
+  queueMicrotask?.(ensureRouteParticlesAfterLoad) ?? setTimeout(ensureRouteParticlesAfterLoad, 0);
+}
+window.addEventListener('load', () => {
+  ensureRouteParticlesAfterLoad();
+  setTimeout(() => startRouteParticles(true), 0);
+});
 
 // Particules autour du logo de page
 let logoBubbles = null;
@@ -237,6 +263,8 @@ async function init(){
   if(yEl) yEl.textContent = new Date().getFullYear();
   const pl = document.getElementById('page-logo');
   if(pl) pl.hidden = false;
+  startRouteParticles();
+  startLogoParticles();
   await initAuth();
   startRouteParticles();
   startLogoParticles();

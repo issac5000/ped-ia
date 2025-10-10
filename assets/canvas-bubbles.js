@@ -185,19 +185,71 @@ function mountBubbleField(options = {}) {
 }
 
 export function startViewportBubbles(options = {}) {
-  return mountBubbleField({
-    dimensionSource: 'viewport',
-    className: 'route-canvas route-canvas-fixed',
-    pointerEvents: 'none',
-    density: 52000,
-    minCount: 14,
-    maxCount: 40,
-    alpha: [0.1, 0.34],
-    smallScreenAlpha: [0.08, 0.32],
-    drift: 0.04,
-    velocity: 0.28,
-    ...options,
-  });
+  const {
+    onReady,
+    maxAttempts: rawMaxAttempts,
+    target: explicitTarget,
+    ...rest
+  } = options || {};
+
+  const target = explicitTarget || document.body || null;
+  const maxAttempts = Math.max(1, rawMaxAttempts == null ? 2 : Number(rawMaxAttempts) || 2);
+  let attempt = 0;
+  let controller = null;
+
+  const ensureFreshCanvas = () => {
+    if (!target?.querySelector) return;
+    try {
+      const existing = target.querySelector('canvas.route-canvas.route-canvas-fixed');
+      if (!existing) return;
+      let ctx = null;
+      try { ctx = existing.getContext('2d'); }
+      catch { ctx = null; }
+      if (!ctx) {
+        existing.remove();
+      }
+    } catch {}
+  };
+
+  const handleReady = (ctrl) => {
+    if (!ctrl) return;
+    controller = ctrl;
+    if (typeof onReady === 'function') {
+      try { onReady(ctrl); }
+      catch (err) { console.warn('startViewportBubbles onReady failed', err); }
+    }
+  };
+
+  const attemptStart = () => {
+    attempt += 1;
+    ensureFreshCanvas();
+    const next = mountBubbleField({
+      target,
+      dimensionSource: 'viewport',
+      className: 'route-canvas route-canvas-fixed',
+      pointerEvents: 'none',
+      density: 52000,
+      minCount: 14,
+      maxCount: 40,
+      alpha: [0.1, 0.34],
+      smallScreenAlpha: [0.08, 0.32],
+      drift: 0.04,
+      velocity: 0.28,
+      ...rest,
+    });
+    if (next) {
+      handleReady(next);
+      return;
+    }
+    if (attempt < maxAttempts) {
+      setTimeout(attemptStart, 300);
+    } else {
+      console.warn('Unable to start background bubbles (no 2D context)');
+    }
+  };
+
+  attemptStart();
+  return controller;
 }
 
 export function startElementBubbles(target, options = {}) {
