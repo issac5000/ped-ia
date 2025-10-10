@@ -264,6 +264,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const key = normalizeRoutePath(section.dataset.route || '/');
     if (!routeSections.has(key)) routeSections.set(key, section);
   });
+  const ROUTE_CANVAS_EXCLUSIONS = new Set(['/login', '/signup']);
+  function shouldDisplayRouteCanvas(path) {
+    if (!path) return true;
+    return !ROUTE_CANVAS_EXCLUSIONS.has(path);
+  }
   let activeRouteEl = document.querySelector('section.route.active') || null;
   const navLinks = new Map();
   const navLinkTargets = new Map();
@@ -2030,6 +2035,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } else {
       setTimeout(setupScrollAnimations, 0);
     }
+    const shouldShowRouteCanvas = shouldDisplayRouteCanvas(path);
     if (path === '/') {
       try { setupNewsletter(); } catch {}
       stopRouteParticles();
@@ -2037,11 +2043,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       startHeroParticles();
       stopLogoParticles();
       if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
-        startRouteParticles();
+        if (shouldShowRouteCanvas) {
+          startRouteParticles();
+        }
         startSectionParticles();
         startCardParticles();
       } else {
-        startRouteParticles();
+        if (shouldShowRouteCanvas) {
+          startRouteParticles();
+        }
         stopCardParticles();
       }
     } else {
@@ -2050,8 +2060,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       stopRouteParticles();
       stopLogoParticles();
       stopCardParticles();
-      startRouteParticles();
-      startLogoParticles();
+      if (shouldShowRouteCanvas) {
+        startRouteParticles();
+        startLogoParticles();
+      }
     }
     __activePath = path;
   }
@@ -2062,7 +2074,16 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   });
 
   // Ensure the ambient canvas is present even before the first route activation completes
-  startRouteParticles();
+  try {
+    const shouldStart = shouldDisplayRouteCanvas(normalizeRoutePath(location.hash || '#/ai'));
+    if (shouldStart) {
+      startRouteParticles();
+    } else {
+      stopRouteParticles();
+    }
+  } catch {
+    startRouteParticles();
+  }
 
   // Forcer en permanence le menu hamburger, quelle que soit la largeur d’écran
   function evaluateHeaderFit(){
@@ -2737,8 +2758,25 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const target = document.body;
         if (!target) return;
         if (routeBubbles.ctrl && routeBubbles.target === target) return;
+        const existing = target.querySelectorAll('.route-canvas-fixed');
+        if (existing.length > 1) {
+          existing.forEach((canvas, index) => {
+            if (index > 0) canvas.remove();
+          });
+        }
+        if (existing.length === 1 && !routeBubbles.ctrl) {
+          const canvas = existing[0];
+          if (!canvas.dataset.managedBySpa) {
+            canvas.remove();
+          }
+        }
         stopRouteParticles();
         routeBubbles.ctrl = startViewportBubbles({ target });
+        if (routeBubbles.ctrl?.canvas) {
+          try {
+            routeBubbles.ctrl.canvas.dataset.managedBySpa = 'true';
+          } catch {}
+        }
         routeBubbles.target = target;
       } catch (err) {
         console.warn('Unable to start background bubbles', err);
