@@ -2010,6 +2010,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } else if (isAiChatRoute) {
       clearAiFocusHighlight();
       setupAIPage(path);
+      schedulePageScrollToBottom('auto');
     } else {
       clearAiFocusHighlight();
       disposeAIPage();
@@ -3904,7 +3905,38 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let txtChat = null;
     let cancelChatTypewriter = null;
     let chatShouldAutoScroll = true;
+    let pedIAPageScrollTimer = null;
     const TYPEWRITER_DELAY_MS = 16;
+    const scrollPageToBottom = (behavior = 'auto') => {
+      try {
+        const target = document.scrollingElement || document.documentElement || document.body;
+        if (!target) return;
+        const top = Math.max(0, target.scrollHeight - target.clientHeight);
+        if (typeof window.scrollTo === 'function') {
+          if (behavior === 'smooth') {
+            window.scrollTo({ top, behavior: 'smooth' });
+          } else {
+            window.scrollTo(0, top);
+          }
+        } else {
+          target.scrollTop = top;
+        }
+      } catch {}
+    };
+    const schedulePageScrollToBottom = (behavior = 'auto') => {
+      if (pedIAPageScrollTimer) {
+        clearTimeout(pedIAPageScrollTimer);
+        pedIAPageScrollTimer = null;
+      }
+      pedIAPageScrollTimer = setTimeout(() => {
+        pedIAPageScrollTimer = null;
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => scrollPageToBottom(behavior));
+        } else {
+          scrollPageToBottom(behavior);
+        }
+      }, 50);
+    };
     const setChatBubbleText = (node, text) => {
       if (!node) return;
       node.innerHTML = '';
