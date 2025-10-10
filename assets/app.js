@@ -3860,7 +3860,24 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     };
     const saveChat = (c, arr) => {
       try {
-        localStorage.setItem(chatKey(c), JSON.stringify(arr.slice(-20)));
+        const MAX_NON_IMAGE_MESSAGES = 20;
+        const keep = [];
+        let nonImageKept = 0;
+        for (let i = arr.length - 1; i >= 0; i -= 1) {
+          const entry = arr[i];
+          if (!entry || typeof entry !== 'object') continue;
+          const isImageResult = entry.type === 'image-result';
+          if (isImageResult) {
+            keep.push(entry);
+            continue;
+          }
+          if (nonImageKept < MAX_NON_IMAGE_MESSAGES) {
+            keep.push(entry);
+            nonImageKept += 1;
+          }
+        }
+        keep.reverse();
+        localStorage.setItem(chatKey(c), JSON.stringify(keep));
       } catch {}
     };
     const autoSendChatSuggestions = true;
