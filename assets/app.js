@@ -3903,6 +3903,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let btnImageMode = null;
     let txtChat = null;
     let cancelChatTypewriter = null;
+    let chatShouldAutoScroll = true;
     const TYPEWRITER_DELAY_MS = 16;
     const setChatBubbleText = (node, text) => {
       if (!node) return;
@@ -3945,7 +3946,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       let timerId = null;
       const renderText = (value) => {
         setChatBubbleText(bubble, value);
-        if (container && container.isConnected) {
+        if (container && container.isConnected && chatShouldAutoScroll) {
           safeScrollTo(container, { top: container.scrollHeight, behavior: 'auto' });
         }
       };
@@ -4218,7 +4219,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           <div class="bubble assistant"><span class="welcome-text"></span></div>
         </div>`;
       container.appendChild(line);
-      safeScrollTo(container, { top: container.scrollHeight, behavior: 'smooth' });
+      if (chatShouldAutoScroll) {
+        safeScrollTo(container, { top: container.scrollHeight, behavior: 'smooth' });
+      }
       const span = line.querySelector('.welcome-text');
       if (span) {
         span.textContent = '';
@@ -4242,6 +4245,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (!isRouteAttached()) return;
       const el = document.getElementById('ai-chat-messages');
       if (!el || !document.body.contains(el)) return;
+      if (!el.dataset.autoScrollBound) {
+        el.addEventListener('scroll', () => {
+          const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+          chatShouldAutoScroll = distanceFromBottom <= 48;
+        });
+        el.dataset.autoScrollBound = '1';
+      }
       const list = Array.isArray(arr) ? arr : [];
       updateChatSuggestions(list);
       if (list.length) removeWelcomeMessage();
@@ -4322,8 +4332,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       });
       if (!list.length) {
         scheduleWelcomeMessage();
-      } else {
-        safeScrollTo(el, { top: el.scrollHeight, behavior: 'smooth' });
+      } else if (options.forceScroll || chatShouldAutoScroll) {
+        safeScrollTo(el, { top: el.scrollHeight, behavior: options.forceScroll ? 'auto' : 'smooth' });
       }
       if (typewriterBubble && typewriterBubble.isConnected) {
         applyChatTypewriter(typewriterBubble, typewriterText, el);
@@ -4659,8 +4669,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           localStorage.removeItem(key);
         } catch {}
         chatFullHistoryCache.delete(key);
+        chatShouldAutoScroll = true;
         removeWelcomeMessage();
-        renderChat([]);
+        renderChat([], { forceScroll: true });
         if (sChat) sChat.textContent = '';
         setChatMode(chatModes.TEXT);
       };
@@ -4701,14 +4712,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
             : { role: 'user', content: q }
         );
         saveChat(child, history);
-        renderChat(history);
+        chatShouldAutoScroll = true;
+        renderChat(history, { forceScroll: true });
 
         if (isImageModeSubmission) {
           document.getElementById('ai-typing')?.remove();
           const pendingEntry = { role: 'assistant', content: '🎨 Je prépare ton image, ça peut prendre quelques secondes...', type: 'image-status' };
           history.push(pendingEntry);
           saveChat(child, history);
-          renderChat(history);
+          renderChat(history, { forceScroll: true });
           if (btnImageMode) btnImageMode.disabled = true;
           try {
             const { imageUrl } = await requestChatImage(q);
@@ -4727,7 +4739,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               alt: q,
             });
             saveChat(child, updatedHistory);
-            renderChat(updatedHistory);
+            renderChat(updatedHistory, { forceScroll: chatShouldAutoScroll });
           } catch (err) {
             const active = getCurrentChild();
             const activeId = active && active.id != null ? String(active.id) : 'anon';
@@ -4744,7 +4756,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
               updatedHistory.push({ role: 'assistant', content: `❌ ${message}`, type: 'image-error' });
             }
             saveChat(child, updatedHistory);
-            renderChat(updatedHistory);
+            renderChat(updatedHistory, { forceScroll: chatShouldAutoScroll });
           } finally {
             if (aiPageState.instance === runId) {
               if (sChat) sChat.textContent = '';
@@ -4764,7 +4776,9 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         typing.innerHTML = '<div class="avatar">🤖</div><div class="message"><div class="bubble assistant"><span class="typing"><span></span><span></span><span></span></span></div></div>';
         if (msgsEl && document.body.contains(msgsEl)) {
           msgsEl.appendChild(typing);
-          safeScrollTo(msgsEl, { top: msgsEl.scrollHeight, behavior: 'smooth' });
+          if (chatShouldAutoScroll) {
+            safeScrollTo(msgsEl, { top: msgsEl.scrollHeight, behavior: 'smooth' });
+          }
         }
         try {
           const sanitizedHistory = history
@@ -4778,7 +4792,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const newH = loadChat(child);
           newH.push({ role: 'assistant', content: resp });
           saveChat(child, newH);
-          renderChat(newH, { animateLatestAssistant: true });
+          renderChat(newH, { animateLatestAssistant: true, forceScroll: chatShouldAutoScroll });
         } catch (err) {
           const active = getCurrentChild();
           const activeId = active && active.id != null ? String(active.id) : 'anon';
@@ -4787,7 +4801,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           const newH = loadChat(child);
           newH.push({ role: 'assistant', content: `[Erreur IA] ${msg}` });
           saveChat(child, newH);
-          renderChat(newH, { animateLatestAssistant: true });
+          renderChat(newH, { animateLatestAssistant: true, forceScroll: chatShouldAutoScroll });
         } finally {
           document.getElementById('ai-typing')?.remove();
           if (aiPageState.instance === runId) {
@@ -4809,7 +4823,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       setCurrentChild(nextChild);
       await renderIndicator(nextChild);
       if (!isActiveInstance()) return;
-      renderChat(loadChat(nextChild));
+      chatShouldAutoScroll = true;
+      renderChat(loadChat(nextChild), { forceScroll: true });
       const outR = document.getElementById('ai-recipes-result');
       if (outR) outR.innerHTML = '';
       const outS = document.getElementById('ai-story-result');
@@ -4970,9 +4985,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       await renderIndicator(child);
       if (!isActiveInstance()) return;
       const history = loadChat(child);
-      renderChat(history);
-      const m = document.getElementById('ai-chat-messages');
-      if (m) safeScrollTo(m, { top: m.scrollHeight, behavior: 'smooth' });
+      chatShouldAutoScroll = true;
+      renderChat(history, { forceScroll: true });
     })();
   }
 
