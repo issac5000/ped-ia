@@ -2186,14 +2186,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       stopSectionParticles();
       startHeroParticles();
       stopLogoParticles();
-      if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
-        startRouteParticles(path);
-        startSectionParticles();
-        startCardParticles();
-      } else {
-        startRouteParticles(path);
-        stopCardParticles();
-      }
+      startRouteParticles(path);
+      stopCardParticles();
     } else {
       stopHeroParticles();
       stopSectionParticles();
