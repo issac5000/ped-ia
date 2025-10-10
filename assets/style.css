@@ -1588,7 +1588,7 @@ input[type="checkbox"]{width:auto}
 .chat-route--fullscreen{
   display:none;
   width:100vw;
-  height:100vh;
+  height:100svh;
   flex-direction:column;
   padding:0;
   box-sizing:border-box;
@@ -1607,10 +1607,8 @@ input[type="checkbox"]{width:auto}
 body.ped-ia-chat-active{
   overflow:hidden;
   background:var(--bg);
-  height:100vh;
-  min-height:100vh;
-  height:100dvh;
-  min-height:100dvh;
+  height:100svh;
+  min-height:100svh;
   padding-top:var(--header-height);
   padding-bottom:env(safe-area-inset-bottom, 0px);
 }
@@ -1620,12 +1618,9 @@ body.ped-ia-chat-active #app{
   margin:0;
   padding:0;
   display:flex;
-  height:calc(100vh - var(--header-height));
-  min-height:calc(100vh - var(--header-height));
-  max-height:calc(100vh - var(--header-height));
-  height:calc(100dvh - var(--header-height));
-  min-height:calc(100dvh - var(--header-height));
-  max-height:calc(100dvh - var(--header-height));
+  height:calc(100svh - var(--header-height));
+  min-height:calc(100svh - var(--header-height));
+  max-height:calc(100svh - var(--header-height));
 }
 body.ped-ia-chat-active main.hero-container{
   width:100vw;
@@ -1634,12 +1629,9 @@ body.ped-ia-chat-active main.hero-container{
   margin:0;
   display:flex;
   flex:1 1 auto;
-  height:calc(100vh - var(--header-height));
-  min-height:calc(100vh - var(--header-height));
-  max-height:calc(100vh - var(--header-height));
-  height:calc(100dvh - var(--header-height));
-  min-height:calc(100dvh - var(--header-height));
-  max-height:calc(100dvh - var(--header-height));
+  height:calc(100svh - var(--header-height));
+  min-height:calc(100svh - var(--header-height));
+  max-height:calc(100svh - var(--header-height));
 }
 body.ped-ia-chat-active main.hero-container .container{
   width:100vw;
@@ -1725,43 +1717,14 @@ body.ped-ia-chat-active .chat-route--fullscreen [data-chat-relocate-reset]{
   opacity:1 !important;
   transition:none !important;
 }
-
-
-@media(max-width:900px){
-  body.ped-ia-chat-active{
-    overflow-y:auto !important;
-    height:auto !important;
-    min-height:calc(100vh + env(safe-area-inset-bottom, 0px)) !important;
-    min-height:calc(100svh + env(safe-area-inset-bottom, 0px)) !important;
-  }
-  body.ped-ia-chat-active #app,
-  body.ped-ia-chat-active main.hero-container,
-  body.ped-ia-chat-active .chat-fullscreen{
-    height:auto !important;
-    min-height:calc(100vh - var(--header-height)) !important;
-    min-height:calc(100svh - var(--header-height)) !important;
-    max-height:none !important;
-  }
-  body.ped-ia-chat-active .chat-route--fullscreen{
-    height:auto !important;
-    min-height:calc(100vh - var(--header-height)) !important;
-    min-height:calc(100svh - var(--header-height)) !important;
-    overflow-y:auto !important;
-  }
-}
-
-
 .chat-fullscreen{
   flex:1 1 auto;
   display:flex;
   flex-direction:column;
   width:100%;
-  height:calc(100vh - var(--header-height));
-  max-height:calc(100vh - var(--header-height));
-  min-height:calc(100vh - var(--header-height));
-  height:calc(100dvh - var(--header-height));
-  max-height:calc(100dvh - var(--header-height));
-  min-height:calc(100dvh - var(--header-height));
+  height:calc(100svh - var(--header-height));
+  max-height:calc(100svh - var(--header-height));
+  min-height:calc(100svh - var(--header-height));
   padding:0;
   gap:0;
   position:relative;
@@ -3014,7 +2977,7 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 .route-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.9; mix-blend-mode:normal}
 .logo-canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; opacity:.8; mix-blend-mode:screen}
 /* Dashboard full-viewport canvas (fixed, no stretch) */
-.route-canvas-fixed{position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:0; opacity:.95; mix-blend-mode:screen}
+.route-canvas-fixed{position:fixed; inset:0; width:100vw; height:100svh; pointer-events:none; z-index:0; opacity:.95; mix-blend-mode:screen}
 
 section[data-route="/"] .section-canvas,
 section[data-route="/"] .route-canvas{
