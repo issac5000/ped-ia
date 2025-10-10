@@ -2812,10 +2812,17 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
           // Remise en circulation quand une particule sort de l’aire
           if (p.x < -20) p.x = W+20; if (p.x > W+20) p.x = -20;
           if (p.y < -20) p.y = H+20; if (p.y > H+20) p.y = -20;
+          const haloAlpha = Math.max(0, Math.min(0.55, p.alpha * 0.65));
+          if (haloAlpha > 0.01) {
+            ctx.globalAlpha = haloAlpha;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 1.7, 0, Math.PI*2); ctx.fill();
+          }
           ctx.globalAlpha = p.alpha;
           ctx.fillStyle = p.hue;
           ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
         }
+        ctx.globalAlpha = 1;
         heroParticlesState.raf = requestAnimationFrame(step);
       };
       cancelAnimationFrame(heroParticlesState.raf);
