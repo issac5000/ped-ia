@@ -2146,7 +2146,7 @@ body.ped-ia-chat-active .chat-card{
 
 /* Forum */
 section[data-route="/community"] #forum-list{display:grid; gap:24px}
-section[data-route="/community"] > .route-canvas{
+[data-active-route="/community"] .route-canvas-fixed{
   mix-blend-mode:screen;
   opacity:.95;
 }
@@ -2974,7 +2974,7 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 .route-canvas-fixed{position:fixed; inset:0; width:100vw; height:100svh; pointer-events:none; z-index:0; opacity:.95; mix-blend-mode:screen}
 
 section[data-route="/"] .section-canvas,
-section[data-route="/"] .route-canvas{
+[data-active-route="/"] .route-canvas-fixed{
   opacity:.45;
 }
 /* On mobile, reduce canvas opacity and disable blend to avoid brightening under glass */
@@ -2986,7 +2986,7 @@ section[data-route="/"] .route-canvas{
       opacity:.7 !important;
       mix-blend-mode: normal !important;
     }
-  section[data-route="/"] > .route-canvas{
+  [data-active-route="/"] .route-canvas-fixed{
     opacity:.08 !important;
   }
   section[data-route="/"] .section-canvas,
@@ -3001,7 +3001,7 @@ section[data-route="/"] .route-canvas{
     display:block !important;
     z-index:1;
   }
-  section[data-route="/"] > .route-canvas,
+  [data-active-route="/"] .route-canvas-fixed,
   section[data-route="/"] .section-canvas,
   section[data-route="/"] .card-canvas{
     z-index:1;
@@ -3198,7 +3198,7 @@ section[data-route="/ai"] .card{
   box-shadow: none !important;
   background: transparent !important;
 }
-section[data-route="/ai"] > .route-canvas{
+[data-active-route="/ai"] .route-canvas-fixed{
   z-index: 1;
   opacity: .45;
 }

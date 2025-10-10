@@ -5,7 +5,7 @@ const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 import { DEV_QUESTIONS } from './questions-dev.js';
 import { ensureReactGlobals } from './react-shim.js';
 import { getSupabaseClient } from './supabase-client.js';
-import { startViewportBubbles, startElementBubbles, startLogoBubbles, stopBubbles } from './canvas-bubbles.js';
+import { startViewportBubbles, startLogoBubbles, stopBubbles } from './canvas-bubbles.js';
 import { createDataProxy, normalizeAnonChildPayload, normalizeChildPayloadForSupabase, assertValidChildId } from './data-proxy.js';
 import { summarizeGrowthStatus } from './ia.js';
 
@@ -1959,6 +1959,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     } else if (!targetSection && activeRouteEl) {
       activeRouteEl.classList.add('active');
     }
+    if (document.body) {
+      try { document.body.dataset.activeRoute = path; }
+      catch { document.body.setAttribute('data-active-route', path); }
+    }
     for (const [href, link] of navLinks) {
       const targetPath = navLinkTargets.get(href);
       link.classList.toggle('active', !!targetPath && targetPath === path);
@@ -2724,32 +2728,23 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   }
 
     // Particules pastel pour les routes SPA
-    let routeBubbles = { ctrl: null, route: null, fixed: false };
+    let routeBubbles = { ctrl: null, target: null };
     function startRouteParticles(){
       try {
         const route = document.querySelector('.route.active');
         if (!route) return;
-        const path = route.getAttribute('data-route') || '';
-        const shouldBeFixed = path === '/dashboard' || path === '/';
-        const sameTarget = shouldBeFixed ? routeBubbles.fixed : routeBubbles.route === route;
-        if (routeBubbles.ctrl && sameTarget) return;
+        const target = document.body;
+        if (routeBubbles.ctrl && routeBubbles.target === target) return;
         stopRouteParticles();
-        if (shouldBeFixed) {
-          routeBubbles.ctrl = startViewportBubbles();
-          routeBubbles.fixed = true;
-          routeBubbles.route = null;
-        } else {
-          routeBubbles.ctrl = startElementBubbles(route, { className: 'route-canvas' });
-          routeBubbles.fixed = false;
-          routeBubbles.route = route;
-        }
+        routeBubbles.ctrl = startViewportBubbles();
+        routeBubbles.target = target;
       } catch {}
     }
     function stopRouteParticles(){
       if (routeBubbles.ctrl) {
         stopBubbles(routeBubbles.ctrl);
       }
-      routeBubbles = { ctrl: null, route: null, fixed: false };
+      routeBubbles = { ctrl: null, target: null };
     }
 
     // Particules autour du logo supérieur (affiché sur les routes hors accueil)
