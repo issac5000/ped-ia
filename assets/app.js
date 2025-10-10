@@ -342,9 +342,69 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   };
   const routes = [
     "/", "/signup", "/login", "/onboarding", "/dashboard",
-    "/community", "/settings", "/about", "/ai", "/contact", "/legal"
+    "/community", "/settings", "/about", "/ai", "/contact", "/legal", "/auth-callback"
   ];
   const protectedRoutes = new Set(['/dashboard','/community','/ai','/settings','/onboarding','/ped-ia']);
+  const OAUTH_RETURN_KEY = 'pedia_oauth_return_to';
+
+  function sanitizeReturnHash(hash) {
+    if (typeof hash !== 'string') return '#/dashboard';
+    const trimmed = hash.trim();
+    if (!trimmed || trimmed === '#') return '#/dashboard';
+    if (trimmed === '#/login' || trimmed === '#/signup') return '#/dashboard';
+    if (!trimmed.startsWith('#/')) return '#/dashboard';
+    return trimmed;
+  }
+
+  function rememberOAuthReturn(hash) {
+    const target = sanitizeReturnHash(hash);
+    try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(OAUTH_RETURN_KEY, target); } catch {}
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(OAUTH_RETURN_KEY, target); } catch {}
+    return target;
+  }
+
+  function consumeOAuthReturnTarget() {
+    let value = null;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        value = sessionStorage.getItem(OAUTH_RETURN_KEY) || null;
+        if (value) sessionStorage.removeItem(OAUTH_RETURN_KEY);
+      }
+    } catch {}
+    if (!value) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          value = localStorage.getItem(OAUTH_RETURN_KEY) || null;
+          if (value) localStorage.removeItem(OAUTH_RETURN_KEY);
+        }
+      } catch {}
+    }
+    if (!value) return null;
+    return sanitizeReturnHash(value);
+  }
+
+  function applyPostAuthRedirect(defaultHash = '#/dashboard') {
+    const stored = consumeOAuthReturnTarget();
+    const fallback = sanitizeReturnHash(defaultHash);
+    if (stored) {
+      if (location.hash !== stored) {
+        location.hash = stored;
+      } else {
+        setActiveRoute(stored);
+      }
+      return true;
+    }
+    const current = location.hash;
+    if (!current || current === '#' || current === '#/login' || current === '#/signup') {
+      if (current !== fallback) {
+        location.hash = fallback;
+      } else {
+        setActiveRoute(fallback);
+      }
+      return true;
+    }
+    return false;
+  }
   // Clés utilisées pour le stockage local du modèle de données
   const K = {
     user: 'pedia_user',
@@ -1711,14 +1771,29 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     // Cas robuste : si Google renvoie ?code dans l’URL, on échange immédiatement contre une session
     try {
       const urlNow = new URL(window.location.href);
-      if (urlNow.searchParams.get('code')) {
-        const cleanUrl = window.location.origin + urlNow.pathname + urlNow.search;
-        const { error: xErr } = await supabase.auth.exchangeCodeForSession(cleanUrl);
+      const hashQuery = parseHashQuery(window.location.hash || '');
+      let exchangeUrl = null;
+      let cleanup = null;
+      if (hashQuery?.get('code')) {
+        const params = hashQuery.toString();
+        exchangeUrl = `${urlNow.origin}${urlNow.pathname}?${params}`;
+        cleanup = () => {
+          const baseHash = (window.location.hash || '').split('?')[0] || '#/auth-callback';
+          history.replaceState({}, '', `${urlNow.origin}${urlNow.pathname}${baseHash}`);
+        };
+      } else if (urlNow.searchParams.get('code')) {
+        exchangeUrl = urlNow.origin + urlNow.pathname + urlNow.search;
+        cleanup = () => {
+          urlNow.search = '';
+          history.replaceState({}, '', urlNow.toString());
+        };
+      }
+      if (exchangeUrl) {
+        const { error: xErr } = await supabase.auth.exchangeCodeForSession(exchangeUrl);
         if (xErr) {
           console.warn('exchangeCodeForSession error', xErr);
         }
-        urlNow.search = '';
-        history.replaceState({}, '', urlNow.toString());
+        try { cleanup?.(); } catch {}
       }
     } catch (e) {
       console.warn('exchangeCodeForSession failed', e);
@@ -1733,9 +1808,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         ensureLocalProfileFromUser(user);
         await domReady;
         updateHeaderAuth();
-        if (!location.hash || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup') {
-          location.hash = '#/dashboard';
-        } else {
+        if (!applyPostAuthRedirect()) {
           setActiveRoute(location.hash);
         }
       }
@@ -1756,8 +1829,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
 
     await domReady;
-    if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
-      location.hash = '#/dashboard';
+    if (isProfileLoggedIn()) {
+      applyPostAuthRedirect();
     }
 
     supabase.auth.onAuthStateChange(async (event, session) => {
@@ -1774,9 +1847,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       await domReady;
       updateHeaderAuth();
       if (event === 'SIGNED_IN' && session?.user) {
-        if (location.hash !== '#/') {
-          location.hash = '#/';
-        } else {
+        if (!applyPostAuthRedirect()) {
           setActiveRoute('#/');
         }
       } else if (isProfileLoggedIn() && (location.hash === '' || location.hash === '#' || location.hash === '#/login' || location.hash === '#/signup')) {
@@ -2025,7 +2096,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     relocateChatCardForRoute(path);
     try {
       const pl = document.getElementById('page-logo');
-      if (pl) pl.hidden = (path === '/' || path === '' || path === '/ped-ia');
+      if (pl) pl.hidden = (path === '/' || path === '' || path === '/ped-ia' || path === '/auth-callback');
     } catch {}
     updateHeaderAuth();
     const previousPath = (typeof __activePath === 'string' && __activePath.length > 0) ? __activePath : null;
@@ -2773,9 +2844,14 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
 
     // Particules pastel pour les routes SPA
     let routeBubbles = { ctrl: null, target: null };
+    const getRouteCanvasTarget = () => {
+      const host = document.getElementById('ambient-bubbles-root');
+      if (host && host.isConnected) return host;
+      return document.body;
+    };
     function startRouteParticles(){
       try {
-        const target = document.body;
+        const target = getRouteCanvasTarget();
         if (!target) return;
         const assign = (ctrl) => {
           if (!ctrl) return;
@@ -3333,11 +3409,24 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     }
 
   async function signInGoogle(){
+    const currentHash = location.hash;
+    rememberOAuthReturn(currentHash);
     try {
       const ok = await ensureSupabaseClient();
       if (!ok) throw new Error('Supabase indisponible');
-      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
-    } catch (e) { alert('Connexion Google indisponible'); }
+      const baseOrigin = (location.origin || '').replace(/\/$/, '');
+      const redirectTo = `${baseOrigin}/#/auth-callback`;
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+    } catch (e) {
+      alert('Connexion Google indisponible');
+      throw e;
+    }
   }
   async function createAnonymousProfile() {
     const status = $('#anon-create-status');
@@ -3467,7 +3556,15 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       if (t.dataset.busy === '1') return;
       t.dataset.busy = '1';
       t.setAttribute('aria-disabled','true');
-      signInGoogle();
+      t.disabled = true;
+      const release = () => {
+        delete t.dataset.busy;
+        t.removeAttribute('aria-disabled');
+        t.disabled = false;
+      };
+      signInGoogle().catch(() => {
+        release();
+      });
     }
   });
   $('#btn-create-anon')?.addEventListener('click', (e) => {

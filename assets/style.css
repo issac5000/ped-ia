@@ -70,6 +70,7 @@ body{
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
 }
+#ambient-bubbles-root{position:fixed; inset:0; pointer-events:none; z-index:0;}
 /* Ensure images never overflow containers on small screens */
 img{max-width:100%; height:auto}
 section{opacity:.8}
@@ -3011,6 +3012,9 @@ section[data-route="/"] .section-canvas,
 #app{position:relative; z-index:3}
 .site-footer{position:relative; z-index:1}
 .route.active{ display:block !important }
+.auth-callback-route{display:grid; place-items:center; text-align:center; gap:16px; min-height:50vh;}
+.auth-callback-route .page-header{margin-bottom:0;}
+.auth-callback-route .page-subtitle{max-width:460px;}
 .section.alt{background:transparent; border-top:none; border-bottom:none}
 .section-title{margin:0 0 8px; font-size:clamp(24px, 3.4vw, 32px); text-align:center; font-weight:800}
 .section-subtitle{margin:0 0 24px; color:var(--muted); text-align:center}
