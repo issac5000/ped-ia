@@ -707,12 +707,19 @@
             </div>
           </div>
 
-          <div class="card stack">
-            <div class="card-header">
-              <h3>Générateur d’histoires personnalisées</h3>
-              <p class="muted">Des histoires courtes adaptées à l’âge, au prénom et aux centres d’intérêt de l’enfant.</p>
+          <div class="card stack ai-feature" data-ai-feature="story">
+            <div class="ai-feature__header">
+              <span class="ai-feature__icon" aria-hidden="true">📖</span>
+              <div class="ai-feature__intro">
+                <h3 class="ai-feature__title">Histoires personnalisées</h3>
+                <p class="ai-feature__subtitle">Des histoires courtes adaptées à l’âge, au prénom et aux centres d’intérêt de l’enfant pour nourrir le rituel du soir.</p>
+              </div>
             </div>
-            <form id="form-ai-story" class="form-grid">
+            <ul class="ai-feature__highlights">
+              <li><strong>Mode rituel apaisant :</strong> Activez le mode dodo pour une narration toute douce et rassurante.</li>
+              <li><strong>Profils synchronisés :</strong> Prénom, âge et passions sont repris automatiquement depuis votre carnet.</li>
+            </ul>
+            <form id="form-ai-story" class="form-grid ai-feature__form">
               <label>Thème (optionnel)
                 <input type="text" name="theme" placeholder="Ex: animaux, espace, pirates…" />
               </label>
@@ -727,47 +734,61 @@
                 <input type="checkbox" name="sleepy" />
                 <span>Mode dodo (apaisant)</span>
               </label>
-              <div class="hstack">
+              <div class="hstack ai-feature__actions">
                 <button class="btn btn-primary" type="submit">Générer l’histoire</button>
-                <span id="ai-story-status" class="muted"></span>
+                <span id="ai-story-status" class="ai-feature__status muted" role="status" aria-live="polite"></span>
               </div>
             </form>
-            <div id="ai-story-result" class="card"></div>
+            <div id="ai-story-result" class="ai-feature__panel" role="status" aria-live="polite"></div>
           </div>
 
-          <div class="card stack">
-            <div class="card-header">
-              <h3>Recettes personnalisées</h3>
-              <p class="muted">Propositions adaptées à l’âge, aux allergies et aux préférences (issues de votre profil et de celui de l’enfant).</p>
+          <div class="card stack ai-feature" data-ai-feature="recipes">
+            <div class="ai-feature__header">
+              <span class="ai-feature__icon" aria-hidden="true">🥗</span>
+              <div class="ai-feature__intro">
+                <h3 class="ai-feature__title">Recettes intelligentes</h3>
+                <p class="ai-feature__subtitle">Des menus adaptés à l’âge, aux allergies et aux préférences renseignées pour chaque enfant.</p>
+              </div>
             </div>
-            <form id="form-ai-recipes" class="form-grid">
+            <ul class="ai-feature__highlights">
+              <li><strong>Repères nutritionnels :</strong> Les suggestions suivent les étapes de diversification adaptées à l’âge.</li>
+              <li><strong>Contraintes respectées :</strong> Allergies et préférences sont prises en compte sans devoir tout ressaisir.</li>
+            </ul>
+            <form id="form-ai-recipes" class="form-grid ai-feature__form">
               <label>Préférences / contraintes (optionnel)
                 <input type="text" name="prefs" placeholder="Ex: végétarien, sans gluten, sans lait…" />
               </label>
-              <div class="hstack">
+              <div class="hstack ai-feature__actions">
                 <button class="btn btn-primary" type="submit">Générer des recettes</button>
                 <a class="btn btn-secondary" href="#/onboarding">Mettre à jour allergies</a>
-                <span id="ai-recipes-status" class="muted"></span>
+                <span id="ai-recipes-status" class="ai-feature__status muted" role="status" aria-live="polite"></span>
               </div>
             </form>
-            <div id="ai-recipes-result" class="card"></div>
+            <div id="ai-recipes-result" class="ai-feature__panel" role="status" aria-live="polite"></div>
           </div>
 
-          <div class="card stack ai-image-card">
-            <div class="card-header">
-              <h3>Générateur d’images</h3>
-              <p class="muted">Donnez vie à l’imagination de votre enfant ! Décrivez une scène que votre enfant souhaite explorer et notre IA en fera une illustration joyeuse et adaptée.</p>
+          <div class="card stack ai-feature ai-image-card ai-feature--image" data-ai-feature="images">
+            <div class="ai-feature__header">
+              <span class="ai-feature__icon" aria-hidden="true">🎨</span>
+              <div class="ai-feature__intro">
+                <h3 class="ai-feature__title">Studio d’illustrations</h3>
+                <p class="ai-feature__subtitle">Décrivez une scène et l’IA crée une image lumineuse, positive et adaptée aux tout-petits.</p>
+              </div>
             </div>
-            <form id="form-ai-image" class="form-grid ai-image-form">
+            <ul class="ai-feature__highlights">
+              <li><strong>Univers bienveillants :</strong> Les visuels restent colorés, doux et pensés pour rassurer votre enfant.</li>
+              <li><strong>Partage immédiat :</strong> Téléchargez ou montrez l’image pour prolonger l’histoire ensemble.</li>
+            </ul>
+            <form id="form-ai-image" class="form-grid ai-image-form ai-feature__form">
               <label>Décrivez la scène souhaitée
                 <textarea name="prompt" rows="3" placeholder="Ex : Un dragon gentil qui apprend à compter avec des nuages colorés" required></textarea>
               </label>
-              <div class="hstack">
+              <div class="hstack ai-feature__actions">
                 <button class="btn btn-primary" type="submit">Générer</button>
-                <span id="ai-image-status" class="muted"></span>
+                <span id="ai-image-status" class="ai-feature__status muted" role="status" aria-live="polite"></span>
               </div>
             </form>
-            <div id="ai-image-feedback" class="ai-image-feedback">
+            <div id="ai-image-feedback" class="ai-image-feedback ai-feature__panel ai-feature__panel--centered">
               <div id="ai-image-spinner" class="ai-image-spinner" hidden>
                 <div class="ai-image-spinner-core"></div>
               </div>
