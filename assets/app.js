@@ -3822,6 +3822,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     const route = document.querySelector(`section[data-route="${routePath}"]`);
     if (!route) return;
     const instanceId = ++aiPageState.instance;
+    const shouldAutoScrollPage = routePath === '/ped-ia';
     aiPageState.currentChild = null;
 
     function resolveParentProfile() {
@@ -4108,6 +4109,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     pedIAPageScrollTimer = null;
     const TYPEWRITER_DELAY_MS = 16;
     const scrollPageToBottom = (behavior = 'auto') => {
+      if (!shouldAutoScrollPage) return;
       try {
         const target = document.scrollingElement || document.documentElement || document.body;
         if (!target) return;
@@ -4124,6 +4126,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       } catch {}
     };
     const schedulePageScrollToBottom = (behavior = 'auto') => {
+      if (!shouldAutoScrollPage) {
+        if (pedIAPageScrollTimer) {
+          clearTimeout(pedIAPageScrollTimer);
+          pedIAPageScrollTimer = null;
+        }
+        return;
+      }
       if (pedIAPageScrollTimer) {
         clearTimeout(pedIAPageScrollTimer);
         pedIAPageScrollTimer = null;
