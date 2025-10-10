@@ -1605,7 +1605,7 @@ input[type="checkbox"]{width:auto}
 }
 
 body.ped-ia-chat-active{
-  overflow:hidden;
+  overflow:auto;
   background:var(--bg);
   height:100svh;
   min-height:100svh;
