@@ -295,7 +295,10 @@ export function createDataProxy({
 // Handles fetching a child profile by ID from Supabase
 async function loadChildById(id) {
   const trimmedId = toTrimmedString(id);
-  if (!trimmedId) return null;
+  if (!trimmedId || trimmedId.startsWith('demo-')) {
+    console.warn('[Anon skip] loadChildById sans id valide');
+    return null;
+  }
   const uuid = normalizeChildIdValue(trimmedId);
   if (!uuid) {
     console.warn('[loadChildById] Ignoring non-UUID identifier', trimmedId);
@@ -305,7 +308,12 @@ async function loadChildById(id) {
     if (typeof ensureSupabaseClientRef === 'function') {
       const ok = await ensureSupabaseClientRef();
       if (!ok) {
-        console.warn('[loadChildById] Supabase client not ready yet');
+        console.warn('[loadChildById] Supabase client not ready yet (retrying later)');
+        if (typeof setTimeout === 'function') {
+          setTimeout(() => {
+            try { loadChildById(id); } catch {}
+          }, 1000);
+        }
         return null;
       }
     }
@@ -315,7 +323,12 @@ async function loadChildById(id) {
   }
   const client = typeof getSupabaseClientRef === 'function' ? getSupabaseClientRef() : null;
   if (!client) {
-    console.warn('[loadChildById] Supabase client not ready yet');
+    console.warn('[loadChildById] Supabase client not ready yet (retrying later)');
+    if (typeof setTimeout === 'function') {
+      setTimeout(() => {
+        try { loadChildById(id); } catch {}
+      }, 1000);
+    }
     return null;
   }
   try {

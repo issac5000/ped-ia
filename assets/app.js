@@ -4315,7 +4315,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         setChatBubbleText(bubble, value);
         if (container && container.isConnected && chatShouldAutoScroll) {
           safeScrollTo(container, { top: container.scrollHeight, behavior: 'auto' });
-          schedulePageScrollToBottom('auto');
+          requestAiPageScrollToBottom('auto');
         }
       };
       const cleanup = () => {
