@@ -2733,9 +2733,11 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       const routePath = route.getAttribute('data-route') || '';
       const isDashboard = routePath === '/dashboard';
       const isHome = routePath === '/';
+      const isFullscreenChat = routePath === '/ped-ia';
+      const useFixedCanvas = isDashboard || isHome || isFullscreenChat;
       const cvs = document.createElement('canvas');
       // Dashboard : canvas fixe plein écran pour recouvrir toute la page
-      if (isDashboard || isHome) {
+      if (useFixedCanvas) {
         cvs.className = 'route-canvas route-canvas-fixed';
         // Empêche le canvas de bloquer les éléments d’interface
         cvs.style.pointerEvents = 'none';
@@ -2745,8 +2747,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         cvs.style.pointerEvents = 'none';
         route.prepend(cvs);
       }
-      const width = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
-      const height = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
+      const width = useFixedCanvas ? window.innerWidth : route.clientWidth;
+      const height = useFixedCanvas ? window.innerHeight : route.scrollHeight;
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       cvs.width = Math.floor(width * dpr);
       cvs.height = Math.floor(height * dpr);
@@ -2784,8 +2786,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         const now = t || performance.now();
         const dt = routeParticles.lastT ? Math.min(40, now - routeParticles.lastT) : 16;
         routeParticles.lastT = now;
-        const W = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
-        const H = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
+        const W = useFixedCanvas ? window.innerWidth : route.clientWidth;
+        const H = useFixedCanvas ? window.innerHeight : route.scrollHeight;
         const dpr = routeParticles.dpr;
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,W,H);
@@ -2803,8 +2805,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         };
         routeParticles.raf = requestAnimationFrame(step);
       const onR = ()=>{
-        const width = (isDashboard || isHome) ? window.innerWidth : route.clientWidth;
-        const height = (isDashboard || isHome) ? window.innerHeight : route.scrollHeight;
+        const width = useFixedCanvas ? window.innerWidth : route.clientWidth;
+        const height = useFixedCanvas ? window.innerHeight : route.scrollHeight;
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         cvs.width = Math.floor(width * dpr);
         cvs.height = Math.floor(height * dpr);
@@ -2813,7 +2815,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       };
         window.addEventListener('resize', onR);
         routeParticles.resize = onR;
-        if (!isDashboard && window.ResizeObserver) {
+        if (!useFixedCanvas && window.ResizeObserver) {
           const ro = new ResizeObserver(onR);
           ro.observe(route);
           routeParticles.observer = ro;
