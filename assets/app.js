@@ -5595,6 +5595,61 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     if (!baseSnapshot.user.role) baseSnapshot.user.role = 'maman';
 
     const remoteEnabled = useRemote();
+    const candidateChildId = settingsState.selectedChildId
+      || storedUser.primaryChildId
+      || (storedChildren[0]?.id ?? null);
+    const activeChildId = candidateChildId != null ? String(candidateChildId).trim() : '';
+
+    if (remoteEnabled && activeChildId) {
+      const existingChild = typeof window !== 'undefined' ? window.activeChildData : null;
+      const existingId = existingChild && existingChild.id != null ? String(existingChild.id) : '';
+      if (!existingId || existingId !== activeChildId) {
+        if (typeof window !== 'undefined') {
+          window.activeChildData = null;
+        }
+        try {
+          const rawChild = await loadChildById(activeChildId);
+          if (rawChild) {
+            const normalizedChild = rawChild.firstName ? rawChild : mapRowToChild(rawChild);
+            if (normalizedChild) {
+              const clonedChild = cloneChildForSettings(normalizedChild);
+              if (typeof window !== 'undefined') {
+                window.activeChildData = { ...rawChild, ...clonedChild };
+              }
+              const logName = rawChild?.full_name || rawChild?.prenom || normalizedChild?.firstName || '';
+              console.log('[Settings preload] Données enfant chargées:', logName);
+            } else {
+              console.warn('[Settings preload] Normalisation impossible pour', activeChildId);
+            }
+          } else {
+            console.warn('[Settings preload] Aucun enfant trouvé pour', activeChildId);
+          }
+        } catch (err) {
+          console.error('[Settings preload] Échec du chargement enfant', err);
+        }
+      }
+    }
+
+    const activeChildData = (typeof window !== 'undefined' ? window.activeChildData : null) || null;
+    if (remoteEnabled && activeChildId && activeChildData && String(activeChildData.id ?? '') === activeChildId) {
+      const normalizedPreload = activeChildData.firstName ? activeChildData : mapRowToChild(activeChildData);
+      if (normalizedPreload) {
+        const clonedPreload = cloneChildForSettings(normalizedPreload);
+        const existingChildren = Array.isArray(baseSnapshot.children) ? baseSnapshot.children : [];
+        const nextChildren = existingChildren.slice();
+        const targetIndex = nextChildren.findIndex((entry) => String(entry?.id) === activeChildId);
+        const mergedChild = { ...clonedPreload };
+        if (targetIndex >= 0) {
+          nextChildren[targetIndex] = { ...nextChildren[targetIndex], ...mergedChild };
+        } else {
+          nextChildren.push(mergedChild);
+        }
+        baseSnapshot.children = nextChildren;
+        if (baseSnapshot.primaryId == null && mergedChild.id != null) {
+          baseSnapshot.primaryId = mergedChild.id;
+        }
+      }
+    }
 
     await applySettingsSnapshot(baseSnapshot, {
       rid,
