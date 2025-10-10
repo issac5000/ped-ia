@@ -3851,33 +3851,41 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     };
 
     const chatKey = (c) => `pedia_ai_chat_${c?.id || 'anon'}`;
+    const chatFullHistoryCache = new Map();
+    const cloneChatEntry = (entry) => {
+      if (!entry || typeof entry !== 'object') return entry;
+      const copy = { ...entry };
+      if (entry && typeof entry.content === 'string') copy.content = entry.content;
+      if (entry && typeof entry.imageUrl === 'string') copy.imageUrl = entry.imageUrl;
+      if (entry && typeof entry.alt === 'string') copy.alt = entry.alt;
+      return copy;
+    };
+    const getCachedChat = (key) => {
+      const cached = chatFullHistoryCache.get(key);
+      return cached ? cached.map(cloneChatEntry) : null;
+    };
+    const setCachedChat = (key, arr) => {
+      chatFullHistoryCache.set(key, arr.map(cloneChatEntry));
+    };
     const loadChat = (c) => {
+      const key = chatKey(c);
+      const cached = getCachedChat(key);
+      if (cached) return cached;
       try {
-        return JSON.parse(localStorage.getItem(chatKey(c)) || '[]');
+        const stored = localStorage.getItem(key) || '[]';
+        const parsed = JSON.parse(stored);
+        const arr = Array.isArray(parsed) ? parsed : [];
+        setCachedChat(key, arr);
+        return arr.map(cloneChatEntry);
       } catch {
         return [];
       }
     };
     const saveChat = (c, arr) => {
+      const key = chatKey(c);
+      setCachedChat(key, arr);
       try {
-        const MAX_NON_IMAGE_MESSAGES = 20;
-        const keep = [];
-        let nonImageKept = 0;
-        for (let i = arr.length - 1; i >= 0; i -= 1) {
-          const entry = arr[i];
-          if (!entry || typeof entry !== 'object') continue;
-          const isImageResult = entry.type === 'image-result';
-          if (isImageResult) {
-            keep.push(entry);
-            continue;
-          }
-          if (nonImageKept < MAX_NON_IMAGE_MESSAGES) {
-            keep.push(entry);
-            nonImageKept += 1;
-          }
-        }
-        keep.reverse();
-        localStorage.setItem(chatKey(c), JSON.stringify(keep));
+        localStorage.setItem(key, JSON.stringify(arr.slice(-20)));
       } catch {}
     };
     const autoSendChatSuggestions = true;
@@ -4650,6 +4658,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         try {
           localStorage.removeItem(key);
         } catch {}
+        chatFullHistoryCache.delete(key);
         removeWelcomeMessage();
         renderChat([]);
         if (sChat) sChat.textContent = '';
