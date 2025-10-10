@@ -71,7 +71,15 @@ body{
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
 }
-#ambient-bubbles-root{position:fixed; inset:0; pointer-events:none; z-index:0;}
+#ambient-bubbles-root{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:6;
+  opacity:.42;
+  transition:opacity .3s ease;
+}
+[data-active-route="/"] #ambient-bubbles-root{opacity:.58;}
 /* Ensure images never overflow containers on small screens */
 img{max-width:100%; height:auto}
 section{opacity:.8}
@@ -2977,7 +2985,7 @@ section[data-route="/"] > :nth-child(odd of .section)::before{
 
 section[data-route="/"] .section-canvas,
 [data-active-route="/"] .route-canvas-fixed{
-  opacity:.45;
+  opacity:.62;
 }
 /* On mobile, reduce canvas opacity and disable blend to avoid brightening under glass */
 @media(max-width:900px){
