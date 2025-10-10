@@ -176,6 +176,10 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   function disposeAIPage(){
     aiPageState.instance += 1;
     aiPageState.currentChild = null;
+    if (pedIAPageScrollTimer) {
+      clearTimeout(pedIAPageScrollTimer);
+      pedIAPageScrollTimer = null;
+    }
     try {
       const chatInput = document.querySelector('[data-chat-card] textarea[name="q"]');
       if (chatInput && chatInput._aiPlaceholderInterval) {
@@ -3980,6 +3984,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
         setChatBubbleText(bubble, value);
         if (container && container.isConnected && chatShouldAutoScroll) {
           safeScrollTo(container, { top: container.scrollHeight, behavior: 'auto' });
+          schedulePageScrollToBottom('auto');
         }
       };
       const cleanup = () => {
@@ -4253,6 +4258,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       container.appendChild(line);
       if (chatShouldAutoScroll) {
         safeScrollTo(container, { top: container.scrollHeight, behavior: 'smooth' });
+        schedulePageScrollToBottom('smooth');
       }
       const span = line.querySelector('.welcome-text');
       if (span) {
@@ -4364,8 +4370,13 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
       });
       if (!list.length) {
         scheduleWelcomeMessage();
+        if (chatShouldAutoScroll || options.forceScroll) {
+          schedulePageScrollToBottom('auto');
+        }
       } else if (options.forceScroll || chatShouldAutoScroll) {
-        safeScrollTo(el, { top: el.scrollHeight, behavior: options.forceScroll ? 'auto' : 'smooth' });
+        const behavior = options.forceScroll ? 'auto' : 'smooth';
+        safeScrollTo(el, { top: el.scrollHeight, behavior });
+        schedulePageScrollToBottom(behavior);
       }
       if (typewriterBubble && typewriterBubble.isConnected) {
         applyChatTypewriter(typewriterBubble, typewriterText, el);
