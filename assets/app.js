@@ -1,4 +1,5 @@
 let notifCount = 0;
+let pedIAPageScrollTimer = null;
 const NOTIF_LAST_KEY = 'pedia_notif_last';
 const NOTIF_BOOT_FLAG = 'pedia_notif_booted';
 // Synap'Kids SPA — Prototype 100 % front avec localStorage + authentification Supabase (Google)
@@ -184,8 +185,8 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
   function disposeAIPage(){
     aiPageState.instance += 1;
     aiPageState.currentChild = null;
-    if (pedIAPageScrollTimer) {
-      clearTimeout(pedIAPageScrollTimer);
+    if (typeof pedIAPageScrollTimer !== 'undefined' && pedIAPageScrollTimer) {
+      clearInterval(pedIAPageScrollTimer);
       pedIAPageScrollTimer = null;
     }
     try {
@@ -3993,7 +3994,7 @@ const DEV_QUESTION_INDEX_BY_KEY = new Map(DEV_QUESTIONS.map((question, index) =>
     let txtChat = null;
     let cancelChatTypewriter = null;
     let chatShouldAutoScroll = true;
-    let pedIAPageScrollTimer = null;
+    pedIAPageScrollTimer = null;
     const TYPEWRITER_DELAY_MS = 16;
     const scrollPageToBottom = (behavior = 'auto') => {
       try {
